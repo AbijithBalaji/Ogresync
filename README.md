@@ -182,6 +182,8 @@ See the LICENSE file for full details.
 ---
 
 ## About Ogrelix
+![Ogrelix Logo](assets/ogrelix_logo.png)
+
 **Ogrelix** is an MSME-registered startup based in India, focused on building innovative, simple, and impactful digital tools. While we're not a formal private limited company, our team is passionate about solving real-world problems through open-source and community-driven development. Ogresync is one of our flagship products under active development.
 
 ---
