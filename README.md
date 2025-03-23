@@ -140,7 +140,7 @@ We welcome contributions from the community! To keep our codebase clean and faci
 
 6. Your pull request will be reviewed by maintainers. Please be responsive to feedback.
 
-For more detailed guidelines, please see our <CONTRIBUTING.md> file.
+For more detailed guidelines, please see our [CONTRIBUTING.md](CONTRIBUTING.md) file.
 
 ---
 
