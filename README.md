@@ -66,7 +66,7 @@ cd Ogresync
   ```
 
 ### Packaged Executables
-Download ready-to-use binaries from the [Releases](https://github.com/Ogrelix/Ogresync/releases) page:
+Download ready-to-use binaries from the [Releases](https://github.com/AbijithBalaji/Ogresync/releases) page:
 
 -   **Windows:** Executable `.exe`
 
