@@ -941,7 +941,13 @@ def create_wizard_ui():
     root.title("Ogresync Setup")
     root.geometry("550x400")
     root.configure(bg="#1e1e1e")
-    root.iconbitmap('assets/logo.ico')
+    if hasattr(sys, "_MEIPASS"):
+        icon_path = os.path.join(sys._MEIPASS, "assets", "logo.ico")
+    else:
+        icon_path = os.path.join("assets", "logo.ico")
+
+    root.iconbitmap(icon_path)
+    root.iconbitmap(icon_path)
 
     info_label = tk.Label(root, text="Ogresync First-Time Setup", font=("Arial", 14), bg="#1e1e1e", fg="white")
     info_label.pack(pady=5)
