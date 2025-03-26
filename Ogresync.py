@@ -914,9 +914,12 @@ def main():
 def create_minimal_ui(auto_run=False):
     global root, log_text, progress_bar
     root = tk.Tk()
-    root.title("Obsidian Sync" if auto_run else "Obsidian Setup")
+    root.title("Ogresync" if auto_run else "Ogresync Setup")
     root.geometry("500x300")
     root.configure(bg="#1e1e1e")
+    #The .ico format might not work on Linux/ macOS but it's fine for Windows.
+    root.iconbitmap('assets/logo.ico')
+
 
     # Create a log area and make it read-only
     log_text = scrolledtext.ScrolledText(root, height=10, width=58, bg="#282828", fg="white")
@@ -935,11 +938,12 @@ def create_wizard_ui():
     """
     global root, log_text, progress_bar
     root = tk.Tk()
-    root.title("Obsidian Sync Setup")
+    root.title("Ogresync Setup")
     root.geometry("550x400")
     root.configure(bg="#1e1e1e")
+    root.iconbitmap('assets/logo.ico')
 
-    info_label = tk.Label(root, text="Obsidian First-Time Setup", font=("Arial", 14), bg="#1e1e1e", fg="white")
+    info_label = tk.Label(root, text="Ogresync First-Time Setup", font=("Arial", 14), bg="#1e1e1e", fg="white")
     info_label.pack(pady=5)
 
     log_text = scrolledtext.ScrolledText(root, height=10, width=60, bg="#282828", fg="white")
