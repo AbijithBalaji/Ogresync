@@ -10,6 +10,7 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox, filedialog, simpledialog
 import webbrowser
 import pyperclip
+import ui_elements # Import the new UI module
 
 # ------------------------------------------------
 # CONFIG / GLOBALS
@@ -24,9 +25,9 @@ config_data = {
 
 SSH_KEY_PATH = os.path.expanduser("~/.ssh/id_rsa.pub")
 
-root = None  # We will create this conditionally
-log_text = None
-progress_bar = None
+root = None  # Will be created by ui_elements.create_main_window()
+log_text = None # Will be created by ui_elements.create_main_window()
+progress_bar = None # Will be created by ui_elements.create_main_window()
 
 # ------------------------------------------------
 # CONFIG HANDLING
@@ -186,37 +187,8 @@ def conflict_resolution_dialog(conflict_files):
     "Keep Local Changes" (ours), "Keep Remote Changes" (theirs), or "Merge Manually".
     Returns the user's choice as one of the strings: "ours", "theirs", or "manual".
     """
-    top = tk.Toplevel(root)
-    top.title("Merge Conflict Detected")
-    top.geometry("400x220")
-    top.grab_set()  # Make modal
-
-    label_text = ("Merge conflict detected in the following file(s):\n" +
-                  conflict_files + "\n\n" +
-                  "How would you like to resolve these conflicts?\n"
-                  "• Keep Local Changes (your version)\n"
-                  "• Keep Remote Changes (GitHub version)\n"
-                  "• Merge Manually (open and resolve the conflict manually)")
-    label = tk.Label(top, text=label_text, justify="left", wraplength=380)
-    label.pack(pady=10, padx=10)
-
-    resolution = {"choice": None}
-
-    def set_choice(choice):
-        resolution["choice"] = choice
-        top.destroy()
-
-    btn_frame = tk.Frame(top)
-    btn_frame.pack(pady=10)
-    btn_local = tk.Button(btn_frame, text="Keep Local", width=15, command=lambda: set_choice("ours"))
-    btn_remote = tk.Button(btn_frame, text="Keep Remote", width=15, command=lambda: set_choice("theirs"))
-    btn_manual = tk.Button(btn_frame, text="Merge Manually", width=15, command=lambda: set_choice("manual"))
-    btn_local.grid(row=0, column=0, padx=5)
-    btn_remote.grid(row=0, column=1, padx=5)
-    btn_manual.grid(row=0, column=2, padx=5)
-
-    top.wait_window()
-    return resolution["choice"]
+    # Use the new UI element for conflict resolution
+    return ui_elements.create_conflict_resolution_dialog(root, conflict_files)
 
 # ------------------------------------------------
 # GITHUB SETUP FUNCTIONS
@@ -917,8 +889,23 @@ def create_minimal_ui(auto_run=False):
     root.title("Ogresync" if auto_run else "Ogresync Setup")
     root.geometry("500x300")
     root.configure(bg="#1e1e1e")
-    #The .ico format might not work on Linux/ macOS but it's fine for Windows.
-    root.iconbitmap('assets/logo.ico')
+    
+    try:
+        if hasattr(sys, "_MEIPASS"):
+            # PyInstaller temporary path
+            icon_path = os.path.join(sys._MEIPASS, "assets", "logo.png")
+        else:
+            icon_path = os.path.join("assets", "logo.png")
+        
+        if os.path.exists(icon_path):
+            img = tk.PhotoImage(file=icon_path)
+            root.iconphoto(True, img)
+        else:
+            safe_update_log(f"Icon not found at {icon_path}", 0)
+    except tk.TclError as e:
+        safe_update_log(f"Error setting icon: {e}. Using default icon.", 0)
+    except Exception as e:
+        safe_update_log(f"An unexpected error occurred while setting icon: {e}. Using default icon.", 0)
 
 
     # Create a log area and make it read-only
@@ -941,13 +928,22 @@ def create_wizard_ui():
     root.title("Ogresync Setup")
     root.geometry("550x400")
     root.configure(bg="#1e1e1e")
-    if hasattr(sys, "_MEIPASS"):
-        icon_path = os.path.join(sys._MEIPASS, "assets", "logo.ico")
-    else:
-        icon_path = os.path.join("assets", "logo.ico")
-
-    root.iconbitmap(icon_path)
-    root.iconbitmap(icon_path)
+    
+    try:
+        if hasattr(sys, "_MEIPASS"):
+            icon_path = os.path.join(sys._MEIPASS, "assets", "logo.png")
+        else:
+            icon_path = os.path.join("assets", "logo.png")
+        
+        if os.path.exists(icon_path):
+            img = tk.PhotoImage(file=icon_path)
+            root.iconphoto(True, img)
+        else:
+            safe_update_log(f"Icon not found at {icon_path}. Using default icon.", 0)
+    except tk.TclError as e:
+        safe_update_log(f"Error setting icon: {e}. Using default icon.", 0)
+    except Exception as e:
+        safe_update_log(f"An unexpected error occurred while setting icon: {e}. Using default icon.", 0)
 
     info_label = tk.Label(root, text="Ogresync First-Time Setup", font=("Arial", 14), bg="#1e1e1e", fg="white")
     info_label.pack(pady=5)
