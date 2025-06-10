@@ -1,6 +1,4 @@
 import tkinter as tk
-import tkinter as tk
-import tkinter as tk
 from tkinter import ttk, scrolledtext, filedialog, messagebox
 import tkinter.font as tkfont
 import sys
@@ -273,9 +271,9 @@ class PremiumButton:
         
         # Size configurations
         sizes = {
-            "sm": {"font_size": Typography.SM, "pad_x": 12, "pad_y": 6},
-            "md": {"font_size": Typography.MD, "pad_x": 16, "pad_y": 8},
-            "lg": {"font_size": Typography.LG, "pad_x": 20, "pad_y": 10}
+            "sm": {"font_size": Typography.SM, "pad_x": 12, "pad_y": 6, "min_width": 60},
+            "md": {"font_size": Typography.MD, "pad_x": 16, "pad_y": 8, "min_width": 80},
+            "lg": {"font_size": Typography.LG, "pad_x": 20, "pad_y": 10, "min_width": 100}
         }
         
         size_config = sizes.get(size, sizes["md"])
@@ -296,7 +294,9 @@ class PremiumButton:
             borderwidth=0,
             cursor="hand2",
             padx=size_config["pad_x"],
-            pady=size_config["pad_y"]
+            pady=size_config["pad_y"],
+            width=10,  # Set minimum width in characters
+            height=2   # Set minimum height in text lines
         )
         
         # Add hover effects
@@ -317,12 +317,12 @@ class PremiumButton:
     @staticmethod
     def create_secondary(parent, text, command=None, icon=None, size="md"):
         """Creates a secondary button with outline styling."""
-        btn_frame = tk.Frame(parent, bg=Colors.BG_PRIMARY, highlightbackground=Colors.BORDER_ACCENT, highlightthickness=1)
+        btn_frame = tk.Frame(parent, bg=Colors.BG_PRIMARY)
         
         sizes = {
-            "sm": {"font_size": Typography.SM, "pad_x": 12, "pad_y": 6},
-            "md": {"font_size": Typography.MD, "pad_x": 16, "pad_y": 8},
-            "lg": {"font_size": Typography.LG, "pad_x": 20, "pad_y": 10}
+            "sm": {"font_size": Typography.SM, "pad_x": 12, "pad_y": 6, "min_width": 60},
+            "md": {"font_size": Typography.MD, "pad_x": 16, "pad_y": 8, "min_width": 80},
+            "lg": {"font_size": Typography.LG, "pad_x": 20, "pad_y": 10, "min_width": 100}
         }
         
         size_config = sizes.get(size, sizes["md"])
@@ -337,24 +337,24 @@ class PremiumButton:
             fg=Colors.TEXT_ACCENT,
             activebackground=Colors.SURFACE_HOVER,
             activeforeground=Colors.PRIMARY_HOVER,
-            relief=tk.FLAT,
-            borderwidth=0,
+            relief=tk.SOLID,
+            borderwidth=1,
             cursor="hand2",
             padx=size_config["pad_x"],
-            pady=size_config["pad_y"]
+            pady=size_config["pad_y"],
+            width=10,  # Set minimum width in characters
+            height=2   # Set minimum height in text lines
         )
         
         def on_enter(e):
-            btn.config(bg=Colors.SURFACE_HOVER, fg=Colors.PRIMARY_HOVER)
-            btn_frame.config(highlightbackground=Colors.PRIMARY_HOVER)
+            btn.config(bg=Colors.SURFACE_HOVER, fg=Colors.PRIMARY_HOVER, relief=tk.SOLID)
         
         def on_leave(e):
-            btn.config(bg=Colors.BG_CARD, fg=Colors.TEXT_ACCENT)
-            btn_frame.config(highlightbackground=Colors.BORDER_ACCENT)
+            btn.config(bg=Colors.BG_CARD, fg=Colors.TEXT_ACCENT, relief=tk.SOLID)
             
         btn.bind("<Enter>", on_enter)
         btn.bind("<Leave>", on_leave)
-        btn.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
+        btn.pack(fill=tk.BOTH, expand=True)
         
         # Store the actual button widget in the frame for easy access
         btn_frame.button = btn
@@ -1269,17 +1269,18 @@ def show_premium_error(title, message, parent=None):
 
 def ask_premium_yes_no(title, message, parent=None):
     """Ask a yes/no question with premium styling."""
-    dialog, main_frame = PremiumDialog.create_base(parent, title, 450, 330) # Increased height from 300
+    dialog, main_frame = PremiumDialog.create_base(parent, title, 500, 350)
     
     result = {"answer": False}
     
+    # Content frame with proper spacing
     content_frame = tk.Frame(main_frame, bg=Colors.BG_PRIMARY)
-    content_frame.pack(fill=tk.BOTH, expand=True, pady=Spacing.LG)
+    content_frame.pack(fill=tk.BOTH, expand=True, padx=Spacing.LG, pady=Spacing.LG)
     
     # Question icon
     icon_label = tk.Label(
         content_frame,
-        text="?",
+        text="❓",
         font=(FONT_FAMILY_PRIMARY, Typography.H1, Typography.BOLD),
         bg=Colors.BG_PRIMARY,
         fg=Colors.INFO
@@ -1293,14 +1294,19 @@ def ask_premium_yes_no(title, message, parent=None):
         font=(FONT_FAMILY_PRIMARY, Typography.MD),
         bg=Colors.BG_PRIMARY,
         fg=Colors.TEXT_PRIMARY,
-        wraplength=380,
+        wraplength=400,
         justify=tk.CENTER
     )
-    message_label.pack(pady=(0, Spacing.LG))
+    message_label.pack(pady=(0, Spacing.XL))
     
-    # Buttons
-    button_frame = tk.Frame(content_frame, bg=Colors.BG_PRIMARY)
-    button_frame.pack(pady=Spacing.SM) # Added pady
+    # Button container with fixed dimensions
+    button_container = tk.Frame(content_frame, bg=Colors.BG_PRIMARY, height=60)
+    button_container.pack(fill=tk.X, side=tk.BOTTOM)
+    button_container.pack_propagate(False)
+    
+    # Center the button area within the container
+    button_frame = tk.Frame(button_container, bg=Colors.BG_PRIMARY)
+    button_frame.pack(expand=True)
     
     def yes_clicked():
         result["answer"] = True
@@ -1310,21 +1316,61 @@ def ask_premium_yes_no(title, message, parent=None):
         result["answer"] = False
         dialog.destroy()
     
-    yes_btn = PremiumButton.create_primary(
+    # Create buttons with guaranteed minimum size and explicit dimensions
+    yes_btn = tk.Button(
         button_frame,
-        "Yes",
-        yes_clicked,
-        size="md"
+        text="Yes",
+        command=yes_clicked,
+        font=(FONT_FAMILY_PRIMARY, Typography.MD, Typography.MEDIUM),
+        bg=Colors.PRIMARY,
+        fg=Colors.TEXT_INVERSE,
+        activebackground=Colors.PRIMARY_HOVER,
+        activeforeground=Colors.TEXT_INVERSE,
+        relief=tk.FLAT,
+        borderwidth=0,
+        cursor="hand2",
+        width=10,  # Increased width
+        height=2   # Increased height
     )
-    yes_btn.pack(side=tk.LEFT, padx=(0, Spacing.SM))
+    yes_btn.pack(side=tk.LEFT, padx=(0, Spacing.LG), pady=Spacing.MD, ipadx=10, ipady=5)
     
-    no_btn = PremiumButton.create_secondary(
+    no_btn = tk.Button(
         button_frame,
-        "No", 
-        no_clicked,
-        size="md"
+        text="No",
+        command=no_clicked,
+        font=(FONT_FAMILY_PRIMARY, Typography.MD, Typography.MEDIUM),
+        bg=Colors.BG_CARD,
+        fg=Colors.TEXT_ACCENT,
+        activebackground=Colors.SURFACE_HOVER,
+        activeforeground=Colors.PRIMARY_HOVER,
+        relief=tk.SOLID,
+        borderwidth=1,
+        cursor="hand2",
+        width=10,  # Increased width
+        height=2   # Increased height
     )
-    no_btn.pack(side=tk.LEFT)
+    no_btn.pack(side=tk.LEFT, pady=Spacing.MD, ipadx=10, ipady=5)
+    
+    # Add hover effects
+    def yes_enter(e):
+        yes_btn.config(bg=Colors.PRIMARY_HOVER)
+    def yes_leave(e):
+        yes_btn.config(bg=Colors.PRIMARY)
+    
+    def no_enter(e):
+        no_btn.config(bg=Colors.SURFACE_HOVER, fg=Colors.PRIMARY_HOVER)
+    def no_leave(e):
+        no_btn.config(bg=Colors.BG_CARD, fg=Colors.TEXT_ACCENT)
+    
+    yes_btn.bind("<Enter>", yes_enter)
+    yes_btn.bind("<Leave>", yes_leave)
+    no_btn.bind("<Enter>", no_enter)
+    no_btn.bind("<Leave>", no_leave)
+    
+    # Focus and keyboard support
+    yes_btn.focus_set()
+    dialog.bind('<Return>', lambda e: yes_clicked())
+    dialog.bind('<Escape>', lambda e: no_clicked())
     
     dialog.wait_window()
     return result["answer"]
@@ -1675,6 +1721,167 @@ def create_repository_conflict_dialog(parent_window, message, analysis):
         wraplength=580
     )
     remote_desc.pack(anchor=tk.W)
+    
+    # Wait for user choice
+    parent_window.wait_window(dialog)
+    return choice["value"]
+
+# Enhanced dialog for handling missing vault directories with recovery options
+def create_vault_recovery_dialog(parent_window, missing_vault_path):
+    """Creates a dialog for handling missing vault directories."""
+    # Create the dialog window
+    dialog = tk.Toplevel(parent_window)
+    dialog.title("Vault Directory Not Found")
+    dialog.transient(parent_window)
+    dialog.grab_set()
+    dialog.resizable(False, False)
+    dialog.configure(bg="#FAFBFC")
+    
+    # Center the dialog
+    dialog.update_idletasks()
+    width, height = 600, 450
+    x = (dialog.winfo_screenwidth() // 2) - (width // 2)
+    y = (dialog.winfo_screenheight() // 2) - (height // 2)
+    dialog.geometry(f"{width}x{height}+{x}+{y}")
+    
+    # Main container
+    main_frame = tk.Frame(dialog, bg="#FAFBFC")
+    main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+    
+    # Header with icon and title
+    header_frame = tk.Frame(main_frame, bg="#FAFBFC")
+    header_frame.pack(fill=tk.X, pady=(0, 20))
+    
+    title_label = tk.Label(
+        header_frame,
+        text="⚠️ Vault Directory Missing",
+        font=("Arial", 16, "bold"),
+        bg="#FAFBFC",
+        fg="#DC2626"
+    )
+    title_label.pack()
+    
+    # Content area
+    content_frame = tk.Frame(main_frame, bg="#FFFFFF", relief=tk.RAISED, borderwidth=1)
+    content_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 20))
+    
+    # Padding inside content
+    inner_frame = tk.Frame(content_frame, bg="#FFFFFF")
+    inner_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+    
+    # Message
+    message_text = (
+        f"The configured vault directory cannot be found:\n\n"
+        f"📁 {missing_vault_path}\n\n"
+        f"This might have happened if the directory was moved, deleted, or renamed.\n"
+        f"Please choose how you'd like to proceed:"
+    )
+    
+    message_label = tk.Label(
+        inner_frame,
+        text=message_text,
+        font=("Arial", 12),
+        bg="#FFFFFF",
+        fg="#475569",
+        wraplength=520,
+        justify=tk.LEFT
+    )
+    message_label.pack(pady=(0, 20))
+    
+    # Choice storage
+    choice = {"value": None}
+    
+    def set_choice(selected_choice):
+        choice["value"] = selected_choice
+        dialog.destroy()
+    
+    # Button area
+    button_frame = tk.Frame(inner_frame, bg="#FFFFFF")
+    button_frame.pack(fill=tk.X, pady=(20, 0))
+    
+    # Button 1: Recreate Directory (Recommended)
+    recreate_btn = tk.Button(
+        button_frame,
+        text="🔄 Recreate Directory (Recommended)",
+        command=lambda: set_choice("recreate"),
+        font=("Arial", 11, "bold"),
+        bg="#059669",
+        fg="#FFFFFF",
+        activebackground="#047857",
+        activeforeground="#FFFFFF",
+        relief=tk.FLAT,
+        borderwidth=0,
+        cursor="hand2",
+        padx=20,
+        pady=12
+    )
+    recreate_btn.pack(fill=tk.X, pady=(0, 5))
+    
+    recreate_desc = tk.Label(
+        button_frame,
+        text="Creates the vault directory at the original location and downloads remote files.",
+        font=("Arial", 9),
+        bg="#FFFFFF",
+        fg="#64748B",
+        wraplength=520
+    )
+    recreate_desc.pack(anchor=tk.W, pady=(2, 15))
+    
+    # Button 2: Select New Directory
+    select_btn = tk.Button(
+        button_frame,
+        text="📁 Choose Different Directory",
+        command=lambda: set_choice("select_new"),
+        font=("Arial", 11),
+        bg="#FFFFFF",
+        fg="#6366F1",
+        activebackground="#F1F5F9",
+        activeforeground="#4F46E5",
+        relief=tk.SOLID,
+        borderwidth=1,
+        cursor="hand2",
+        padx=20,
+        pady=12
+    )
+    select_btn.pack(fill=tk.X, pady=(0, 5))
+    
+    select_desc = tk.Label(
+        button_frame,
+        text="Browse and select a different directory to use as your vault.",
+        font=("Arial", 9),
+        bg="#FFFFFF",
+        fg="#64748B",
+        wraplength=520
+    )
+    select_desc.pack(anchor=tk.W, pady=(2, 15))
+    
+    # Button 3: Run Setup Again
+    setup_btn = tk.Button(
+        button_frame,
+        text="⚙️ Run Setup Wizard Again",
+        command=lambda: set_choice("setup"),
+        font=("Arial", 11),
+        bg="#FFFFFF",
+        fg="#6366F1",
+        activebackground="#F1F5F9",
+        activeforeground="#4F46E5",
+        relief=tk.SOLID,
+        borderwidth=1,
+        cursor="hand2",
+        padx=20,
+        pady=12
+    )
+    setup_btn.pack(fill=tk.X, pady=(0, 5))
+    
+    setup_desc = tk.Label(
+        button_frame,
+        text="Start the complete setup process from the beginning.",
+        font=("Arial", 9),
+        bg="#FFFFFF",
+        fg="#64748B",
+        wraplength=520
+    )
+    setup_desc.pack(anchor=tk.W)
     
     # Wait for user choice
     parent_window.wait_window(dialog)
