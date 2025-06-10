@@ -2,200 +2,954 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext
 import tkinter.font as tkfont
 import sys
+import os
+from typing import Optional, Callable, Dict, Any, Union
 
-# --- Font Handling ---
-# Initialize FONT_FAMILY_PRIMARY later, after root window exists
-FONT_FAMILY_PRIMARY = "TkDefaultFont"  # Default fallback, will be updated
-FONT_SIZE_NORMAL = 10
-FONT_SIZE_LARGE = 12
-FONT_WEIGHT_BOLD = "bold"
+# =============================================================================
+# PREMIUM UI DESIGN SYSTEM - MODERN & SCALABLE
+# =============================================================================
 
-def get_default_font_family():
-    """Suggests a decent default font based on the OS.
-    This function should be called AFTER a Tk root window has been initialized.
-    """
-    if sys.platform == "win32":
-        return "Segoe UI"
-    elif sys.platform == "darwin":  # macOS
+# --- Enhanced Color Palette ---
+class Colors:
+    # Premium Brand Colors - Modern gradient-friendly palette
+    PRIMARY = "#6366F1"        # Indigo - Premium, professional
+    PRIMARY_HOVER = "#4F46E5"  # Darker indigo for hover
+    PRIMARY_ACTIVE = "#4338CA" # Even darker for active state
+    PRIMARY_LIGHT = "#A5B4FC"  # Light indigo for accents
+    PRIMARY_GHOST = "#E0E7FF" # Light indigo instead of transparent
+    
+    # Semantic Colors
+    SUCCESS = "#10B981"        # Emerald green
+    SUCCESS_HOVER = "#059669"  # Darker emerald
+    SUCCESS_LIGHT = "#A7F3D0"  # Light emerald
+    
+    WARNING = "#F59E0B"        # Amber
+    WARNING_HOVER = "#D97706"  # Darker amber
+    WARNING_LIGHT = "#FDE68A"  # Light amber
+    
+    ERROR = "#EF4444"          # Red
+    ERROR_HOVER = "#DC2626"    # Darker red
+    ERROR_LIGHT = "#FECACA"    # Light red
+    
+    INFO = "#3B82F6"          # Blue
+    INFO_HOVER = "#2563EB"    # Darker blue
+    INFO_LIGHT = "#BFDBFE"    # Light blue
+    
+    # Premium Background System
+    BG_PRIMARY = "#FAFBFC"     # Primary background - slightly off-white
+    BG_SECONDARY = "#F7F9FB"   # Secondary background
+    BG_TERTIARY = "#F1F4F7"    # Tertiary background
+    BG_CARD = "#FFFFFF"        # Card backgrounds
+    BG_ELEVATED = "#FFFFFF"    # Elevated surfaces
+    
+    # Glass/Blur Effects (simulated with lighter colors)
+    GLASS_PRIMARY = "#F8F9FA"   # Light gray instead of transparent white
+    GLASS_SECONDARY = "#F1F3F4" # Slightly darker gray
+    
+    # Premium Surface Colors
+    SURFACE_DEFAULT = "#FFFFFF"
+    SURFACE_HOVER = "#F8FAFC"
+    SURFACE_ACTIVE = "#F1F5F9"
+    SURFACE_DISABLED = "#F8FAFC"
+    
+    # Professional Text Hierarchy
+    TEXT_PRIMARY = "#1E293B"   # Very dark slate
+    TEXT_SECONDARY = "#475569" # Medium slate
+    TEXT_TERTIARY = "#64748B"  # Light slate
+    TEXT_MUTED = "#94A3B8"     # Very light slate
+    TEXT_INVERSE = "#FFFFFF"   # White text
+    TEXT_ACCENT = "#6366F1"    # Brand color text
+    
+    # Sophisticated Border System
+    BORDER_SUBTLE = "#F1F5F9"  # Very light borders
+    BORDER_DEFAULT = "#E2E8F0" # Default borders
+    BORDER_STRONG = "#CBD5E1"  # Strong borders
+    BORDER_ACCENT = "#6366F1"  # Accent borders
+    
+    # Professional Shadow System (using gray colors since tkinter doesn't support alpha)
+    SHADOW_SM = "#F1F5F9"      # Very light gray
+    SHADOW_MD = "#E2E8F0"      # Light gray
+    SHADOW_LG = "#CBD5E1"      # Medium gray
+    SHADOW_XL = "#94A3B8"      # Darker gray
+    
+    # Gradient Colors for Premium Effects
+    GRADIENT_PRIMARY = ["#6366F1", "#8B5CF6"]   # Indigo to purple
+    GRADIENT_SUCCESS = ["#10B981", "#059669"]   # Emerald gradient
+    GRADIENT_SUNSET = ["#F59E0B", "#EF4444"]    # Warm gradient
+    GRADIENT_OCEAN = ["#06B6D4", "#3B82F6"]     # Cool gradient
+
+# --- Professional Typography System ---
+class Typography:
+    # Premium Font Stack
+    PRIMARY_FONT = "Inter"     # Primary UI font
+    HEADING_FONT = "SF Pro Display" # For headings (fallback to primary)
+    MONO_FONT = "SF Mono"      # Monospace font
+    
+    # Comprehensive Size Scale
+    XXS = 9   # Tiny text
+    XS = 10   # Extra small
+    SM = 11   # Small
+    BASE = 12 # Base size
+    MD = 13   # Medium
+    LG = 14   # Large
+    XL = 16   # Extra large
+    XXL = 18  # Double extra large
+    XXXL = 20 # Triple extra large
+    H4 = 22   # Heading 4
+    H3 = 24   # Heading 3
+    H2 = 28   # Heading 2
+    H1 = 32   # Heading 1
+    DISPLAY = 36 # Display text
+    
+    # Professional Font Weights (tkinter-compatible)
+    THIN = "normal"
+    EXTRALIGHT = "normal"
+    LIGHT = "normal"
+    NORMAL = "normal"
+    MEDIUM = "normal"
+    SEMIBOLD = "bold"
+    BOLD = "bold"
+    EXTRABOLD = "bold"
+    BLACK = "bold"
+
+# --- Advanced Spacing System ---
+class Spacing:
+    # Micro spacing
+    XXS = 2
+    XS = 4
+    SM = 6
+    # Standard spacing
+    MD = 8
+    LG = 12
+    XL = 16
+    XXL = 20
+    XXXL = 24
+    # Large spacing
+    GIANT = 32
+    HUGE = 40
+    MASSIVE = 48
+    
+    # Component-specific spacing
+    BUTTON_PADDING_X = 16
+    BUTTON_PADDING_Y = 8
+    CARD_PADDING = 20
+    SECTION_MARGIN = 24
+    
+# --- Animation & Effects System ---
+class Effects:
+    # Timing functions
+    FAST = 150     # Quick interactions
+    NORMAL = 250   # Standard transitions
+    SLOW = 350     # Deliberate animations
+    
+    # Easing curves (for future CSS-like transitions)
+    EASE_IN = "ease-in"
+    EASE_OUT = "ease-out"
+    EASE_IN_OUT = "ease-in-out"
+    
+    # Shadow definitions
+    SHADOW_NONE = "none"
+    SHADOW_SM = "0 1px 2px rgba(0, 0, 0, 0.05)"
+    SHADOW_MD = "0 4px 6px rgba(0, 0, 0, 0.1)"
+    SHADOW_LG = "0 10px 15px rgba(0, 0, 0, 0.1)"
+    SHADOW_XL = "0 20px 25px rgba(0, 0, 0, 0.15)"
+    
+    # Border radius for modern rounded corners
+    RADIUS_NONE = 0
+    RADIUS_SM = 3
+    RADIUS_MD = 6
+    RADIUS_LG = 8
+    RADIUS_XL = 12
+    RADIUS_FULL = 9999
+
+# --- Icon System (Unicode/Text-based for cross-platform compatibility) ---
+class Icons:
+    # Navigation
+    ARROW_LEFT = "←"
+    ARROW_RIGHT = "→"
+    ARROW_UP = "↑" 
+    ARROW_DOWN = "↓"
+    
+    # Actions
+    PLAY = "▶"
+    PAUSE = "⏸"
+    STOP = "⏹"
+    REFRESH = "↻"
+    DOWNLOAD = "⬇"
+    UPLOAD = "⬆"
+    SYNC = "⟲"
+    
+    # Status
+    SUCCESS = "✓"
+    ERROR = "✗"
+    WARNING = "⚠"
+    INFO = "ℹ"
+    
+    # Files & Folders
+    FOLDER = "📁"
+    FILE = "📄"
+    GEAR = "⚙"
+    KEY = "🔑"
+    LINK = "🔗"
+    
+    # Security & Tools
+    SECURITY = "🔒"
+    COPY = "📋"
+    
+    # Interface
+    MENU = "☰"
+    CLOSE = "✕"
+    MINIMIZE = "−"
+    MAXIMIZE = "□"
+
+# =============================================================================
+# ADVANCED UI COMPONENT SYSTEM
+# =============================================================================
+
+# Global font configuration
+FONT_FAMILY_PRIMARY = "TkDefaultFont"
+FONT_FAMILY_MONO = "TkFixedFont"
+
+def get_premium_font_family():
+    """Gets the best available font for a premium look."""
+    try:
         available_fonts = tkfont.families()
-        if "San Francisco" in available_fonts:  # Unlikely to be listed this way
-            return "San Francisco"
-        if "Helvetica Neue" in available_fonts:
-            return "Helvetica Neue"
-        return "TkDefaultFont"  # Fallback to Tkinter's default for macOS
-    else:  # Linux and other
+        
+        # Premium font preferences by platform
+        if sys.platform == "win32":
+            preferred = ["Segoe UI Variable", "Segoe UI", "Calibri"]
+        elif sys.platform == "darwin":  # macOS
+            preferred = ["SF Pro Display", "Helvetica Neue", "Lucida Grande"]
+        else:  # Linux
+            preferred = ["Inter", "Roboto", "Noto Sans", "Ubuntu", "Cantarell", "DejaVu Sans"]
+        
+        for font in preferred:
+            if font in available_fonts:
+                return font
+                
+        return "TkDefaultFont"
+    except Exception:
+        return "TkDefaultFont"
+
+def get_premium_mono_font():
+    """Gets the best available monospace font."""
+    try:
         available_fonts = tkfont.families()
-        for font_name in ["Noto Sans", "Cantarell", "Roboto", "DejaVu Sans", "Liberation Sans"]:
-            if font_name in available_fonts:
-                return font_name
-        return "TkDefaultFont"  # Fallback for Linux/other
+        
+        if sys.platform == "win32":
+            preferred = ["Consolas", "Courier New"]
+        elif sys.platform == "darwin":
+            preferred = ["SF Mono", "Menlo", "Monaco"]
+        else:
+            preferred = ["JetBrains Mono", "Fira Code", "Ubuntu Mono", "DejaVu Sans Mono"]
+            
+        for font in preferred:
+            if font in available_fonts:
+                return font
+                
+        return "TkFixedFont"
+    except Exception:
+        return "TkFixedFont"
 
 def init_font_config():
-    """Initializes font configuration, specifically FONT_FAMILY_PRIMARY.
-    Must be called after the Tk root window is created.
-    """
-    global FONT_FAMILY_PRIMARY
-    FONT_FAMILY_PRIMARY = get_default_font_family()
+    """Initializes premium font configuration."""
+    global FONT_FAMILY_PRIMARY, FONT_FAMILY_MONO
+    FONT_FAMILY_PRIMARY = get_premium_font_family()
+    FONT_FAMILY_MONO = get_premium_mono_font()
 
-# --- Styling ---
-def setup_styles():
-    """Configures ttk styles for a more modern look."""
-    # FONT_FAMILY_PRIMARY is now assumed to be initialized by init_font_config()
+# =============================================================================
+# PREMIUM COMPONENT LIBRARY
+# =============================================================================
+
+class PremiumButton:
+    """Enhanced button component with hover effects and styling options."""
+    
+    @staticmethod
+    def create_primary(parent, text, command=None, icon=None, size="md"):
+        """Creates a primary button with premium styling."""
+        btn_frame = tk.Frame(parent, bg=Colors.BG_PRIMARY)
+        
+        # Size configurations
+        sizes = {
+            "sm": {"font_size": Typography.SM, "pad_x": 12, "pad_y": 6},
+            "md": {"font_size": Typography.MD, "pad_x": 16, "pad_y": 8},
+            "lg": {"font_size": Typography.LG, "pad_x": 20, "pad_y": 10}
+        }
+        
+        size_config = sizes.get(size, sizes["md"])
+        
+        # Create button text with optional icon
+        button_text = f"{icon} {text}" if icon else text
+        
+        btn = tk.Button(
+            btn_frame,
+            text=button_text,
+            command=command,
+            font=(FONT_FAMILY_PRIMARY, size_config["font_size"], Typography.MEDIUM),
+            bg=Colors.PRIMARY,
+            fg=Colors.TEXT_INVERSE,
+            activebackground=Colors.PRIMARY_HOVER,
+            activeforeground=Colors.TEXT_INVERSE,
+            relief=tk.FLAT,
+            borderwidth=0,
+            cursor="hand2",
+            padx=size_config["pad_x"],
+            pady=size_config["pad_y"]
+        )
+        
+        # Add hover effects
+        def on_enter(e):
+            btn.config(bg=Colors.PRIMARY_HOVER)
+        
+        def on_leave(e):
+            btn.config(bg=Colors.PRIMARY)
+            
+        btn.bind("<Enter>", on_enter)
+        btn.bind("<Leave>", on_leave)
+        btn.pack(fill=tk.BOTH, expand=True)
+        
+        # Store the actual button widget in the frame for easy access
+        btn_frame.button = btn
+        return btn_frame
+    
+    @staticmethod
+    def create_secondary(parent, text, command=None, icon=None, size="md"):
+        """Creates a secondary button with outline styling."""
+        btn_frame = tk.Frame(parent, bg=Colors.BG_PRIMARY, highlightbackground=Colors.BORDER_ACCENT, highlightthickness=1)
+        
+        sizes = {
+            "sm": {"font_size": Typography.SM, "pad_x": 12, "pad_y": 6},
+            "md": {"font_size": Typography.MD, "pad_x": 16, "pad_y": 8},
+            "lg": {"font_size": Typography.LG, "pad_x": 20, "pad_y": 10}
+        }
+        
+        size_config = sizes.get(size, sizes["md"])
+        button_text = f"{icon} {text}" if icon else text
+        
+        btn = tk.Button(
+            btn_frame,
+            text=button_text,
+            command=command,
+            font=(FONT_FAMILY_PRIMARY, size_config["font_size"], Typography.MEDIUM),
+            bg=Colors.BG_CARD,
+            fg=Colors.TEXT_ACCENT,
+            activebackground=Colors.SURFACE_HOVER,
+            activeforeground=Colors.PRIMARY_HOVER,
+            relief=tk.FLAT,
+            borderwidth=0,
+            cursor="hand2",
+            padx=size_config["pad_x"],
+            pady=size_config["pad_y"]
+        )
+        
+        def on_enter(e):
+            btn.config(bg=Colors.SURFACE_HOVER, fg=Colors.PRIMARY_HOVER)
+            btn_frame.config(highlightbackground=Colors.PRIMARY_HOVER)
+        
+        def on_leave(e):
+            btn.config(bg=Colors.BG_CARD, fg=Colors.TEXT_ACCENT)
+            btn_frame.config(highlightbackground=Colors.BORDER_ACCENT)
+            
+        btn.bind("<Enter>", on_enter)
+        btn.bind("<Leave>", on_leave)
+        btn.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
+        
+        # Store the actual button widget in the frame for easy access
+        btn_frame.button = btn
+        return btn_frame
+    
+    @staticmethod
+    def create_danger(parent, text, command=None, icon=None, size="md"):
+        """Creates a danger button with error styling."""
+        btn_frame = tk.Frame(parent, bg=Colors.BG_PRIMARY)
+        
+        sizes = {
+            "sm": {"font_size": Typography.SM, "pad_x": 12, "pad_y": 6},
+            "md": {"font_size": Typography.MD, "pad_x": 16, "pad_y": 8},
+            "lg": {"font_size": Typography.LG, "pad_x": 20, "pad_y": 10}
+        }
+        
+        size_config = sizes.get(size, sizes["md"])
+        button_text = f"{icon} {text}" if icon else text
+        
+        btn = tk.Button(
+            btn_frame,
+            text=button_text,
+            command=command,
+            font=(FONT_FAMILY_PRIMARY, size_config["font_size"], Typography.MEDIUM),
+            bg=Colors.ERROR,
+            fg=Colors.TEXT_INVERSE,
+            activebackground=Colors.ERROR_HOVER,
+            activeforeground=Colors.TEXT_INVERSE,
+            relief=tk.FLAT,
+            borderwidth=0,
+            cursor="hand2",
+            padx=size_config["pad_x"],
+            pady=size_config["pad_y"]
+        )
+        
+        def on_enter(e):
+            btn.config(bg=Colors.ERROR_HOVER)
+        
+        def on_leave(e):
+            btn.config(bg=Colors.ERROR)
+            
+        btn.bind("<Enter>", on_enter)
+        btn.bind("<Leave>", on_leave)
+        btn.pack(fill=tk.BOTH, expand=True)
+        
+        btn_frame.button = btn
+        return btn_frame
+    
+    @staticmethod
+    def create_success(parent, text, command=None, icon=None, size="md"):
+        """Creates a success button with success styling."""
+        btn_frame = tk.Frame(parent, bg=Colors.BG_PRIMARY)
+        
+        sizes = {
+            "sm": {"font_size": Typography.SM, "pad_x": 12, "pad_y": 6},
+            "md": {"font_size": Typography.MD, "pad_x": 16, "pad_y": 8},
+            "lg": {"font_size": Typography.LG, "pad_x": 20, "pad_y": 10}
+        }
+        
+        size_config = sizes.get(size, sizes["md"])
+        button_text = f"{icon} {text}" if icon else text
+        
+        btn = tk.Button(
+            btn_frame,
+            text=button_text,
+            command=command,
+            font=(FONT_FAMILY_PRIMARY, size_config["font_size"], Typography.MEDIUM),
+            bg=Colors.SUCCESS,
+            fg=Colors.TEXT_INVERSE,
+            activebackground=Colors.SUCCESS_HOVER,
+            activeforeground=Colors.TEXT_INVERSE,
+            relief=tk.FLAT,
+            borderwidth=0,
+            cursor="hand2",
+            padx=size_config["pad_x"],
+            pady=size_config["pad_y"]
+        )
+        
+        def on_enter(e):
+            btn.config(bg=Colors.SUCCESS_HOVER)
+        
+        def on_leave(e):
+            btn.config(bg=Colors.SUCCESS)
+            
+        btn.bind("<Enter>", on_enter)
+        btn.bind("<Leave>", on_leave)
+        btn.pack(fill=tk.BOTH, expand=True)
+        
+        btn_frame.button = btn
+        return btn_frame
+    
+    @staticmethod
+    def create_warning(parent, text, command=None, icon=None, size="md"):
+        """Creates a warning button with warning styling."""
+        btn_frame = tk.Frame(parent, bg=Colors.BG_PRIMARY)
+        
+        sizes = {
+            "sm": {"font_size": Typography.SM, "pad_x": 12, "pad_y": 6},
+            "md": {"font_size": Typography.MD, "pad_x": 16, "pad_y": 8},
+            "lg": {"font_size": Typography.LG, "pad_x": 20, "pad_y": 10}
+        }
+        
+        size_config = sizes.get(size, sizes["md"])
+        button_text = f"{icon} {text}" if icon else text
+        
+        btn = tk.Button(
+            btn_frame,
+            text=button_text,
+            command=command,
+            font=(FONT_FAMILY_PRIMARY, size_config["font_size"], Typography.MEDIUM),
+            bg=Colors.WARNING,
+            fg=Colors.TEXT_INVERSE,
+            activebackground=Colors.WARNING_HOVER,
+            activeforeground=Colors.TEXT_INVERSE,
+            relief=tk.FLAT,
+            borderwidth=0,
+            cursor="hand2",
+            padx=size_config["pad_x"],
+            pady=size_config["pad_y"]
+        )
+        
+        def on_enter(e):
+            btn.config(bg=Colors.WARNING_HOVER)
+        
+        def on_leave(e):
+            btn.config(bg=Colors.WARNING)
+            
+        btn.bind("<Enter>", on_enter)
+        btn.bind("<Leave>", on_leave)
+        btn.pack(fill=tk.BOTH, expand=True)
+        
+        btn_frame.button = btn
+        return btn_frame
+
+class PremiumCard:
+    """Card component with elevated styling and shadows."""
+    
+    @staticmethod
+    def create(parent, title=None, padding=Spacing.CARD_PADDING):
+        """Creates a premium card container."""
+        # Outer frame for shadow effect (simulation)
+        shadow_frame = tk.Frame(parent, bg=Colors.SHADOW_MD, height=2)
+        shadow_frame.pack(fill=tk.X, padx=(2, 0), pady=(2, 0))
+        
+        # Main card frame
+        card_frame = tk.Frame(
+            parent,
+            bg=Colors.BG_CARD,
+            relief=tk.FLAT,
+            borderwidth=1
+        )
+        card_frame.pack(fill=tk.BOTH, expand=True, padx=(0, 2), pady=(0, 2))
+        
+        # Inner content frame with padding
+        content_frame = tk.Frame(card_frame, bg=Colors.BG_CARD)
+        content_frame.pack(fill=tk.BOTH, expand=True, padx=padding, pady=padding)
+        
+        # Optional title
+        if title:
+            title_label = tk.Label(
+                content_frame,
+                text=title,
+                font=(FONT_FAMILY_PRIMARY, Typography.LG, Typography.SEMIBOLD),
+                bg=Colors.BG_CARD,
+                fg=Colors.TEXT_PRIMARY
+            )
+            title_label.pack(anchor=tk.W, pady=(0, Spacing.MD))
+        
+        return content_frame
+
+class PremiumDialog:
+    """Enhanced dialog system with modern styling."""
+    
+    @staticmethod
+    def create_base(parent, title, width=400, height=300):
+        """Creates a base dialog with premium styling."""
+        dialog = tk.Toplevel(parent)
+        dialog.title(title)
+        dialog.transient(parent)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+        dialog.configure(bg=Colors.BG_PRIMARY)
+        
+        # Center the dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (width // 2)
+        y = (dialog.winfo_screenheight() // 2) - (height // 2)
+        dialog.geometry(f"{width}x{height}+{x}+{y}")
+        
+        # Main container with padding
+        main_frame = tk.Frame(dialog, bg=Colors.BG_PRIMARY)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=Spacing.XL, pady=Spacing.XL)
+        
+        return dialog, main_frame
+
+# --- Premium Styling System ---
+def setup_premium_styles():
+    """Configures advanced TTK styles for premium appearance."""
     style = ttk.Style()
     
+    # Select the best available theme
     available_themes = style.theme_names()
-    # Prefer 'clam', 'alt', or 'vista' (on Windows) for a cleaner look than 'default' or 'classic'
-    preferred_themes = ['clam', 'alt']
-    if sys.platform == "win32":
-        preferred_themes.insert(0, 'vista') # 'vista' often looks good on Windows
-
+    preferred_themes = ['vista', 'clam', 'alt', 'default']
+    
     selected_theme = None
     for theme in preferred_themes:
         if theme in available_themes:
             selected_theme = theme
             break
-    if not selected_theme:
-        selected_theme = style.theme_use() # Use current or default if preferred not found
-
-    try:
-        style.theme_use(selected_theme)
-    except tk.TclError:
-        print(f"Warning: Theme '{selected_theme}' not available or failed to apply. Using fallback.")
-        # Fallback to a known safe theme if the selected one fails
-        if 'default' in available_themes:
-            style.theme_use('default')
-
-    # General widget styling
-    style.configure("TFrame", background="#ECECEC") # Light gray background for frames
-    style.configure("TLabel", font=(FONT_FAMILY_PRIMARY, FONT_SIZE_NORMAL), background="#ECECEC")
-    style.configure("TButton", font=(FONT_FAMILY_PRIMARY, FONT_SIZE_NORMAL, FONT_WEIGHT_BOLD), padding=(10, 5))
-    style.configure("Header.TLabel", font=(FONT_FAMILY_PRIMARY, FONT_SIZE_LARGE, FONT_WEIGHT_BOLD), background="#ECECEC")
-    style.configure("LabelFrame.TLabel", font=(FONT_FAMILY_PRIMARY, FONT_SIZE_NORMAL, FONT_WEIGHT_BOLD), background="#ECECEC")
-    style.configure("TProgressbar", thickness=20)
     
-    # Style for ScrolledText (though it's a tk widget, its frame can be styled)
-    # The actual text area font is set directly on the widget.
+    if selected_theme:
+        try:
+            style.theme_use(selected_theme)
+        except tk.TclError:
+            style.theme_use('default')
+    
+    # Premium Frame Styling
+    style.configure(
+        "Premium.TFrame",
+        background=Colors.BG_CARD,
+        relief="flat",
+        borderwidth=0
+    )
+    
+    style.configure(
+        "Card.TFrame", 
+        background=Colors.BG_CARD,
+        relief="solid",
+        borderwidth=1,
+        lightcolor=Colors.BORDER_SUBTLE,
+        darkcolor=Colors.BORDER_SUBTLE
+    )
+    
+    # Premium Label Styling
+    style.configure(
+        "Premium.TLabel",
+        font=(FONT_FAMILY_PRIMARY, Typography.BASE, Typography.NORMAL),
+        background=Colors.BG_CARD,
+        foreground=Colors.TEXT_PRIMARY
+    )
+    
+    style.configure(
+        "Heading.TLabel",
+        font=(FONT_FAMILY_PRIMARY, Typography.XL, Typography.SEMIBOLD),
+        background=Colors.BG_CARD,
+        foreground=Colors.TEXT_PRIMARY
+    )
+    
+    style.configure(
+        "Title.TLabel",
+        font=(FONT_FAMILY_PRIMARY, Typography.XXL, Typography.BOLD),
+        background=Colors.BG_CARD,
+        foreground=Colors.TEXT_PRIMARY
+    )
+    
+    style.configure(
+        "Subtitle.TLabel",
+        font=(FONT_FAMILY_PRIMARY, Typography.LG, Typography.MEDIUM),
+        background=Colors.BG_CARD,
+        foreground=Colors.TEXT_SECONDARY
+    )
+    
+    style.configure(
+        "Caption.TLabel",
+        font=(FONT_FAMILY_PRIMARY, Typography.SM, Typography.NORMAL),
+        background=Colors.BG_CARD,
+        foreground=Colors.TEXT_MUTED
+    )
+    
+    # Premium Button Styling
+    style.configure(
+        "Premium.TButton",
+        font=(FONT_FAMILY_PRIMARY, Typography.MD, Typography.MEDIUM),
+        padding=(Spacing.BUTTON_PADDING_X, Spacing.BUTTON_PADDING_Y),
+        background=Colors.PRIMARY,
+        foreground=Colors.TEXT_INVERSE,
+        borderwidth=0,
+        focuscolor="none"
+    )
+    
+    style.map(
+        "Premium.TButton",
+        background=[
+            ("active", Colors.PRIMARY_HOVER),
+            ("pressed", Colors.PRIMARY_ACTIVE)
+        ],
+        foreground=[
+            ("active", Colors.TEXT_INVERSE),
+            ("pressed", Colors.TEXT_INVERSE)
+        ]
+    )
+    
+    # Success Button
+    style.configure(
+        "Success.TButton",
+        font=(FONT_FAMILY_PRIMARY, Typography.MD, Typography.MEDIUM),
+        padding=(Spacing.BUTTON_PADDING_X, Spacing.BUTTON_PADDING_Y),
+        background=Colors.SUCCESS,
+        foreground=Colors.TEXT_INVERSE,
+        borderwidth=0,
+        focuscolor="none"
+    )
+    
+    style.map(
+        "Success.TButton",
+        background=[("active", Colors.SUCCESS_HOVER)]
+    )
+    
+    # Secondary/Outline Button
+    style.configure(
+        "Secondary.TButton",
+        font=(FONT_FAMILY_PRIMARY, Typography.MD, Typography.MEDIUM),
+        padding=(Spacing.BUTTON_PADDING_X, Spacing.BUTTON_PADDING_Y),
+        background=Colors.BG_CARD,
+        foreground=Colors.TEXT_ACCENT,
+        borderwidth=1,
+        relief="solid",
+        focuscolor="none"
+    )
+    
+    style.map(
+        "Secondary.TButton",
+        background=[
+            ("active", Colors.SURFACE_HOVER),
+            ("pressed", Colors.SURFACE_ACTIVE)
+        ]
+    )
+    
+    # Danger Button
+    style.configure(
+        "Danger.TButton",
+        font=(FONT_FAMILY_PRIMARY, Typography.MD, Typography.MEDIUM),
+        padding=(Spacing.BUTTON_PADDING_X, Spacing.BUTTON_PADDING_Y),
+        background=Colors.ERROR,
+        foreground=Colors.TEXT_INVERSE,
+        borderwidth=0,
+        focuscolor="none"
+    )
+    
+    style.map(
+        "Danger.TButton",
+        background=[("active", Colors.ERROR_HOVER)]
+    )
+    
+    # Premium LabelFrame
+    style.configure(
+        "Premium.TLabelframe",
+        background=Colors.BG_CARD,
+        borderwidth=1,
+        relief="solid",
+        lightcolor=Colors.BORDER_DEFAULT,
+        darkcolor=Colors.BORDER_DEFAULT
+    )
+    
+    style.configure(
+        "Premium.TLabelframe.Label",
+        font=(FONT_FAMILY_PRIMARY, Typography.MD, Typography.SEMIBOLD),
+        background=Colors.BG_CARD,
+        foreground=Colors.TEXT_PRIMARY
+    )
+    
+    # Premium Progressbar
+    style.configure(
+        "Premium.Horizontal.TProgressbar",
+        background=Colors.PRIMARY,
+        troughcolor=Colors.BG_TERTIARY,
+        borderwidth=0,
+        lightcolor=Colors.PRIMARY,
+        darkcolor=Colors.PRIMARY
+    )
 
-# --- Main Application Window ---
-def create_main_window():
-    """Creates and returns the main application window and its core widgets."""
+# =============================================================================
+# ENHANCED WINDOW CREATION FUNCTIONS
+# =============================================================================
+
+def create_premium_main_window():
+    """Creates the main application window with premium styling."""
     root = tk.Tk()
     root.title("Ogresync")
-    root.geometry("700x500") # Default size, can be adjusted
-    root.configure(bg="#ECECEC")
-
-    init_font_config() # Initialize fonts after root window exists, before setup_styles
-
-    setup_styles() # Apply ttk styles
-
-    main_frame = ttk.Frame(root, padding="10 10 10 10")
-    main_frame.pack(expand=True, fill=tk.BOTH)
-
-    # Log area
-    log_frame = ttk.LabelFrame(main_frame, text="Activity Log", padding="10 10 10 10")
-    log_frame.pack(pady=10, padx=5, fill=tk.BOTH, expand=True)
+    root.geometry("800x600")
+    root.configure(bg=Colors.BG_PRIMARY)
+    root.minsize(600, 400)
+    
+    # Set window icon
+    try:
+        if hasattr(sys, "_MEIPASS"):
+            icon_path = os.path.join(sys._MEIPASS, "assets", "logo.png")
+        else:
+            icon_path = os.path.join("assets", "logo.png")
+        
+        if os.path.exists(icon_path):
+            img = tk.PhotoImage(file=icon_path)
+            root.iconphoto(True, img)
+    except Exception:
+        pass
+    
+    # Initialize fonts and styles
+    init_font_config()
+    setup_premium_styles()
+    
+    # Create main container with premium styling
+    main_container = tk.Frame(root, bg=Colors.BG_PRIMARY)
+    main_container.pack(fill=tk.BOTH, expand=True, padx=Spacing.XL, pady=Spacing.LG)
+    
+    # Header section with title and subtitle
+    header_frame = tk.Frame(main_container, bg=Colors.BG_PRIMARY)
+    header_frame.pack(fill=tk.X, pady=(0, Spacing.XL))
+    
+    # App title
+    title_label = tk.Label(
+        header_frame,
+        text="Ogresync",
+        font=(FONT_FAMILY_PRIMARY, Typography.H2, Typography.BOLD),
+        bg=Colors.BG_PRIMARY,
+        fg=Colors.TEXT_PRIMARY
+    )
+    title_label.pack(anchor=tk.W)
+    
+    # Subtitle
+    subtitle_label = tk.Label(
+        header_frame,
+        text="Obsidian Vault Synchronization",
+        font=(FONT_FAMILY_PRIMARY, Typography.MD, Typography.NORMAL),
+        bg=Colors.BG_PRIMARY,
+        fg=Colors.TEXT_SECONDARY
+    )
+    subtitle_label.pack(anchor=tk.W, pady=(2, 0))
+    
+    # Main content area using PremiumCard
+    content_card = PremiumCard.create(main_container, padding=Spacing.XL)
+    
+    # Activity log section
+    log_header = tk.Label(
+        content_card,
+        text=f"{Icons.FILE} Activity Log",
+        font=(FONT_FAMILY_PRIMARY, Typography.LG, Typography.SEMIBOLD),
+        bg=Colors.BG_CARD,
+        fg=Colors.TEXT_PRIMARY
+    )
+    log_header.pack(anchor=tk.W, pady=(0, Spacing.SM))
+    
+    # Log text widget with premium styling
+    log_frame = tk.Frame(content_card, bg=Colors.BG_CARD)
+    log_frame.pack(fill=tk.BOTH, expand=True, pady=(0, Spacing.LG))
     
     log_text_widget = scrolledtext.ScrolledText(
-        log_frame, 
-        wrap=tk.WORD, 
-        height=15, 
+        log_frame,
+        wrap=tk.WORD,
+        height=15,
         state='disabled',
-        font=(FONT_FAMILY_PRIMARY, FONT_SIZE_NORMAL),
-        relief=tk.SOLID, # Use tk relief for ScrolledText
-        borderwidth=1
+        font=(FONT_FAMILY_MONO, Typography.SM),
+        bg=Colors.BG_SECONDARY,
+        fg=Colors.TEXT_PRIMARY,
+        insertbackground=Colors.TEXT_PRIMARY,
+        selectbackground=Colors.PRIMARY_LIGHT,
+        selectforeground=Colors.TEXT_PRIMARY,
+        relief=tk.FLAT,
+        borderwidth=1,
+        highlightthickness=1,
+        highlightcolor=Colors.BORDER_ACCENT,
+        highlightbackground=Colors.BORDER_DEFAULT
     )
-    log_text_widget.pack(expand=True, fill=tk.BOTH)
-
-    # Progress bar
-    progress_bar_widget = ttk.Progressbar(main_frame, orient="horizontal", length=300, mode="determinate")
-    progress_bar_widget.pack(pady=(10, 5), padx=5, fill=tk.X)
-
-    # Placeholder for control buttons (to be added in Ogresync.py or here if complex)
-    # control_button_frame = ttk.Frame(main_frame)
-    # control_button_frame.pack(pady=5, fill=tk.X, anchor='s')
-    # Example:
-    # sync_btn = ttk.Button(control_button_frame, text="Start Sync")
-    # sync_btn.pack(side=tk.RIGHT, padx=5)
-    # setup_btn = ttk.Button(control_button_frame, text="Run Setup")
-    # setup_btn.pack(side=tk.RIGHT, padx=5)
-
-
+    log_text_widget.pack(fill=tk.BOTH, expand=True)
+    
+    # Progress section
+    progress_header = tk.Label(
+        content_card,
+        text=f"{Icons.SYNC} Progress",
+        font=(FONT_FAMILY_PRIMARY, Typography.MD, Typography.MEDIUM),
+        bg=Colors.BG_CARD,
+        fg=Colors.TEXT_PRIMARY
+    )
+    progress_header.pack(anchor=tk.W, pady=(0, Spacing.XS))
+    
+    # Progress bar with premium styling
+    progress_frame = tk.Frame(content_card, bg=Colors.BG_CARD)
+    progress_frame.pack(fill=tk.X, pady=(0, Spacing.SM))
+    
+    progress_bar_widget = ttk.Progressbar(
+        progress_frame,
+        style="Premium.Horizontal.TProgressbar",
+        orient="horizontal",
+        length=400,
+        mode="determinate"
+    )
+    progress_bar_widget.pack(fill=tk.X)
+    
     return root, log_text_widget, progress_bar_widget
 
-# --- Conflict Resolution Dialog ---
-def create_conflict_resolution_dialog(parent_window, conflict_files_text):
-    """Creates and shows a themed modal dialog for merge conflict resolution."""
-    top = tk.Toplevel(parent_window)
-    top.title("Merge Conflict Detected")
-    top.transient(parent_window) # Associate with parent
-    top.grab_set() # Make modal
-    top.resizable(False, False)
-    top.configure(bg="#ECECEC")
-
-    # Apply styles to Toplevel if necessary (often inherited or use a new Style object)
-    # style = ttk.Style(top) 
-    # style.theme_use(ttk.Style().theme_use()) # Inherit theme
-
-    dialog_frame = ttk.Frame(top, padding="15 15 15 15")
-    dialog_frame.pack(expand=True, fill=tk.BOTH)
+# Enhanced conflict resolution dialog with premium styling
+def create_premium_conflict_dialog(parent_window, conflict_files_text):
+    """Creates a beautifully styled conflict resolution dialog."""
+    dialog, main_frame = PremiumDialog.create_base(
+        parent_window, 
+        "Merge Conflict Detected", 
+        width=500, 
+        height=350
+    )
     
-    message_text = (f"Merge conflict detected in the following file(s):\\n{conflict_files_text}\\n\\n"
-                    "How would you like to resolve these conflicts?\\n"
-                    "• Keep Local Changes (your version)\\n"
-                    "• Keep Remote Changes (GitHub version)\\n"
-                    "• Merge Manually (resolve conflicts in your editor)")
+    # Header with icon and title
+    header_frame = tk.Frame(main_frame, bg=Colors.BG_PRIMARY)
+    header_frame.pack(fill=tk.X, pady=(0, Spacing.LG))
     
-    label = ttk.Label(dialog_frame, text=message_text, justify="left", wraplength=400)
-    label.pack(pady=(0, 15))
-
-    resolution = {"choice": None} # Use a dictionary to pass choice out
-
+    # Warning icon and title
+    title_frame = tk.Frame(header_frame, bg=Colors.BG_PRIMARY)
+    title_frame.pack(fill=tk.X)
+    
+    icon_label = tk.Label(
+        title_frame,
+        text=Icons.WARNING,
+        font=(FONT_FAMILY_PRIMARY, Typography.H3),
+        bg=Colors.BG_PRIMARY,
+        fg=Colors.WARNING
+    )
+    icon_label.pack(side=tk.LEFT, padx=(0, Spacing.SM))
+    
+    title_label = tk.Label(
+        title_frame,
+        text="Merge Conflict Detected",
+        font=(FONT_FAMILY_PRIMARY, Typography.XL, Typography.SEMIBOLD),
+        bg=Colors.BG_PRIMARY,
+        fg=Colors.TEXT_PRIMARY
+    )
+    title_label.pack(side=tk.LEFT, anchor=tk.W)
+    
+    # Content card
+    content_card = PremiumCard.create(main_frame, padding=Spacing.LG)
+    
+    # Message text
+    message_text = (
+        f"Conflicts were found in the following files:\n\n"
+        f"{conflict_files_text}\n\n"
+        f"Please choose how you'd like to resolve these conflicts:"
+    )
+    
+    message_label = tk.Label(
+        content_card,
+        text=message_text,
+        font=(FONT_FAMILY_PRIMARY, Typography.MD),
+        bg=Colors.BG_CARD,
+        fg=Colors.TEXT_SECONDARY,
+        justify=tk.LEFT,
+        wraplength=420
+    )
+    message_label.pack(pady=(0, Spacing.LG), anchor=tk.W)
+    
+    # Resolution choice storage
+    resolution = {"choice": None}
+    
     def set_choice(choice):
         resolution["choice"] = choice
-        top.destroy()
-
-    btn_frame = ttk.Frame(dialog_frame)
-    btn_frame.pack(pady=10)
-
-    btn_local = ttk.Button(btn_frame, text="Keep Local Changes", command=lambda: set_choice("ours"))
-    btn_remote = ttk.Button(btn_frame, text="Keep Remote Changes", command=lambda: set_choice("theirs"))
-    btn_manual = ttk.Button(btn_frame, text="Merge Manually", command=lambda: set_choice("manual"))
+        dialog.destroy()
     
-    btn_local.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
-    btn_remote.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
-    btn_manual.grid(row=0, column=2, padx=5, pady=5, sticky="ew")
+    # Action buttons with premium styling
+    button_frame = tk.Frame(content_card, bg=Colors.BG_CARD)
+    button_frame.pack(fill=tk.X, pady=(Spacing.MD, 0))
     
-    btn_frame.grid_columnconfigure(0, weight=1)
-    btn_frame.grid_columnconfigure(1, weight=1)
-    btn_frame.grid_columnconfigure(2, weight=1)
-
-    # Center the dialog
-    top.update_idletasks()
-    parent_x = parent_window.winfo_x()
-    parent_y = parent_window.winfo_y()
-    parent_width = parent_window.winfo_width()
-    parent_height = parent_window.winfo_height()
-    dialog_width = top.winfo_width()
-    dialog_height = top.winfo_height()
-    x = parent_x + (parent_width // 2) - (dialog_width // 2)
-    y = parent_y + (parent_height // 2) - (dialog_height // 2)
-    top.geometry(f'+{x}+{y}')
-
-    parent_window.wait_window(top) # Wait for dialog to close
+    # Create premium buttons
+    btn_local = PremiumButton.create_secondary(
+        button_frame, 
+        "Keep Local", 
+        lambda: set_choice("ours"),
+        Icons.DOWNLOAD
+    )
+    btn_local.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, Spacing.SM))
+    
+    btn_remote = PremiumButton.create_secondary(
+        button_frame,
+        "Keep Remote", 
+        lambda: set_choice("theirs"),
+        Icons.UPLOAD
+    )
+    btn_remote.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(Spacing.SM, Spacing.SM))
+    
+    btn_manual = PremiumButton.create_primary(
+        button_frame,
+        "Merge Manually",
+        lambda: set_choice("manual"),
+        Icons.GEAR
+    )
+    btn_manual.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(Spacing.SM, 0))
+    
+    # Wait for user choice
+    parent_window.wait_window(dialog)
     return resolution["choice"]
 
-# --- Minimal UI for Auto-Sync ---
-def create_minimal_ui(auto_run=False):
-    """Creates a minimal UI window for auto-sync mode with modern styling."""
+# Enhanced minimal UI for auto-sync with premium styling
+def create_premium_minimal_ui(auto_run=False):
+    """Creates a minimal UI with premium styling for auto-sync mode."""
     root = tk.Tk()
-    root.title("Ogresync" if auto_run else "Ogresync Setup")
-    root.geometry("500x350")
-    root.configure(bg="#ECECEC")
+    root.title("Ogresync")
+    root.geometry("600x400")
+    root.configure(bg=Colors.BG_PRIMARY)
+    root.resizable(False, False)
     
-    # Set icon with error handling
+    # Set icon
     try:
-        import sys
-        import os
         if hasattr(sys, "_MEIPASS"):
             icon_path = os.path.join(sys._MEIPASS, "assets", "logo.png")
         else:
@@ -205,132 +959,514 @@ def create_minimal_ui(auto_run=False):
             img = tk.PhotoImage(file=icon_path)
             root.iconphoto(True, img)
     except Exception:
-        pass  # Use default icon if loading fails
+        pass  # Icon loading failed, continue without icon
     
-    init_font_config()  # Initialize fonts after root window exists
-    setup_styles()  # Apply ttk styles
-    
-    main_frame = ttk.Frame(root, padding="15 15 15 15")
-    main_frame.pack(expand=True, fill=tk.BOTH)
-    
-    # Title label
-    title_text = "Auto-Sync Active" if auto_run else "Ogresync Ready"
-    title_label = ttk.Label(main_frame, text=title_text, style="Header.TLabel")
-    title_label.pack(pady=(0, 10))
-    
-    # Log area
-    log_frame = ttk.LabelFrame(main_frame, text="Activity Log", padding="10 10 10 10")
-    log_frame.pack(pady=5, fill=tk.BOTH, expand=True)
-    
-    log_text_widget = scrolledtext.ScrolledText(
-        log_frame,
-        wrap=tk.WORD,
-        height=12,
-        state='disabled',
-        font=(FONT_FAMILY_PRIMARY, FONT_SIZE_NORMAL),
-        relief=tk.SOLID,
-        borderwidth=1
-    )
-    log_text_widget.pack(expand=True, fill=tk.BOTH)
-    
-    # Progress bar
-    progress_bar_widget = ttk.Progressbar(main_frame, orient="horizontal", length=400, mode="determinate")
-    progress_bar_widget.pack(pady=(10, 5), fill=tk.X)
-    
-    return root, log_text_widget, progress_bar_widget
-
-# --- Wizard UI for Setup ---
-def create_wizard_ui():
-    """Creates a larger UI with wizard-related buttons for setup mode."""
-    root = tk.Tk()
-    root.title("Ogresync Setup")
-    root.geometry("600x500")
-    root.configure(bg="#ECECEC")
-    
-    # Set icon with error handling
-    try:
-        import sys
-        import os
-        if hasattr(sys, "_MEIPASS"):
-            icon_path = os.path.join(sys._MEIPASS, "assets", "logo.png")
-        else:
-            icon_path = os.path.join("assets", "logo.png")
-        
-        if os.path.exists(icon_path):
-            img = tk.PhotoImage(file=icon_path)
-            root.iconphoto(True, img)
-    except Exception:
-        pass  # Use default icon if loading fails
-    
-    init_font_config()  # Initialize fonts after root window exists
-    setup_styles()  # Apply ttk styles
-    
-    main_frame = ttk.Frame(root, padding="20 20 20 20")
-    main_frame.pack(expand=True, fill=tk.BOTH)
+    # Main content area
+    main_frame = tk.Frame(root, bg=Colors.BG_PRIMARY)
+    main_frame.pack(fill=tk.BOTH, expand=True, padx=Spacing.LG, pady=Spacing.LG)
     
     # Header
-    header_label = ttk.Label(main_frame, text="Ogresync First-Time Setup", style="Header.TLabel")
-    header_label.pack(pady=(0, 15))
+    header_frame = tk.Frame(main_frame, bg=Colors.BG_PRIMARY)
+    header_frame.pack(fill=tk.X, pady=(0, Spacing.LG))
+    
+    title_label = tk.Label(
+        header_frame,
+        text="🔄 Ogresync Auto-Sync",
+        font=(FONT_FAMILY_PRIMARY, Typography.H1, Typography.BOLD),
+        bg=Colors.BG_PRIMARY,
+        fg=Colors.PRIMARY
+    )
+    title_label.pack()
+    
+    # Progress section
+    progress_frame = tk.Frame(main_frame, bg=Colors.BG_PRIMARY)
+    progress_frame.pack(fill=tk.X, pady=(0, Spacing.LG))
+    
+    progress_label = tk.Label(
+        progress_frame,
+        text="Sync Progress:",
+        font=(FONT_FAMILY_PRIMARY, Typography.SM, Typography.BOLD),
+        bg=Colors.BG_PRIMARY,
+        fg=Colors.TEXT_PRIMARY
+    )
+    progress_label.pack(anchor=tk.W)
+    
+    progress_bar = ttk.Progressbar(
+        progress_frame,
+        mode='determinate',
+        length=400,
+        style="Premium.Horizontal.TProgressbar"
+    )
+    progress_bar.pack(fill=tk.X, pady=(Spacing.SM, 0))
     
     # Log area
-    log_frame = ttk.LabelFrame(main_frame, text="Setup Progress", padding="10 10 10 10")
-    log_frame.pack(pady=5, fill=tk.BOTH, expand=True)
+    log_frame = tk.Frame(main_frame, bg=Colors.BG_PRIMARY)
+    log_frame.pack(fill=tk.BOTH, expand=True)
     
-    log_text_widget = scrolledtext.ScrolledText(
+    log_label = tk.Label(
         log_frame,
-        wrap=tk.WORD,
-        height=12,
-        font=(FONT_FAMILY_PRIMARY, FONT_SIZE_NORMAL),
-        relief=tk.SOLID,
-        borderwidth=1
+        text="Sync Log:",
+        font=(FONT_FAMILY_PRIMARY, Typography.SM, Typography.BOLD),
+        bg=Colors.BG_PRIMARY,
+        fg=Colors.TEXT_PRIMARY
     )
-    log_text_widget.pack(expand=True, fill=tk.BOTH)
+    log_label.pack(anchor=tk.W)
     
-    # Progress bar
-    progress_bar_widget = ttk.Progressbar(main_frame, orient="horizontal", length=500, mode="determinate")
-    progress_bar_widget.pack(pady=(10, 15), fill=tk.X)
+    log_text = scrolledtext.ScrolledText(
+        log_frame,
+        height=12,
+        font=(FONT_FAMILY_MONO, Typography.SM),
+        bg=Colors.BG_CARD,
+        fg=Colors.TEXT_PRIMARY,
+        relief=tk.FLAT,
+        borderwidth=1,
+        highlightthickness=1,
+        highlightcolor=Colors.BORDER_ACCENT,
+        highlightbackground=Colors.BORDER_DEFAULT,
+        insertbackground=Colors.PRIMARY,
+        selectbackground=Colors.PRIMARY_LIGHT,
+        selectforeground=Colors.TEXT_PRIMARY,
+        state='disabled'
+    )
+    log_text.pack(fill=tk.BOTH, expand=True, pady=(Spacing.SM, 0))
     
-    # Button frame for SSH operations
-    btn_frame = ttk.Frame(main_frame)
-    btn_frame.pack(pady=10, fill=tk.X)
+    return root, log_text, progress_bar
+
+# Enhanced wizard UI for setup with premium styling
+def create_premium_wizard_ui():
+    """Creates a premium setup wizard interface."""
+    root = tk.Tk()
+    root.title("Ogresync Setup")
+    root.geometry("700x550")
+    root.configure(bg=Colors.BG_PRIMARY)
+    root.resizable(True, False)
+    root.minsize(600, 500)
     
-    # Note: The actual button commands will be passed from the main file
-    # These buttons will be created but commands assigned later
-    ssh_buttons_frame = ttk.Frame(btn_frame)
-    ssh_buttons_frame.pack(pady=5)
+    # Set icon
+    try:
+        if hasattr(sys, "_MEIPASS"):
+            icon_path = os.path.join(sys._MEIPASS, "assets", "logo.png")
+        else:
+            icon_path = os.path.join("assets", "logo.png")
+        
+        if os.path.exists(icon_path):
+            img = tk.PhotoImage(file=icon_path)
+            root.iconphoto(True, img)
+    except Exception:
+        pass  # Icon loading failed, continue without icon
     
-    # Create button placeholders that will have commands assigned later
-    gen_btn = ttk.Button(ssh_buttons_frame, text="Generate SSH Key")
-    gen_btn.grid(row=0, column=0, padx=10, pady=5, sticky="ew")
+    # Main content area with premium styling
+    main_frame = tk.Frame(root, bg=Colors.BG_PRIMARY)
+    main_frame.pack(fill=tk.BOTH, expand=True, padx=Spacing.LG, pady=Spacing.LG)
     
-    copy_btn = ttk.Button(ssh_buttons_frame, text="Copy SSH Key")
-    copy_btn.grid(row=0, column=1, padx=10, pady=5, sticky="ew")
+    # Header
+    header_frame = tk.Frame(main_frame, bg=Colors.BG_PRIMARY)
+    header_frame.pack(fill=tk.X, pady=(0, Spacing.LG))
     
-    test_ssh_btn = ttk.Button(ssh_buttons_frame, text="Re-test SSH")
-    test_ssh_btn.grid(row=0, column=2, padx=10, pady=5, sticky="ew")
+    title_label = tk.Label(
+        header_frame,
+        text="🔄 Ogresync Setup Wizard",
+        font=(FONT_FAMILY_PRIMARY, Typography.H1, Typography.BOLD),
+        bg=Colors.BG_PRIMARY,
+        fg=Colors.PRIMARY
+    )
+    title_label.pack()
     
-    # Configure grid weights for equal button sizing
-    ssh_buttons_frame.grid_columnconfigure(0, weight=1)
-    ssh_buttons_frame.grid_columnconfigure(1, weight=1)
-    ssh_buttons_frame.grid_columnconfigure(2, weight=1)
+    subtitle_label = tk.Label(
+        header_frame,
+        text="Set up your Obsidian vault synchronization with GitHub",
+        font=(FONT_FAMILY_PRIMARY, Typography.MD),
+        bg=Colors.BG_PRIMARY,
+        fg=Colors.TEXT_SECONDARY
+    )
+    subtitle_label.pack(pady=(Spacing.SM, 0))
+    
+    # Progress section
+    progress_frame = tk.Frame(main_frame, bg=Colors.BG_PRIMARY)
+    progress_frame.pack(fill=tk.X, pady=(0, Spacing.LG))
+    
+    progress_label = tk.Label(
+        progress_frame,
+        text="Setup Progress:",
+        font=(FONT_FAMILY_PRIMARY, Typography.SM, Typography.BOLD),
+        bg=Colors.BG_PRIMARY,
+        fg=Colors.TEXT_PRIMARY
+    )
+    progress_label.pack(anchor=tk.W)
+    
+    progress_bar = ttk.Progressbar(
+        progress_frame,
+        mode='determinate',
+        length=400,
+        style="Premium.Horizontal.TProgressbar"
+    )
+    progress_bar.pack(fill=tk.X, pady=(Spacing.SM, 0))
+    
+    # Log area
+    log_frame = tk.Frame(main_frame, bg=Colors.BG_PRIMARY)
+    log_frame.pack(fill=tk.BOTH, expand=True, pady=(0, Spacing.LG))
+    
+    log_label = tk.Label(
+        log_frame,
+        text="Setup Log:",
+        font=(FONT_FAMILY_PRIMARY, Typography.SM, Typography.BOLD),
+        bg=Colors.BG_PRIMARY,
+        fg=Colors.TEXT_PRIMARY
+    )
+    log_label.pack(anchor=tk.W)
+    
+    log_text = scrolledtext.ScrolledText(
+        log_frame,
+        height=12,
+        font=(FONT_FAMILY_MONO, Typography.SM),
+        bg=Colors.BG_CARD,
+        fg=Colors.TEXT_PRIMARY,
+        relief=tk.FLAT,
+        borderwidth=1,
+        highlightthickness=1,
+        highlightcolor=Colors.BORDER_ACCENT,
+        highlightbackground=Colors.BORDER_DEFAULT,
+        insertbackground=Colors.PRIMARY,
+        selectbackground=Colors.PRIMARY_LIGHT,
+        selectforeground=Colors.TEXT_PRIMARY,
+        state='disabled'
+    )
+    log_text.pack(fill=tk.BOTH, expand=True, pady=(Spacing.SM, 0))
+    
+    # Control buttons
+    button_frame = tk.Frame(main_frame, bg=Colors.BG_PRIMARY)
+    button_frame.pack(fill=tk.X)
+    
+    # SSH key generation button
+    gen_btn = PremiumButton.create_secondary(
+        button_frame,
+        "Generate SSH Key",
+        None,  # Command will be set later
+        icon=Icons.SECURITY,
+        size="md"
+    )
+    gen_btn.pack(side=tk.LEFT, padx=(0, Spacing.SM))
+    
+    # Copy SSH key button
+    copy_btn = PremiumButton.create_secondary(
+        button_frame,
+        "Copy SSH Key",
+        None,  # Command will be set later
+        icon=Icons.COPY,
+        size="md"
+    )
+    copy_btn.pack(side=tk.LEFT, padx=(0, Spacing.SM))
+    
+    # Test SSH button
+    test_ssh_btn = PremiumButton.create_primary(
+        button_frame,
+        "Test SSH Connection",
+        None,  # Command will be set later
+        icon=Icons.SUCCESS,
+        size="md"
+    )
+    test_ssh_btn.pack(side=tk.LEFT, padx=(0, Spacing.SM))
     
     # Exit button
-    exit_btn = ttk.Button(btn_frame, text="Exit", width=15)
-    exit_btn.pack(pady=(10, 0))
+    exit_btn = PremiumButton.create_danger(
+        button_frame,
+        "Exit",
+        None,  # Command will be set later
+        size="md"
+    )
+    exit_btn.pack(side=tk.RIGHT)
     
-    # Return everything including button references for command assignment
-    return root, log_text_widget, progress_bar_widget, gen_btn, copy_btn, test_ssh_btn, exit_btn
+    return root, log_text, progress_bar, gen_btn, copy_btn, test_ssh_btn, exit_btn
 
-# --- Helper for simple dialogs (optional, can be expanded) ---
-# You can also wrap standard dialogs if you want to ensure consistent styling/behavior
-# from tkinter import simpledialog, messagebox
+# =============================================================================
+# ENHANCED DIALOG SYSTEM
+# =============================================================================
 
-# def ask_string_dialog(parent, title, prompt):
-#     # Potentially customize simpledialog here if possible, or use a custom Toplevel
-#     return simpledialog.askstring(title, prompt, parent=parent)
+def show_premium_info(title, message, parent=None):
+    """Show an info message with premium styling."""
+    dialog, main_frame = PremiumDialog.create_base(parent, title, 450, 300) # Increased height from 250
+    
+    # Icon and message
+    content_frame = tk.Frame(main_frame, bg=Colors.BG_PRIMARY)
+    content_frame.pack(fill=tk.BOTH, expand=True, pady=Spacing.LG)
+    
+    # Info icon
+    icon_label = tk.Label(
+        content_frame,
+        text=Icons.INFO,
+        font=(FONT_FAMILY_PRIMARY, Typography.H1),
+        bg=Colors.BG_PRIMARY,
+        fg=Colors.INFO
+    )
+    icon_label.pack(pady=(0, Spacing.MD))
+    
+    # Message
+    message_label = tk.Label(
+        content_frame,
+        text=message,
+        font=(FONT_FAMILY_PRIMARY, Typography.MD),
+        bg=Colors.BG_PRIMARY,
+        fg=Colors.TEXT_PRIMARY,
+        wraplength=380,
+        justify=tk.CENTER
+    )
+    message_label.pack(pady=(0, Spacing.LG))
+    
+    # OK button
+    ok_btn = PremiumButton.create_primary(
+        content_frame,
+        "OK",
+        lambda: dialog.destroy(),
+        size="md"
+    )
+    ok_btn.pack(pady=Spacing.SM) # Added pady
+    
+    dialog.wait_window()
+    return True
 
-# def show_info_message(title, message):
-#     messagebox.showinfo(title, message)
+def show_premium_error(title, message, parent=None):
+    """Show an error message with premium styling."""
+    dialog, main_frame = PremiumDialog.create_base(parent, title, 450, 300) # Increased height from 250
+    
+    content_frame = tk.Frame(main_frame, bg=Colors.BG_PRIMARY)
+    content_frame.pack(fill=tk.BOTH, expand=True, pady=Spacing.LG)
+    
+    # Error icon
+    icon_label = tk.Label(
+        content_frame,
+        text=Icons.ERROR,
+        font=(FONT_FAMILY_PRIMARY, Typography.H1),
+        bg=Colors.BG_PRIMARY,
+        fg=Colors.ERROR
+    )
+    icon_label.pack(pady=(0, Spacing.MD))
+    
+    # Message
+    message_label = tk.Label(
+        content_frame,
+        text=message,
+        font=(FONT_FAMILY_PRIMARY, Typography.MD),
+        bg=Colors.BG_PRIMARY,
+        fg=Colors.TEXT_PRIMARY,
+        wraplength=380,
+        justify=tk.CENTER
+    )
+    message_label.pack(pady=(0, Spacing.LG))
+    
+    # OK button
+    ok_btn = PremiumButton.create_primary(
+        content_frame,
+        "OK",
+        lambda: dialog.destroy(),
+        size="md"
+    )
+    ok_btn.pack(pady=Spacing.SM) # Added pady
+    
+    dialog.wait_window()
+    return True
 
-# def show_error_message(title, message):
-#     messagebox.showerror(title, message)
+def ask_premium_yes_no(title, message, parent=None):
+    """Ask a yes/no question with premium styling."""
+    dialog, main_frame = PremiumDialog.create_base(parent, title, 450, 330) # Increased height from 300
+    
+    result = {"answer": False}
+    
+    content_frame = tk.Frame(main_frame, bg=Colors.BG_PRIMARY)
+    content_frame.pack(fill=tk.BOTH, expand=True, pady=Spacing.LG)
+    
+    # Question icon
+    icon_label = tk.Label(
+        content_frame,
+        text="?",
+        font=(FONT_FAMILY_PRIMARY, Typography.H1, Typography.BOLD),
+        bg=Colors.BG_PRIMARY,
+        fg=Colors.INFO
+    )
+    icon_label.pack(pady=(0, Spacing.MD))
+    
+    # Message
+    message_label = tk.Label(
+        content_frame,
+        text=message,
+        font=(FONT_FAMILY_PRIMARY, Typography.MD),
+        bg=Colors.BG_PRIMARY,
+        fg=Colors.TEXT_PRIMARY,
+        wraplength=380,
+        justify=tk.CENTER
+    )
+    message_label.pack(pady=(0, Spacing.LG))
+    
+    # Buttons
+    button_frame = tk.Frame(content_frame, bg=Colors.BG_PRIMARY)
+    button_frame.pack(pady=Spacing.SM) # Added pady
+    
+    def yes_clicked():
+        result["answer"] = True
+        dialog.destroy()
+    
+    def no_clicked():
+        result["answer"] = False
+        dialog.destroy()
+    
+    yes_btn = PremiumButton.create_primary(
+        button_frame,
+        "Yes",
+        yes_clicked,
+        size="md"
+    )
+    yes_btn.pack(side=tk.LEFT, padx=(0, Spacing.SM))
+    
+    no_btn = PremiumButton.create_secondary(
+        button_frame,
+        "No", 
+        no_clicked,
+        size="md"
+    )
+    no_btn.pack(side=tk.LEFT)
+    
+    dialog.wait_window()
+    return result["answer"]
+
+def ask_premium_string(title, prompt, initial_value="", parent=None, icon=None): # Added icon parameter
+    """Ask for string input with premium styling."""
+    dialog, main_frame = PremiumDialog.create_base(parent, title, 500, 300)
+    
+    result = {"value": None}
+    
+    content_frame = tk.Frame(main_frame, bg=Colors.BG_PRIMARY)
+    content_frame.pack(fill=tk.BOTH, expand=True, pady=Spacing.LG)
+    
+    # Input icon
+    icon_label = tk.Label(
+        content_frame,
+        text=icon if icon else "📝",  # Use provided icon or default
+        font=(FONT_FAMILY_PRIMARY, Typography.H2),
+        bg=Colors.BG_PRIMARY,
+        fg=Colors.PRIMARY
+    )
+    icon_label.pack(pady=(0, Spacing.MD))
+    
+    # Prompt message
+    prompt_label = tk.Label(
+        content_frame,
+        text=prompt,
+        font=(FONT_FAMILY_PRIMARY, Typography.MD),
+        bg=Colors.BG_PRIMARY,
+        fg=Colors.TEXT_PRIMARY,
+        wraplength=420,
+        justify=tk.CENTER
+    )
+    prompt_label.pack(pady=(0, Spacing.LG))
+    
+    # Text input with premium styling
+    input_frame = tk.Frame(content_frame, bg=Colors.BG_PRIMARY)
+    input_frame.pack(fill=tk.X, pady=(0, Spacing.LG))
+    
+    entry_var = tk.StringVar(value=initial_value)
+    entry = tk.Entry(
+        input_frame,
+        textvariable=entry_var,
+        font=(FONT_FAMILY_PRIMARY, Typography.MD),
+        bg=Colors.BG_CARD,
+        fg=Colors.TEXT_PRIMARY,
+        relief=tk.FLAT,
+        borderwidth=2,
+        highlightthickness=2,
+        highlightcolor=Colors.BORDER_ACCENT,
+        highlightbackground=Colors.BORDER_DEFAULT,
+        insertbackground=Colors.PRIMARY,
+        selectbackground=Colors.PRIMARY_LIGHT,
+        selectforeground=Colors.TEXT_PRIMARY
+    )
+    entry.pack(fill=tk.X, ipady=8, padx=Spacing.MD)
+    entry.focus_set()
+    entry.select_range(0, tk.END)
+    
+    # Button frame
+    button_frame = tk.Frame(content_frame, bg=Colors.BG_PRIMARY)
+    button_frame.pack(pady=(Spacing.MD, 0))
+    
+    def submit():
+        result["value"] = entry_var.get().strip()
+        dialog.destroy()
+    
+    def cancel():
+        result["value"] = None
+        dialog.destroy()
+    
+    # Bind Enter key to submit
+    def on_enter(event):
+        submit()
+    
+    dialog.bind('<Return>', on_enter)
+    dialog.bind('<KP_Enter>', on_enter)
+    
+    # Create buttons
+    ok_btn = PremiumButton.create_primary(
+        button_frame,
+        "OK",
+        submit,
+        icon=Icons.SUCCESS,
+        size="md"
+    )
+    ok_btn.pack(side=tk.LEFT, padx=(0, Spacing.SM))
+    
+    cancel_btn = PremiumButton.create_secondary(
+        button_frame,
+        "Cancel",
+        cancel,
+        size="md"
+    )
+    cancel_btn.pack(side=tk.LEFT)
+    
+    dialog.wait_window()
+    return result["value"]
+
+# =============================================================================
+# BACKWARD COMPATIBILITY WRAPPERS
+# =============================================================================
+
+# Legacy function wrappers for backward compatibility
+def create_main_window():
+    """Legacy wrapper for create_premium_main_window."""
+    return create_premium_main_window()
+
+def create_conflict_resolution_dialog(parent_window, conflict_files_text):
+    """Legacy wrapper for create_premium_conflict_dialog."""
+    return create_premium_conflict_dialog(parent_window, conflict_files_text)
+
+def create_minimal_ui(auto_run=False):
+    """Legacy wrapper for create_premium_minimal_ui."""
+    return create_premium_minimal_ui(auto_run)
+
+def create_wizard_ui():
+    """Legacy wrapper for create_premium_wizard_ui."""
+    return create_premium_wizard_ui()
+
+def show_info_message(title, message, parent=None):
+    """Legacy wrapper for show_premium_info."""
+    return show_premium_info(title, message, parent)
+
+def show_error_message(title, message, parent=None):
+    """Legacy wrapper for show_premium_error."""
+    return show_premium_error(title, message, parent)
+
+def ask_yes_no(title, message, parent=None):
+    """Legacy wrapper for ask_premium_yes_no."""
+    return ask_premium_yes_no(title, message, parent)
+
+def ask_string_dialog(title, prompt, initial_value="", parent=None, icon=None): # Added icon parameter
+    """Legacy wrapper for ask_premium_string."""
+    return ask_premium_string(title, prompt, initial_value, parent, icon) # Pass icon
+
+def ask_file_dialog(title, filetypes=None, parent=None):
+    """Open file selection dialog (fallback to tkinter)."""
+    from tkinter import filedialog
+    if filetypes is None:
+        filetypes = [("All files", "*.*")]
+    return filedialog.askopenfilename(title=title, parent=parent, filetypes=filetypes)
+
+def ask_directory_dialog(title, parent=None):
+    """Open directory selection dialog (fallback to tkinter)."""
+    from tkinter import filedialog
+    return filedialog.askdirectory(title=title, parent=parent)

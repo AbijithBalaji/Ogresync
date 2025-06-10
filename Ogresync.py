@@ -7,9 +7,10 @@ import time
 import psutil
 import shutil
 import tkinter as tk
-from tkinter import ttk, scrolledtext, messagebox, filedialog, simpledialog
+from tkinter import ttk, scrolledtext
 import webbrowser
 import pyperclip
+import requests
 import ui_elements # Import the new UI module
 
 # ------------------------------------------------
@@ -112,23 +113,66 @@ def ensure_github_known_host():
 
 def is_obsidian_running():
     """
-    Checks if Obsidian is currently running.
-    
-    Windows: looks for "obsidian.exe".
-    Linux: looks for "obsidian".
-    macOS: looks for "Obsidian".
+    Checks if Obsidian is currently running using a more robust approach.
+    Compares against known process names and the configured obsidian_path.
     """
-    process_name = ""
+    # Attempt to load config_data if not already loaded (e.g., if called in a standalone context)
+    if not config_data.get("OBSIDIAN_PATH"):
+        load_config() # Ensure config_data is populated
+
+    obsidian_executable_path = config_data.get("OBSIDIAN_PATH")
+    # Normalize obsidian_executable_path for comparison
+    if obsidian_executable_path:
+        obsidian_executable_path = os.path.normpath(obsidian_executable_path).lower()
+
+    process_names_to_check = []
     if sys.platform.startswith("win"):
-        process_name = "obsidian.exe"
+        process_names_to_check = ["obsidian.exe"]
     elif sys.platform.startswith("linux"):
-        process_name = "obsidian"
+        # Common names for native, Snap, or simple AppImage launches
+        process_names_to_check = ["obsidian"]
+        # Add Flatpak common application ID as a potential process name
+        # psutil often shows the application ID for Flatpak apps
+        process_names_to_check.append("md.obsidian.obsidian")
     elif sys.platform.startswith("darwin"):
-        process_name = "Obsidian"
-    for proc in psutil.process_iter(attrs=["name"]):
-        name = proc.info.get("name", "")
-        if name and name.lower() == process_name.lower():
-            return True
+        process_names_to_check = ["Obsidian"] # Main bundle executable name
+
+    for proc in psutil.process_iter(attrs=["name", "exe", "cmdline"]):
+        try:
+            proc_info_name = proc.info.get("name", "").lower()
+            proc_info_exe = os.path.normpath(proc.info.get("exe", "") or "").lower()
+            proc_info_cmdline = [str(arg).lower() for arg in proc.info.get("cmdline", []) or []]
+
+            # 1. Check against known process names
+            for name_to_check in process_names_to_check:
+                if name_to_check.lower() == proc_info_name:
+                    return True
+
+            # 2. Check if the process executable path matches the configured obsidian_path
+            if obsidian_executable_path and proc_info_exe == obsidian_executable_path:
+                return True
+
+            # 3. For Linux (especially Flatpak/Snap/AppImage) and potentially others,
+            # check if the configured obsidian_path (which could be a command or part of it)
+            # is in the process's command line arguments.
+            if obsidian_executable_path:
+                if any(obsidian_executable_path in cmd_arg for cmd_arg in proc_info_cmdline):
+                    return True
+                # Sometimes the exe is just 'flatpak' and the app id is in cmdline
+                if proc_info_name == "flatpak" and any("md.obsidian.obsidian" in cmd_arg for cmd_arg in proc_info_cmdline):
+                    return True
+                
+            # 4. Special case for Flatpak: check for bwrap process with obsidian in cmdline
+            if proc_info_name == "bwrap" and any("obsidian" in cmd_arg for cmd_arg in proc_info_cmdline):
+                return True
+                
+            # 5. Check for any process with obsidian in the command line (broader match)
+            if any("obsidian" in cmd_arg for cmd_arg in proc_info_cmdline):
+                # Additional validation to avoid false positives
+                if "obsidian.sh" in " ".join(proc_info_cmdline) or "md.obsidian" in " ".join(proc_info_cmdline):
+                    return True
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
     return False
 
 def safe_update_log(message, progress=None):
@@ -228,7 +272,7 @@ def set_github_remote(vault_path):
     existing_remote_url, err, rc = run_command("git remote get-url origin", cwd=vault_path)
     if rc == 0:
         safe_update_log(f"A remote named 'origin' already exists: {existing_remote_url}", 25)
-        override = messagebox.askyesno(
+        override = ui_elements.ask_yes_no(
             "Existing Remote",
             f"A remote 'origin' already points to:\n{existing_remote_url}\n\n"
             "Do you want to override it with a new URL?"
@@ -245,17 +289,17 @@ def set_github_remote(vault_path):
 
     # Prompt for linking a repository
     # Instead of allowing a "No" option, we require linking.
-    use_existing_repo = messagebox.askyesno(
+    use_existing_repo = ui_elements.ask_yes_no(
         "GitHub Repository",
         "A GitHub repository is required for synchronization.\n"
         "Do you have an existing repository you would like to link?\n"
         "(If not, please create a private repository on GitHub and then link to it.)"
     )
     if use_existing_repo:
-        repo_url = simpledialog.askstring(
+        repo_url = ui_elements.ask_string_dialog(
             "GitHub Repository",
             "Enter your GitHub repository URL (e.g., git@github.com:username/repo.git):",
-            parent=root
+            icon=ui_elements.Icons.LINK  # Added icon
         )
         if repo_url:
             out, err, rc = run_command(f"git remote add origin {repo_url}", cwd=vault_path)
@@ -263,13 +307,13 @@ def set_github_remote(vault_path):
                 safe_update_log(f"Git remote 'origin' set to: {repo_url}", 25)
                 return True
             else:
-                messagebox.showerror("Error", f"Error setting Git remote: {err}\nPlease try again.")
+                ui_elements.show_error_message("Error", f"Error setting Git remote: {err}\nPlease try again.")
                 return False
         else:
-            messagebox.showerror("Error", "Repository URL not provided. You must link to a GitHub repository.")
+            ui_elements.show_error_message("Error", "Repository URL not provided. You must link to a GitHub repository.")
             return False
     else:
-        messagebox.showerror("GitHub Repository Required", 
+        ui_elements.show_error_message("GitHub Repository Required", 
                              "Linking a GitHub repository is required for synchronization.\n"
                              "Please create a repository on GitHub (private is recommended) and then link to it.")
         return False
@@ -323,13 +367,13 @@ def find_obsidian_path():
         for path in possible_paths:
             if os.path.exists(path):
                 return path
-        response = messagebox.askyesno("Obsidian Not Found",
+        response = ui_elements.ask_yes_no("Obsidian Not Found",
                                        "Obsidian was not detected in standard locations.\n"
                                        "Would you like to locate the Obsidian executable manually?")
         if response:
-            selected_path = filedialog.askopenfilename(
-                title="Select Obsidian Executable",
-                filetypes=[("Obsidian Executable", "*.exe")]
+            selected_path = ui_elements.ask_file_dialog(
+                "Select Obsidian Executable",
+                [("Obsidian Executable", "*.exe")]
             )
             if selected_path:
                 return selected_path
@@ -365,12 +409,12 @@ def find_obsidian_path():
         obsidian_cmd = shutil.which("obsidian")
         if obsidian_cmd:
             return obsidian_cmd
-        response = messagebox.askyesno("Obsidian Not Found",
+        response = ui_elements.ask_yes_no("Obsidian Not Found",
                                        "Obsidian was not detected in standard locations.\n"
                                        "Would you like to locate the Obsidian application manually?")
         if response:
-            selected_path = filedialog.askopenfilename(
-                title="Select Obsidian Application",
+            selected_path = ui_elements.ask_file_dialog(
+                "Select Obsidian Application",
                 filetypes=[("Obsidian Application", "*.app")]
             )
             if selected_path:
@@ -382,7 +426,7 @@ def select_vault_path():
     """
     Asks user to select Obsidian Vault folder. Returns path or None if canceled.
     """
-    selected = filedialog.askdirectory(title="Select Obsidian Vault Folder")
+    selected = ui_elements.ask_directory_dialog("Select Obsidian Vault Folder")
     return selected if selected else None
 
 def is_git_installed():
@@ -465,13 +509,13 @@ def generate_ssh_key():
     """
     Prompts for the user's email and starts a background thread for SSH key generation.
     """
-    user_email = simpledialog.askstring(
+    user_email = ui_elements.ask_string_dialog(
         "SSH Key Generation",
         "Enter your email address for the SSH key:",
-        parent=root
+        icon=ui_elements.Icons.GEAR  # Added icon
     )
     if not user_email:
-        messagebox.showerror("Email Required", "No email address provided. SSH key generation canceled.")
+        ui_elements.show_error_message("Email Required", "No email address provided. SSH key generation canceled.")
         return
 
     threading.Thread(target=generate_ssh_key_async, args=(user_email,), daemon=True).start()
@@ -511,7 +555,7 @@ def generate_ssh_key_async(user_email):
     except Exception as e:
         safe_update_log(f"Error copying SSH key to clipboard: {e}", 35)
         # 3) Fallback: show a dialog with manual instructions and the public key
-        messagebox.showinfo(
+        ui_elements.show_info_message(
             "Manual SSH Key Copy Required",
             "Automatic copying of your SSH key failed.\n\n"
             "Please open a terminal and run:\n\n"
@@ -521,7 +565,7 @@ def generate_ssh_key_async(user_email):
 
     # 4) Show final info dialog and open GitHub's SSH keys page
     def show_dialog_then_open_browser():
-        messagebox.showinfo(
+        ui_elements.show_info_message(
             "SSH Key Generated",
             "Your SSH key has been generated and copied to the clipboard (if successful).\n\n"
             "If automatic copying failed, please manually copy the key as described.\n\n"
@@ -541,11 +585,11 @@ def copy_ssh_key():
             ssh_key = key_file.read().strip()
             pyperclip.copy(ssh_key)
         webbrowser.open("https://github.com/settings/keys")
-        messagebox.showinfo("SSH Key Copied",
+        ui_elements.show_info_message("SSH Key Copied",
                             "Your SSH key has been copied to the clipboard.\n"
                             "Paste it into GitHub.")
     else:
-        messagebox.showerror("Error", "No SSH key found. Generate one first.")
+        ui_elements.show_error_message("Error", "No SSH key found. Generate one first.")
 
 # ------------------------------------------------
 # AUTO-SYNC (Used if SETUP_DONE=1)
@@ -648,7 +692,7 @@ def auto_sync():
                             run_command("git rebase --abort", cwd=vault_path)
                     elif choice == "manual":
                         safe_update_log("Please resolve the conflicts manually. After resolving, click OK to continue.", 30)
-                        messagebox.showinfo("Manual Merge", "Please resolve the conflicts in the affected files manually and then click OK.")
+                        ui_elements.show_info_message("Manual Merge", "Please resolve the conflicts in the affected files manually and then click OK.")
                         run_command("git add -A", cwd=vault_path)
                         rc_rebase, err_rebase, _ = run_command("git rebase --continue", cwd=vault_path)
                         if rc_rebase != 0:
@@ -727,7 +771,7 @@ def auto_sync():
                             run_command("git rebase --abort", cwd=vault_path)
                     elif choice == "manual":
                         safe_update_log("Please resolve the conflicts manually. After resolving, click OK to continue.", 50)
-                        messagebox.showinfo("Manual Merge", "Please resolve the conflicts in the affected files manually and then click OK.")
+                        ui_elements.show_info_message("Manual Merge", "Please resolve the conflicts in the affected files manually and then click OK.")
                         run_command("git add -A", cwd=vault_path)
                         rc_rebase, err_rebase, _ = run_command("git rebase --continue", cwd=vault_path)
                         if rc_rebase != 0:
@@ -806,7 +850,7 @@ def run_setup_wizard():
     # 1) Find Obsidian
     obsidian_path = find_obsidian_path()
     if not obsidian_path:
-        messagebox.showerror("Setup Aborted", "Obsidian not found. Exiting.")
+        ui_elements.show_error_message("Setup Aborted", "Obsidian not found. Exiting.")
         return
     config_data["OBSIDIAN_PATH"] = obsidian_path
     safe_update_log(f"Obsidian found: {obsidian_path}", 5)
@@ -816,7 +860,7 @@ def run_setup_wizard():
     if not config_data["VAULT_PATH"]:
         vault = select_vault_path()
         if not vault:
-            messagebox.showerror("Setup Aborted", "No vault folder selected. Exiting.")
+            ui_elements.show_error_message("Setup Aborted", "No vault folder selected. Exiting.")
             return
         config_data["VAULT_PATH"] = vault
     safe_update_log(f"Vault path set: {config_data['VAULT_PATH']}", 10)
@@ -824,7 +868,7 @@ def run_setup_wizard():
     # 3) Check Git installation
     safe_update_log("Checking Git installation...", 15)
     if not is_git_installed():
-        messagebox.showerror("Setup Aborted", "Git is not installed. Please install Git and re-run.")
+        ui_elements.show_error_message("Setup Aborted", "Git is not installed. Please install Git and re-run.")
         return
     safe_update_log("Git is installed.", 20)
 
@@ -833,11 +877,11 @@ def run_setup_wizard():
 
     # 5) Set up GitHub remote (link an existing repository)
     while not set_github_remote(config_data["VAULT_PATH"]):
-        retry = messagebox.askretrycancel("GitHub Repository Required",
+        retry = ui_elements.ask_yes_no("GitHub Repository Required",
                                         "A GitHub repository is required for synchronization.\n"
                                         "Would you like to try linking it again?")
         if not retry:
-            messagebox.showerror("Setup Incomplete", 
+            ui_elements.show_error_message("Setup Incomplete", 
                                 "Setup cannot proceed without linking a GitHub repository.\n"
                                 "Please restart the application once you have a repository URL.")
             return
@@ -845,13 +889,13 @@ def run_setup_wizard():
     # 6) SSH Key Check/Generation
     safe_update_log("Checking SSH key...", 25)
     if not os.path.exists(SSH_KEY_PATH):
-        resp = messagebox.askyesno("SSH Key Missing",
+        resp = ui_elements.ask_yes_no("SSH Key Missing",
                                    "No SSH key found.\nDo you want to generate one now?")
         if resp:
             generate_ssh_key()  # Runs in a background thread
             safe_update_log("Please add the generated key to GitHub, then click 'Re-test SSH'.", 30)
         else:
-            messagebox.showwarning("SSH Key Required", 
+            ui_elements.show_error_message("SSH Key Required", 
                                    "You must generate or provide an SSH key for GitHub sync.")
     else:
         safe_update_log("SSH key found. Make sure it's added to GitHub if you haven't already.", 30)
@@ -865,6 +909,7 @@ def run_setup_wizard():
 # ------------------------------------------------
 
 def main():
+    global root, log_text, progress_bar
     load_config()
 
     # If setup is done, run auto-sync in a minimal/no-UI approach
@@ -874,106 +919,22 @@ def main():
         # Already set up: run auto-sync with a minimal window or even no window.
         # If you truly want NO window at all, you can remove the UI entirely.
         # But let's provide a small log window for user feedback.
-        create_minimal_ui(auto_run=True)
+        root, log_text, progress_bar = ui_elements.create_minimal_ui(auto_run=True)
         auto_sync()
     else:
         # Not set up yet: run the wizard UI
-        create_wizard_ui()
+        root, log_text, progress_bar, gen_btn, copy_btn, test_ssh_btn, exit_btn = ui_elements.create_wizard_ui()
+        
+        # Assign command functions to buttons (using .button attribute for PremiumButton components)
+        gen_btn.button.config(command=generate_ssh_key)
+        copy_btn.button.config(command=copy_ssh_key)
+        test_ssh_btn.button.config(command=re_test_ssh)
+        exit_btn.button.config(command=root.destroy)
+        
         run_setup_wizard()
 
     root.mainloop()
 
-def create_minimal_ui(auto_run=False):
-    global root, log_text, progress_bar
-    root = tk.Tk()
-    root.title("Ogresync" if auto_run else "Ogresync Setup")
-    root.geometry("500x300")
-    root.configure(bg="#1e1e1e")
-    
-    try:
-        if hasattr(sys, "_MEIPASS"):
-            # PyInstaller temporary path
-            icon_path = os.path.join(sys._MEIPASS, "assets", "logo.png")
-        else:
-            icon_path = os.path.join("assets", "logo.png")
-        
-        if os.path.exists(icon_path):
-            img = tk.PhotoImage(file=icon_path)
-            root.iconphoto(True, img)
-        else:
-            safe_update_log(f"Icon not found at {icon_path}", 0)
-    except tk.TclError as e:
-        safe_update_log(f"Error setting icon: {e}. Using default icon.", 0)
-    except Exception as e:
-        safe_update_log(f"An unexpected error occurred while setting icon: {e}. Using default icon.", 0)
-
-
-    # Create a log area and make it read-only
-    log_text = scrolledtext.ScrolledText(root, height=10, width=58, bg="#282828", fg="white")
-    log_text.pack(pady=5)
-    log_text.config(state='disabled')  # Make it read-only
-
-    progress_bar = ttk.Progressbar(root, orient="horizontal", length=450, mode="determinate")
-    progress_bar.pack(pady=5)
-
-
-    # If you truly want to hide it, do: root.withdraw()
-
-def create_wizard_ui():
-    """
-    Creates a larger UI with wizard-related buttons.
-    """
-    global root, log_text, progress_bar
-    root = tk.Tk()
-    root.title("Ogresync Setup")
-    root.geometry("550x400")
-    root.configure(bg="#1e1e1e")
-    
-    try:
-        if hasattr(sys, "_MEIPASS"):
-            icon_path = os.path.join(sys._MEIPASS, "assets", "logo.png")
-        else:
-            icon_path = os.path.join("assets", "logo.png")
-        
-        if os.path.exists(icon_path):
-            img = tk.PhotoImage(file=icon_path)
-            root.iconphoto(True, img)
-        else:
-            safe_update_log(f"Icon not found at {icon_path}. Using default icon.", 0)
-    except tk.TclError as e:
-        safe_update_log(f"Error setting icon: {e}. Using default icon.", 0)
-    except Exception as e:
-        safe_update_log(f"An unexpected error occurred while setting icon: {e}. Using default icon.", 0)
-
-    info_label = tk.Label(root, text="Ogresync First-Time Setup", font=("Arial", 14), bg="#1e1e1e", fg="white")
-    info_label.pack(pady=5)
-
-    log_text = scrolledtext.ScrolledText(root, height=10, width=60, bg="#282828", fg="white")
-    log_text.pack(pady=5)
-
-    progress_bar = ttk.Progressbar(root, orient="horizontal", length=500, mode="determinate")
-    progress_bar.pack(pady=5)
-
-    # Optional buttons for SSH key generation or copy
-    btn_frame = tk.Frame(root, bg="#1e1e1e")
-    btn_frame.pack(pady=5)
-
-    gen_btn = tk.Button(btn_frame, text="Generate SSH Key", command=generate_ssh_key, bg="#663399", fg="white")
-    gen_btn.grid(row=0, column=0, padx=5)
-
-    copy_btn = tk.Button(btn_frame, text="Copy SSH Key", command=copy_ssh_key, bg="#0066cc", fg="white")
-    copy_btn.grid(row=0, column=1, padx=5)
-
-    exit_btn = tk.Button(root, text="Exit", command=root.destroy, bg="#ff4444", fg="white", width=12)
-    exit_btn.pack(pady=5)
-
-    test_ssh_again_btn = tk.Button(
-        root, text="Re-test SSH", command=re_test_ssh, 
-        bg="#00cc66", fg="white"
-    )
-    test_ssh_again_btn.pack()
-
-    
 # ------------------------------------------------
 # EXECUTION
 # ------------------------------------------------
