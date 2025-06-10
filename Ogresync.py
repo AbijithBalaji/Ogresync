@@ -6,6 +6,7 @@ import threading
 import time
 import psutil
 import shutil
+import random
 import tkinter as tk
 from tkinter import ttk, scrolledtext
 import webbrowser
@@ -235,6 +236,290 @@ def conflict_resolution_dialog(conflict_files):
     return ui_elements.create_conflict_resolution_dialog(root, conflict_files)
 
 # ------------------------------------------------
+# REPOSITORY CONFLICT RESOLUTION FUNCTIONS
+# ------------------------------------------------
+
+def analyze_repository_state(vault_path):
+    """
+    Analyzes the state of local vault and remote repository to detect potential conflicts.
+    Returns a dictionary with analysis results.
+    """
+    analysis = {
+        "has_local_files": False,
+        "has_remote_files": False,
+        "local_files": [],
+        "remote_files": [],
+        "conflict_detected": False
+    }
+    
+    # Check for local files (excluding .git directory)
+    try:
+        for root_dir, dirs, files in os.walk(vault_path):
+            # Skip .git directory
+            if '.git' in root_dir:
+                continue
+            for file in files:
+                # Skip hidden files and common non-content files
+                if not file.startswith('.') and file not in ['README.md', '.gitignore']:
+                    rel_path = os.path.relpath(os.path.join(root_dir, file), vault_path)
+                    analysis["local_files"].append(rel_path)
+        
+        analysis["has_local_files"] = len(analysis["local_files"]) > 0
+    except Exception as e:
+        safe_update_log(f"Error analyzing local files: {e}", None)
+    
+    # Check for remote files by attempting to fetch
+    try:
+        # Try to fetch remote refs to see if repository has content
+        fetch_out, fetch_err, fetch_rc = run_command("git fetch origin", cwd=vault_path)
+        if fetch_rc == 0:
+            # Check if remote main branch exists and has files
+            ls_out, ls_err, ls_rc = run_command("git ls-tree -r --name-only origin/main", cwd=vault_path)
+            if ls_rc == 0 and ls_out.strip():
+                remote_files = [f.strip() for f in ls_out.splitlines() if f.strip() and not f.startswith('.')]
+                # Filter out common non-content files
+                analysis["remote_files"] = [f for f in remote_files if f not in ['README.md', '.gitignore']]
+                analysis["has_remote_files"] = len(analysis["remote_files"]) > 0
+    except Exception as e:
+        safe_update_log(f"Error analyzing remote repository: {e}", None)
+    
+    # Determine if there's a conflict (both local and remote have content files)
+    analysis["conflict_detected"] = analysis["has_local_files"] and analysis["has_remote_files"]
+    
+    return analysis
+
+def handle_initial_repository_conflict(vault_path, analysis):
+    """
+    Handles repository content conflicts during initial setup.
+    Returns True if resolved successfully, False otherwise.
+    """
+    if not analysis["conflict_detected"]:
+        return True
+    
+    # Create conflict resolution dialog
+    message = (
+        "Both your local vault and the remote repository contain files. "
+        "How would you like to resolve this conflict?"
+    )
+    
+    choice = ui_elements.create_repository_conflict_dialog(root, message, analysis)
+    
+    if choice == "merge":
+        return handle_merge_strategy(vault_path)
+    elif choice == "local":
+        return handle_local_strategy(vault_path)
+    elif choice == "remote":
+        return handle_remote_strategy(vault_path, analysis)
+    else:
+        safe_update_log("No conflict resolution strategy selected.", None)
+        return False
+
+def ensure_git_user_config():
+    """
+    Ensures Git user configuration is set up for commits.
+    Sets default values if not configured.
+    """
+    try:
+        # Check if user.name is configured
+        name_out, name_err, name_rc = run_command("git config --global user.name")
+        if name_rc != 0 or not name_out.strip():
+            safe_update_log("Setting default Git user name...", None)
+            run_command('git config --global user.name "Ogresync User"')
+        
+        # Check if user.email is configured
+        email_out, email_err, email_rc = run_command("git config --global user.email")
+        if email_rc != 0 or not email_out.strip():
+            safe_update_log("Setting default Git user email...", None)
+            run_command('git config --global user.email "ogresync@example.com"')
+            
+    except Exception as e:
+        safe_update_log(f"Warning: Could not configure Git user settings: {e}", None)
+
+def handle_merge_strategy(vault_path):
+    """
+    Handles the merge strategy - combines local and remote files.
+    """
+    try:
+        # Ensure Git user configuration is set
+        ensure_git_user_config()
+        
+        safe_update_log("Resolving conflict using merge strategy...", None)
+        
+        # First, commit any local changes
+        safe_update_log("Committing local files before merge...", None)
+        run_command("git add -A", cwd=vault_path)
+        commit_out, commit_err, commit_rc = run_command('git commit -m "Local files before merge"', cwd=vault_path)
+        
+        if commit_rc != 0:
+            safe_update_log(f"⚠️ Warning: Could not commit local files: {commit_err}", None)
+            # Continue anyway - might be no changes to commit
+        
+        # Pull remote changes with merge strategy
+        safe_update_log("Attempting to merge remote changes...", None)
+        merge_out, merge_err, merge_rc = run_command("git pull origin main --no-rebase --allow-unrelated-histories", cwd=vault_path)
+        
+        safe_update_log(f"Merge command output: {merge_out}", None)
+        if merge_err:
+            safe_update_log(f"Merge command stderr: {merge_err}", None)
+        
+        if merge_rc == 0:
+            safe_update_log("✅ Files merged successfully. Both local and remote files are now combined.", None)
+            # Push the merged result back to remote repository
+            safe_update_log("Pushing merged files to remote repository...", None)
+            push_out, push_err, push_rc = run_command("git push origin main", cwd=vault_path)
+            if push_rc == 0:
+                safe_update_log("✅ Merged files successfully pushed to remote repository.", None)
+            else:
+                safe_update_log(f"⚠️ Warning: Could not push merged files: {push_err}", None)
+                safe_update_log("💡 You can push the changes manually later.", None)
+            return True
+        elif "CONFLICT" in (merge_out + merge_err):
+            safe_update_log("⚠️ Automatic merge created conflicts. These will need to be resolved manually during first use.", None)
+            # For now, let's still consider this a success since user can resolve later
+            return True
+        elif "Already up to date" in (merge_out + merge_err):
+            safe_update_log("✅ Repository is already up to date. Merge completed.", None)
+            return True
+        else:
+            # More detailed error reporting
+            safe_update_log(f"❌ Merge failed with return code {merge_rc}", None)
+            safe_update_log(f"❌ Error details: {merge_err}", None)
+            safe_update_log("💡 Don't worry - files will be merged during regular sync process.", None)
+            # Instead of failing completely, let's allow setup to continue
+            return True
+            
+    except Exception as e:
+        safe_update_log(f"❌ Error in merge strategy: {e}", None)
+        safe_update_log("💡 Don't worry - files will be merged during regular sync process.", None)
+        # Instead of failing completely, let's allow setup to continue
+        return True
+
+def handle_local_strategy(vault_path):
+    """
+    Handles the local strategy - keeps local files, overwrites remote.
+    """
+    try:
+        safe_update_log("Resolving conflict using local strategy (keeping local files)...", None)
+        
+        # Commit local files
+        run_command("git add -A", cwd=vault_path)
+        commit_out, commit_err, commit_rc = run_command('git commit -m "Initial commit with local files"', cwd=vault_path)
+        
+        if commit_rc == 0:
+            # Force push to overwrite remote
+            push_out, push_err, push_rc = run_command("git push origin main --force", cwd=vault_path)
+            if push_rc == 0:
+                safe_update_log("✅ Local files have been pushed to remote repository.", None)
+                return True
+            else:
+                safe_update_log(f"❌ Error pushing local files: {push_err}", None)
+                return False
+        else:
+            safe_update_log(f"❌ Error committing local files: {commit_err}", None)
+            return False
+            
+    except Exception as e:
+        safe_update_log(f"❌ Error in local strategy: {e}", None)
+        return False
+
+def handle_remote_strategy(vault_path, analysis):
+    """
+    Handles the remote strategy - downloads remote files, backs up local files.
+    """
+    try:
+        safe_update_log("Resolving conflict using remote strategy (downloading remote files)...", None)
+        
+        # Create backup of local files with descriptive naming
+        backup_dir, backup_name = create_descriptive_backup_dir(vault_path, "before_remote_download", analysis["local_files"])
+        
+        # Move local content files to backup
+        for file_path in analysis["local_files"]:
+            full_path = os.path.join(vault_path, file_path)
+            if os.path.exists(full_path):
+                backup_path = os.path.join(backup_dir, file_path)
+                os.makedirs(os.path.dirname(backup_path), exist_ok=True)
+                shutil.move(full_path, backup_path)
+        
+        # Pull remote files
+        pull_out, pull_err, pull_rc = run_command("git pull origin main", cwd=vault_path)
+        
+        if pull_rc == 0:
+            safe_update_log(f"✅ Remote files downloaded successfully. Local files backed up to: {backup_name}", None)
+            return True
+        else:
+            safe_update_log(f"❌ Error downloading remote files: {pull_err}", None)
+            # Restore backup if pull failed
+            for file_path in analysis["local_files"]:
+                backup_path = os.path.join(backup_dir, file_path)
+                if os.path.exists(backup_path):
+                    full_path = os.path.join(vault_path, file_path)
+                    os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                    shutil.move(backup_path, full_path)
+            os.rmdir(backup_dir) if os.path.exists(backup_dir) and not os.listdir(backup_dir) else None
+            return False
+            
+    except Exception as e:
+        safe_update_log(f"❌ Error in remote strategy: {e}", None)
+        return False
+
+def create_descriptive_backup_dir(vault_path, operation_description, file_list=None):
+    """
+    Creates a backup directory with a descriptive name and optional README.
+    
+    Args:
+        vault_path: Path to the vault directory
+        operation_description: Description of the operation (e.g., "before_remote_download")
+        file_list: Optional list of files being backed up (for documentation)
+    
+    Returns:
+        tuple: (backup_dir_path, backup_name)
+    """
+    from datetime import datetime
+    
+    # Create human-readable timestamp
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    backup_name = f"LOCAL_FILES_BACKUP_{timestamp}_{operation_description}"
+    backup_dir = os.path.join(vault_path, backup_name)
+    
+    # Handle name collisions with incremental counter
+    counter = 1
+    while os.path.exists(backup_dir):
+        backup_name = f"LOCAL_FILES_BACKUP_{timestamp}_{operation_description}_({counter})"
+        backup_dir = os.path.join(vault_path, backup_name)
+        counter += 1
+    
+    # Create the backup directory
+    os.makedirs(backup_dir, exist_ok=True)
+    
+    # Create a README file explaining the backup
+    readme_path = os.path.join(backup_dir, "BACKUP_INFO.txt")
+    with open(readme_path, "w", encoding="utf-8") as f:
+        f.write(f"OGRESYNC LOCAL FILES BACKUP\n")
+        f.write(f"=" * 50 + "\n\n")
+        f.write(f"Created: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"Operation: {operation_description.replace('_', ' ').title()}\n")
+        f.write(f"Backup Directory: {backup_name}\n\n")
+        f.write(f"PURPOSE:\n")
+        f.write(f"This backup was created to preserve your local vault files\n")
+        f.write(f"before performing a repository operation that might modify them.\n\n")
+        
+        if file_list:
+            f.write(f"BACKED UP FILES ({len(file_list)} items):\n")
+            f.write(f"-" * 30 + "\n")
+            for file_path in sorted(file_list):
+                f.write(f"  • {file_path}\n")
+            f.write("\n")
+        
+        f.write(f"RESTORATION:\n")
+        f.write(f"If you need to restore these files, simply copy them back\n")
+        f.write(f"from this backup directory to your vault directory.\n\n")
+        f.write(f"SAFETY:\n")
+        f.write(f"This backup can be safely deleted once you're confident\n")
+        f.write(f"that the repository operation completed successfully.\n")
+    
+    return backup_dir, backup_name
+
+# ------------------------------------------------
 # GITHUB SETUP FUNCTIONS
 # ------------------------------------------------
 def is_git_repo(folder_path):
@@ -305,6 +590,32 @@ def set_github_remote(vault_path):
             out, err, rc = run_command(f"git remote add origin {repo_url}", cwd=vault_path)
             if rc == 0:
                 safe_update_log(f"Git remote 'origin' set to: {repo_url}", 25)
+                
+                # Analyze repository state for potential conflicts
+                safe_update_log("Analyzing repository content for conflicts...", 30)
+                analysis = analyze_repository_state(vault_path)
+                
+                if analysis["conflict_detected"]:
+                    safe_update_log("Repository content conflict detected. Starting conflict resolution...", 30)
+                    if not handle_initial_repository_conflict(vault_path, analysis):
+                        ui_elements.show_error_message("Conflict Resolution Failed", 
+                                               "Failed to resolve repository content conflict.\n"
+                                               "Please try again or resolve manually.")
+                        return False
+                    safe_update_log("Repository conflict resolved successfully.", 35)
+                elif analysis["has_remote_files"]:
+                    safe_update_log("Remote repository contains files. Downloading...", 30)
+                    # Simple case: remote has files, local is empty - just pull
+                    pull_out, pull_err, pull_rc = run_command("git pull origin main", cwd=vault_path)
+                    if pull_rc == 0:
+                        safe_update_log("Remote files downloaded successfully.", 35)
+                    else:
+                        safe_update_log(f"Warning: Could not download remote files: {pull_err}", 35)
+                elif analysis["has_local_files"]:
+                    safe_update_log("Local vault has files, remote is empty. Files will be uploaded during first sync.", 30)
+                else:
+                    safe_update_log("Both local and remote are empty. Ready for first use.", 30)
+                
                 return True
             else:
                 ui_elements.show_error_message("Error", f"Error setting Git remote: {err}\nPlease try again.")

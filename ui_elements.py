@@ -1,5 +1,7 @@
 import tkinter as tk
-from tkinter import ttk, scrolledtext
+import tkinter as tk
+import tkinter as tk
+from tkinter import ttk, scrolledtext, filedialog, messagebox
 import tkinter.font as tkfont
 import sys
 import os
@@ -1470,3 +1472,210 @@ def ask_directory_dialog(title, parent=None):
     """Open directory selection dialog (fallback to tkinter)."""
     from tkinter import filedialog
     return filedialog.askdirectory(title=title, parent=parent)
+
+# Enhanced repository conflict resolution dialog
+def create_repository_conflict_dialog(parent_window, message, analysis):
+    """Creates a dialog for resolving repository content conflicts during setup."""
+    # Create the dialog window
+    dialog = tk.Toplevel(parent_window)
+    dialog.title("Repository Content Conflict")
+    dialog.transient(parent_window)
+    dialog.grab_set()
+    dialog.resizable(False, False)
+    dialog.configure(bg="#FAFBFC")
+    
+    # Center the dialog
+    dialog.update_idletasks()
+    width, height = 650, 550
+    x = (dialog.winfo_screenwidth() // 2) - (width // 2)
+    y = (dialog.winfo_screenheight() // 2) - (height // 2)
+    dialog.geometry(f"{width}x{height}+{x}+{y}")
+    
+    # Main container
+    main_frame = tk.Frame(dialog, bg="#FAFBFC")
+    main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+    
+    # Header with icon and title
+    header_frame = tk.Frame(main_frame, bg="#FAFBFC")
+    header_frame.pack(fill=tk.X, pady=(0, 20))
+    
+    title_label = tk.Label(
+        header_frame,
+        text="⚠️ Repository Content Conflict",
+        font=("Arial", 16, "bold"),
+        bg="#FAFBFC",
+        fg="#1E293B"
+    )
+    title_label.pack()
+    
+    # Content area
+    content_frame = tk.Frame(main_frame, bg="#FFFFFF", relief=tk.RAISED, borderwidth=1)
+    content_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 20))
+    
+    # Padding inside content
+    inner_frame = tk.Frame(content_frame, bg="#FFFFFF")
+    inner_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+    
+    # Message
+    message_label = tk.Label(
+        inner_frame,
+        text=message,
+        font=("Arial", 12),
+        bg="#FFFFFF",
+        fg="#475569",
+        wraplength=580,
+        justify=tk.LEFT
+    )
+    message_label.pack(pady=(0, 20))
+    
+    # File details
+    if analysis["local_files"]:
+        local_label = tk.Label(
+            inner_frame,
+            text=f"📁 Local files ({len(analysis['local_files'])} items):",
+            font=("Arial", 10, "bold"),
+            bg="#FFFFFF",
+            fg="#1E293B"
+        )
+        local_label.pack(anchor=tk.W)
+        
+        local_preview = analysis["local_files"][:3]
+        preview_text = ", ".join(local_preview)
+        if len(analysis["local_files"]) > 3:
+            preview_text += f" and {len(analysis['local_files']) - 3} more..."
+        
+        local_files_label = tk.Label(
+            inner_frame,
+            text=preview_text,
+            font=("Arial", 9),
+            bg="#FFFFFF",
+            fg="#64748B",
+            wraplength=580,
+            justify=tk.LEFT
+        )
+        local_files_label.pack(anchor=tk.W, pady=(2, 10))
+    
+    if analysis["remote_files"]:
+        remote_label = tk.Label(
+            inner_frame,
+            text=f"🌐 Remote files ({len(analysis['remote_files'])} items):",
+            font=("Arial", 10, "bold"),
+            bg="#FFFFFF",
+            fg="#1E293B"
+        )
+        remote_label.pack(anchor=tk.W)
+        
+        remote_preview = analysis["remote_files"][:3]
+        preview_text = ", ".join(remote_preview)
+        if len(analysis["remote_files"]) > 3:
+            preview_text += f" and {len(analysis['remote_files']) - 3} more..."
+        
+        remote_files_label = tk.Label(
+            inner_frame,
+            text=preview_text,
+            font=("Arial", 9),
+            bg="#FFFFFF",
+            fg="#64748B",
+            wraplength=580,
+            justify=tk.LEFT
+        )
+        remote_files_label.pack(anchor=tk.W, pady=(2, 0))
+    
+    # Choice storage
+    choice = {"value": None}
+    
+    def set_choice(selected_choice):
+        choice["value"] = selected_choice
+        dialog.destroy()
+    
+    # Button area
+    button_frame = tk.Frame(inner_frame, bg="#FFFFFF")
+    button_frame.pack(fill=tk.X, pady=(20, 0))
+    
+    # Button 1: Smart Merge (Recommended)
+    merge_btn = tk.Button(
+        button_frame,
+        text="🔄 Smart Merge (Recommended)",
+        command=lambda: set_choice("merge"),
+        font=("Arial", 11, "bold"),
+        bg="#6366F1",
+        fg="#FFFFFF",
+        activebackground="#4F46E5",
+        activeforeground="#FFFFFF",
+        relief=tk.FLAT,
+        borderwidth=0,
+        cursor="hand2",
+        padx=20,
+        pady=12
+    )
+    merge_btn.pack(fill=tk.X, pady=(0, 5))
+    
+    merge_desc = tk.Label(
+        button_frame,
+        text="Combines both local and remote files. Conflicts will be marked for manual review.",
+        font=("Arial", 9),
+        bg="#FFFFFF",
+        fg="#64748B",
+        wraplength=580
+    )
+    merge_desc.pack(anchor=tk.W, pady=(2, 15))
+    
+    # Button 2: Keep Local Files Only
+    local_btn = tk.Button(
+        button_frame,
+        text="📁 Keep Local Files Only",
+        command=lambda: set_choice("local"),
+        font=("Arial", 11),
+        bg="#FFFFFF",
+        fg="#6366F1",
+        activebackground="#F1F5F9",
+        activeforeground="#4F46E5",
+        relief=tk.SOLID,
+        borderwidth=1,
+        cursor="hand2",
+        padx=20,
+        pady=12
+    )
+    local_btn.pack(fill=tk.X, pady=(0, 5))
+    
+    local_desc = tk.Label(
+        button_frame,
+        text="Overwrites remote repository with your local files.",
+        font=("Arial", 9),
+        bg="#FFFFFF",
+        fg="#64748B",
+        wraplength=580
+    )
+    local_desc.pack(anchor=tk.W, pady=(2, 15))
+    
+    # Button 3: Use Remote Files Only
+    remote_btn = tk.Button(
+        button_frame,
+        text="🌐 Use Remote Files Only", 
+        command=lambda: set_choice("remote"),
+        font=("Arial", 11),
+        bg="#FFFFFF",
+        fg="#6366F1",
+        activebackground="#F1F5F9",
+        activeforeground="#4F46E5",
+        relief=tk.SOLID,
+        borderwidth=1,
+        cursor="hand2",
+        padx=20,
+        pady=12
+    )
+    remote_btn.pack(fill=tk.X, pady=(0, 5))
+    
+    remote_desc = tk.Label(
+        button_frame,
+        text="Downloads remote files and backs up your local files.",
+        font=("Arial", 9),
+        bg="#FFFFFF",
+        fg="#64748B",
+        wraplength=580
+    )
+    remote_desc.pack(anchor=tk.W)
+    
+    # Wait for user choice
+    parent_window.wait_window(dialog)
+    return choice["value"]
