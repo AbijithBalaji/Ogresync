@@ -54,9 +54,15 @@ def save_config():
     """
     Writes config_data dict to config.txt.
     """
+    print(f"DEBUG: Saving config to {CONFIG_FILE}")
+    for k, v in config_data.items():
+        print(f"DEBUG: Saving config - {k}: {v}")
+    
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         for k, v in config_data.items():
             f.write(f"{k}={v}\n")
+    
+    print(f"DEBUG: Config saved successfully")
 
 # ------------------------------------------------
 # HELPER FUNCTIONS
@@ -289,7 +295,7 @@ def analyze_repository_state(vault_path):
     
     return analysis
 
-def handle_initial_repository_conflict(vault_path, analysis):
+def handle_initial_repository_conflict(vault_path, analysis, parent_window=None):
     """
     Handles repository content conflicts during initial setup.
     Returns True if resolved successfully, False otherwise.
@@ -303,7 +309,9 @@ def handle_initial_repository_conflict(vault_path, analysis):
         "How would you like to resolve this conflict?"
     )
     
-    choice = ui_elements.create_repository_conflict_dialog(root, message, analysis)
+    # Use the provided parent window or fallback to global root
+    dialog_parent = parent_window if parent_window is not None else root
+    choice = ui_elements.create_repository_conflict_dialog(dialog_parent, message, analysis)
     
     if choice == "merge":
         return handle_merge_strategy(vault_path)
@@ -603,7 +611,7 @@ def set_github_remote(vault_path):
                 
                 if analysis["conflict_detected"]:
                     safe_update_log("Repository content conflict detected. Starting conflict resolution...", 30)
-                    if not handle_initial_repository_conflict(vault_path, analysis):
+                    if not handle_initial_repository_conflict(vault_path, analysis, root):
                         ui_elements.show_error_message("Conflict Resolution Failed", 
                                                "Failed to resolve repository content conflict.\n"
                                                "Please try again or resolve manually.")
@@ -975,12 +983,30 @@ def perform_initial_commit_and_push(vault_path):
         # Commit
         out_commit, err_commit, rc_commit = run_command('git commit -m "Initial commit"', cwd=vault_path)
         if rc_commit == 0:
-            # Push and set upstream
-            out_push, err_push, rc_push = run_command("git push -u origin main", cwd=vault_path)
-            if rc_push == 0:
-                safe_update_log("Initial commit pushed to remote repository successfully.", 60)
+            # Check if remote has commits before pushing
+            ls_out, ls_err, ls_rc = run_command("git ls-remote --heads origin main", cwd=vault_path)
+            
+            if ls_out.strip():
+                # Remote has commits, need to pull first
+                safe_update_log("Remote repository has existing commits. Pulling before push...", 55)
+                pull_out, pull_err, pull_rc = run_command("git pull origin main --allow-unrelated-histories", cwd=vault_path)
+                if pull_rc == 0:
+                    safe_update_log("Successfully pulled remote commits. Now pushing...", 58)
+                    # Now try to push
+                    out_push, err_push, rc_push = run_command("git push -u origin main", cwd=vault_path)
+                    if rc_push == 0:
+                        safe_update_log("Initial commit pushed to remote repository successfully.", 60)
+                    else:
+                        safe_update_log(f"Error pushing after pull: {err_push}", 60)
+                else:
+                    safe_update_log(f"Error pulling remote commits: {pull_err}", 60)
             else:
-                safe_update_log(f"Error pushing initial commit: {err_push}", 60)
+                # Remote is empty, safe to push
+                out_push, err_push, rc_push = run_command("git push -u origin main", cwd=vault_path)
+                if rc_push == 0:
+                    safe_update_log("Initial commit pushed to remote repository successfully.", 60)
+                else:
+                    safe_update_log(f"Error pushing initial commit: {err_push}", 60)
         else:
             safe_update_log(f"Error committing files: {err_commit}", 60)
     else:
@@ -1117,6 +1143,9 @@ def auto_sync():
         if new_vault_path == "run_setup":
             # User chose to run setup wizard again
             safe_update_log("Restarting application to run setup wizard...", 0)
+            # Reset the setup flag to trigger setup wizard
+            config_data["SETUP_DONE"] = "0"
+            save_config()
             root.after(0, lambda: restart_for_setup())
             return
         
@@ -1178,8 +1207,17 @@ def auto_sync():
                 if rc_push == 0:
                     safe_update_log("Initial commit has been successfully pushed to GitHub.", 15)
                 else:
-                    safe_update_log(f"❌ Error pushing initial commit: {err_push}", 15)
-                    network_available = False
+                    # Check if it's a non-fast-forward error
+                    if "non-fast-forward" in err_push:
+                        safe_update_log("Remote has commits. Pulling before push...", 15)
+                        pull_out, pull_err, pull_rc = run_command("git pull origin main --allow-unrelated-histories", cwd=vault_path)
+                        if pull_rc == 0:
+                            safe_update_log("Successfully pulled remote commits.", 15)
+                        else:
+                            safe_update_log(f"Error pulling remote commits: {pull_err}", 15)
+                    else:
+                        safe_update_log(f"❌ Error pushing initial commit: {err_push}", 15)
+                        network_available = False
             else:
                 safe_update_log("Remote branch 'main' found. Proceeding to pull updates from GitHub...", 10)
 
@@ -1365,71 +1403,26 @@ def auto_sync():
 
 def run_setup_wizard():
     """
-    Runs the wizard in the main thread:
-      1) Ask/find Obsidian.
-      2) Ask for Vault.
-      3) Check Git installation.
-      4) Initialize Git repository and set GitHub remote.
-      5) Check/Generate SSH key and Test SSH.
-      6) If everything OK, mark SETUP_DONE=1.
+    Runs the new progressive setup wizard that guides users through all setup steps.
     """
-    safe_update_log("Running first-time setup...", 0)
-
-    # 1) Find Obsidian
-    obsidian_path = find_obsidian_path()
-    if not obsidian_path:
-        ui_elements.show_error_message("Setup Aborted", "Obsidian not found. Exiting.")
-        return
-    config_data["OBSIDIAN_PATH"] = obsidian_path
-    safe_update_log(f"Obsidian found: {obsidian_path}", 5)
-
-    # 2) Vault path selection
-    load_config()  # Load any existing configuration
-    if not config_data["VAULT_PATH"]:
-        vault = select_vault_path()
-        if not vault:
-            ui_elements.show_error_message("Setup Aborted", "No vault folder selected. Exiting.")
-            return
-        config_data["VAULT_PATH"] = vault
-    safe_update_log(f"Vault path set: {config_data['VAULT_PATH']}", 10)
-
-    # 3) Check Git installation
-    safe_update_log("Checking Git installation...", 15)
-    if not is_git_installed():
-        ui_elements.show_error_message("Setup Aborted", "Git is not installed. Please install Git and re-run.")
-        return
-    safe_update_log("Git is installed.", 20)
-
-    # 4) Initialize Git repository in vault if needed
-    initialize_git_repo(config_data["VAULT_PATH"])
-
-    # 5) Set up GitHub remote (link an existing repository)
-    while not set_github_remote(config_data["VAULT_PATH"]):
-        retry = ui_elements.ask_yes_no("GitHub Repository Required",
-                                        "A GitHub repository is required for synchronization.\n"
-                                        "Would you like to try linking it again?")
-        if not retry:
-            ui_elements.show_error_message("Setup Incomplete", 
-                                "Setup cannot proceed without linking a GitHub repository.\n"
-                                "Please restart the application once you have a repository URL.")
-            return
-
-    # 6) SSH Key Check/Generation
-    safe_update_log("Checking SSH key...", 25)
-    if not os.path.exists(SSH_KEY_PATH):
-        resp = ui_elements.ask_yes_no("SSH Key Missing",
-                                   "No SSH key found.\nDo you want to generate one now?")
-        if resp:
-            generate_ssh_key()  # Runs in a background thread
-            safe_update_log("Please add the generated key to GitHub, then click 'Re-test SSH'.", 30)
+    try:
+        dialog, wizard_state = ui_elements.create_progressive_setup_wizard()
+        dialog.mainloop()
+        
+        # Check if setup was completed successfully
+        if wizard_state.get("setup_complete", False):
+            # Setup completed successfully
+            return True
         else:
-            ui_elements.show_error_message("SSH Key Required", 
-                                   "You must generate or provide an SSH key for GitHub sync.")
-    else:
-        safe_update_log("SSH key found. Make sure it's added to GitHub if you haven't already.", 30)
-
-    # 7) Test SSH connection
-    re_test_ssh()
+            # Setup was cancelled or failed
+            return False
+            
+    except Exception as e:
+        ui_elements.show_error_message(
+            "Setup Error",
+            f"An error occurred during setup: {str(e)}"
+        )
+        return False
 
 def setup_new_vault_directory(vault_path):
     """
@@ -1593,51 +1586,17 @@ def setup_new_vault_directory(vault_path):
         return False
 
 # ------------------------------------------------
-# MAIN ENTRY POINT
+# UTILITY FUNCTIONS
 # ------------------------------------------------
-
-def main():
-    global root, log_text, progress_bar
-    load_config()
-
-    # If setup is done, run auto-sync in a minimal/no-UI approach
-    # But if you still want a log window, we can create a small UI. 
-    # We'll do this: if SETUP_DONE=0, show the wizard UI. If =1, show a minimal UI with auto-sync logs.
-    if config_data["SETUP_DONE"] == "1":
-        # Already set up: run auto-sync with a minimal window or even no window.
-        # If you truly want NO window at all, you can remove the UI entirely.
-        # But let's provide a small log window for user feedback.
-        root, log_text, progress_bar = ui_elements.create_minimal_ui(auto_run=True)
-        auto_sync()
-    else:
-        # Not set up yet: run the wizard UI
-        root, log_text, progress_bar, gen_btn, copy_btn, test_ssh_btn, exit_btn = ui_elements.create_wizard_ui()
-        
-        # Assign command functions to buttons (using .button attribute for PremiumButton components)
-        gen_btn.button.config(command=generate_ssh_key)
-        copy_btn.button.config(command=copy_ssh_key)
-        test_ssh_btn.button.config(command=re_test_ssh)
-        exit_btn.button.config(command=root.destroy)
-        
-        run_setup_wizard()
-
-    root.mainloop()
-
-# ------------------------------------------------
-# EXECUTION
-# ------------------------------------------------
-
-if __name__ == "__main__":
-    main()
 
 def restart_for_setup():
     """
     Restarts the application in setup mode by resetting configuration and restarting the main loop.
     """
     try:
-        # Reset setup flag to trigger setup wizard
-        config_data["SETUP_DONE"] = "0"
-        save_config()
+        # Don't reset SETUP_DONE here - only reset if specifically restarting for setup
+        # config_data["SETUP_DONE"] = "0"
+        # save_config()
         
         # Close current window
         if root:
@@ -1648,5 +1607,106 @@ def restart_for_setup():
     except Exception as e:
         print(f"Error restarting for setup: {e}")
         # Fallback: just show error and exit
-        import sys
         sys.exit(1)
+
+def restart_to_sync_mode():
+    """
+    Transitions the application to sync mode after setup completion.
+    """
+    global root, log_text, progress_bar
+    
+    try:
+        # Ensure we have the latest config before transitioning
+        load_config()
+        
+        # Verify the config is properly saved
+        if config_data.get("SETUP_DONE", "0") != "1":
+            config_data["SETUP_DONE"] = "1"
+            save_config()
+        
+        # Close any existing windows
+        if root and root.winfo_exists():
+            root.quit()  # Exit the mainloop
+            root.destroy()
+            root = None
+        
+        # Give a moment for cleanup
+        import time
+        time.sleep(0.1)
+        
+        # Create new sync mode UI
+        root, log_text, progress_bar = ui_elements.create_minimal_ui(auto_run=True)
+        
+        # Start auto-sync
+        auto_sync()
+        
+        # Note: We don't call mainloop() here anymore, let main() handle it
+        
+    except Exception as e:
+        print(f"Error transitioning to sync mode: {e}")
+        sys.exit(1)
+
+# ------------------------------------------------
+# MAIN ENTRY POINT
+# ------------------------------------------------
+
+def main():
+    global root, log_text, progress_bar
+    
+    # Load config, but check if this is the first run
+    load_config()
+    
+    # Check if we need to initialize default config values
+    if not config_data:
+        # Config file doesn't exist or is empty, set defaults
+        config_data["SETUP_DONE"] = "0"
+        config_data["VAULT_PATH"] = ""
+        config_data["OBSIDIAN_PATH"] = ""
+        config_data["GITHUB_REMOTE_URL"] = ""
+
+    # If setup is done, run auto-sync in a minimal/no-UI approach
+    # But if you still want a log window, we can create a small UI. 
+    # We'll do this: if SETUP_DONE=0, show the wizard UI. If =1, show a minimal UI with auto-sync logs.
+    if config_data.get("SETUP_DONE", "0") == "1":
+        # Already set up: run auto-sync with a minimal window or even no window.
+        # If you truly want NO window at all, you can remove the UI entirely.
+        # But let's provide a small log window for user feedback.
+        root, log_text, progress_bar = ui_elements.create_minimal_ui(auto_run=True)
+        auto_sync()
+        root.mainloop()
+    else:
+        # Not set up yet: run the progressive setup wizard
+        dialog, wizard_state = ui_elements.create_progressive_setup_wizard()
+        dialog.mainloop()
+        
+        # Check if setup was completed successfully
+        if wizard_state.get("setup_complete", False):
+            # Setup completed successfully, reload config to get latest values
+            load_config()  # Reload to ensure we have the latest saved values
+            
+            # Ensure SETUP_DONE is set to 1 (it should already be set by the wizard)
+            if config_data.get("SETUP_DONE", "0") != "1":
+                config_data["SETUP_DONE"] = "1"
+                save_config()
+            
+            # Don't show completion message dialog - it creates unwanted windows
+            # The wizard already shows completion status
+            
+            # Transition to sync mode
+            restart_to_sync_mode()
+            
+            # Now run the sync mode mainloop
+            if root and root.winfo_exists():
+                root.mainloop()
+            
+            return  # Exit this main function call
+        else:
+            # Setup was cancelled or failed - no need to show message since it's handled in cancel_setup()
+            return  # Exit without running mainloop
+
+# ------------------------------------------------
+# EXECUTION
+# ------------------------------------------------
+
+if __name__ == "__main__":
+    main()
