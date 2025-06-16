@@ -949,9 +949,10 @@ class OgresyncSetupWizard:
         close_btn.pack(side=tk.RIGHT)
     
     def _step_github_repository(self):
-        """Step 8: Configure GitHub repository."""
+        """Step 8: Configure GitHub repository with enhanced URL validation and format conversion."""
         try:
             import Ogresync
+            import re
             vault_path = self.wizard_state.get("vault_path")
             if not vault_path:
                 return False, "Vault path not set."
@@ -977,26 +978,10 @@ class OgresyncSetupWizard:
                     )
                 
                 if change_remote:
-                    saved_url = Ogresync.config_data.get("GITHUB_REMOTE_URL", "")
-                    if ui_elements:
-                        new_url = ui_elements.ask_premium_string(
-                            "New GitHub Repository",
-                            "Enter the new GitHub repository URL (e.g., git@github.com:username/repo.git):",
-                            initial_value=saved_url if saved_url else "",
-                            parent=self.dialog,
-                            icon=ui_elements.Icons.LINK if hasattr(ui_elements, 'Icons') else None
-                        )
-                    else:
-                        new_url = tk.simpledialog.askstring(
-                            "New GitHub Repository",
-                            "Enter the new GitHub repository URL (e.g., git@github.com:username/repo.git):",
-                            initialvalue=saved_url if saved_url else ""
-                        )
-                    
-                    if not new_url or not new_url.strip():
-                        return False, "No repository URL provided."
-                    
-                    new_url = new_url.strip()
+                    # Enhanced URL input with validation and conversion
+                    success, new_url, message = self._get_validated_repository_url(vault_path)
+                    if not success:
+                        return False, message
                     
                     # Remove existing remote and add new one
                     remove_cmd = "git remote remove origin"
@@ -1019,13 +1004,227 @@ class OgresyncSetupWizard:
                 else:
                     return True, f"Using existing repository: {existing_out.strip()}"
             else:
-                # No remote exists - configure one
-                if Ogresync.configure_remote_url_for_vault(vault_path):
-                    return True, "GitHub repository configured"
+                # No remote exists - configure one with enhanced validation
+                success, repo_url, message = self._get_validated_repository_url(vault_path)
+                if not success:
+                    return False, message
+                
+                # Add remote
+                add_cmd = f"git remote add origin {repo_url}"
+                add_out, add_err, add_rc = Ogresync.run_command(add_cmd, cwd=vault_path)
+                
+                if add_rc == 0:
+                    # Update config with URL
+                    Ogresync.config_data["GITHUB_REMOTE_URL"] = repo_url
+                    Ogresync.save_config()
+                    return True, f"GitHub repository configured: {repo_url}"
                 else:
-                    return False, "Failed to configure GitHub repository."
+                    return False, f"Failed to configure remote: {add_err}"
+                    
         except Exception as e:
             return False, f"Error setting up GitHub repository: {str(e)}"
+
+    def _get_validated_repository_url(self, vault_path):
+        """
+        Enhanced repository URL input with validation and format conversion.
+        Returns: (success: bool, url: str, message: str)
+        """
+        import Ogresync
+        import re
+        import subprocess
+        
+        saved_url = Ogresync.config_data.get("GITHUB_REMOTE_URL", "")
+        max_attempts = 3
+        
+        for attempt in range(max_attempts):
+            # Get URL input from user
+            prompt_msg = (
+                "🔗 Enter your GitHub repository URL:\n\n"
+                "✅ Supported formats:\n"
+                "• SSH: git@github.com:username/repo.git\n"
+                "• HTTPS: https://github.com/username/repo.git\n\n"
+                "💡 HTTPS URLs will be automatically converted to SSH format for better security."
+            )
+            
+            if saved_url and attempt == 0:
+                prompt_msg += f"\n\n📋 Current: {saved_url}"
+            
+            if ui_elements:
+                user_url = ui_elements.ask_premium_string(
+                    "GitHub Repository URL",
+                    prompt_msg,
+                    initial_value=saved_url if saved_url and attempt == 0 else "",
+                    parent=self.dialog,
+                    icon=ui_elements.Icons.LINK if hasattr(ui_elements, 'Icons') else None
+                )
+            else:
+                user_url = tk.simpledialog.askstring(
+                    "GitHub Repository URL",
+                    prompt_msg,
+                    initialvalue=saved_url if saved_url and attempt == 0 else ""
+                )
+            
+            if not user_url or not user_url.strip():
+                return False, "", "No repository URL provided."
+            
+            user_url = user_url.strip()
+            
+            # Validate and convert URL format
+            success, converted_url, error_msg = self._validate_and_convert_url(user_url)
+            if not success:
+                if attempt < max_attempts - 1:
+                    # Show error and allow retry
+                    if ui_elements:
+                        retry = ui_elements.ask_premium_yes_no(
+                            "Invalid URL Format",
+                            f"❌ {error_msg}\n\nWould you like to try again?",
+                            self.dialog
+                        )
+                    else:
+                        retry = messagebox.askyesno(
+                            "Invalid URL Format",
+                            f"❌ {error_msg}\n\nWould you like to try again?"
+                        )
+                    
+                    if not retry:
+                        return False, "", "URL validation cancelled by user."
+                    continue
+                else:
+                    return False, "", f"URL validation failed: {error_msg}"
+            
+            # Test repository accessibility
+            self._update_status("🔍 Validating repository accessibility...")
+            
+            # Test if we can reach the repository
+            access_success, access_msg = self._test_repository_access(converted_url, vault_path)
+            if access_success:
+                return True, converted_url, f"Repository validated: {converted_url}"
+            else:
+                if attempt < max_attempts - 1:
+                    # Show warning and allow retry
+                    if ui_elements:
+                        retry = ui_elements.ask_premium_yes_no(
+                            "Repository Access Warning",
+                            f"⚠️ {access_msg}\n\n"
+                            "This might be due to:\n"
+                            "• Repository doesn't exist or is private\n"
+                            "• SSH key not configured properly\n"
+                            "• Network connectivity issues\n\n"
+                            "Would you like to try a different URL?",
+                            self.dialog
+                        )
+                    else:
+                        retry = messagebox.askyesno(
+                            "Repository Access Warning",
+                            f"⚠️ {access_msg}\n\n"
+                            "Would you like to try a different URL?"
+                        )
+                    
+                    if not retry:
+                        # User wants to proceed despite warning
+                        return True, converted_url, f"Repository configured (warning: {access_msg})"
+                    continue
+                else:
+                    # Last attempt - offer to proceed anyway
+                    if ui_elements:
+                        proceed = ui_elements.ask_premium_yes_no(
+                            "Proceed Despite Warning?",
+                            f"⚠️ Repository access test failed: {access_msg}\n\n"
+                            "Would you like to proceed anyway?\n"
+                            "(You can fix connectivity issues later)",
+                            self.dialog
+                        )
+                    else:
+                        proceed = messagebox.askyesno(
+                            "Proceed Despite Warning?",
+                            f"⚠️ Repository access test failed: {access_msg}\n\n"
+                            "Would you like to proceed anyway?"
+                        )
+                    
+                    if proceed:
+                        return True, converted_url, f"Repository configured (warning: {access_msg})"
+                    else:
+                        return False, "", f"Repository validation failed: {access_msg}"
+        
+        return False, "", "Maximum validation attempts exceeded."
+
+    def _validate_and_convert_url(self, url):
+        """
+        Validate and convert repository URL to SSH format if needed.
+        Returns: (success: bool, converted_url: str, error_msg: str)
+        """
+        import re
+        
+        url = url.strip()
+        
+        # SSH format pattern: git@github.com:username/repo.git
+        ssh_pattern = r'^git@github\.com:([a-zA-Z0-9._-]+)/([a-zA-Z0-9._-]+)(?:\.git)?$'
+        
+        # HTTPS format pattern: https://github.com/username/repo.git or https://github.com/username/repo
+        https_pattern = r'^https://github\.com/([a-zA-Z0-9._-]+)/([a-zA-Z0-9._-]+)(?:\.git)?/?$'
+        
+        # Check if it's already in SSH format
+        ssh_match = re.match(ssh_pattern, url)
+        if ssh_match:
+            username, repo = ssh_match.groups()
+            # Ensure .git suffix (remove existing .git first to avoid double .git)
+            repo = repo.replace('.git', '')
+            ssh_url = f"git@github.com:{username}/{repo}.git"
+            return True, ssh_url, ""
+        
+        # Check if it's in HTTPS format and convert to SSH
+        https_match = re.match(https_pattern, url)
+        if https_match:
+            username, repo = https_match.groups()
+            # Convert to SSH format (remove existing .git first to avoid double .git)
+            repo = repo.replace('.git', '')
+            ssh_url = f"git@github.com:{username}/{repo}.git"
+            return True, ssh_url, f"Converted HTTPS to SSH format: {ssh_url}"
+        
+        # Invalid format
+        error_msg = (
+            "Invalid GitHub repository URL format.\n\n"
+            "Valid formats:\n"
+            "• SSH: git@github.com:username/repo.git\n"
+            "• HTTPS: https://github.com/username/repo.git\n\n"
+            f"You entered: {url}"
+        )
+        return False, "", error_msg
+
+    def _test_repository_access(self, repo_url, vault_path):
+        """
+        Test if the repository is accessible.
+        Returns: (success: bool, message: str)
+        """
+        import Ogresync
+        import subprocess
+        
+        try:
+            # Test connectivity with a simple ls-remote command (doesn't modify anything)
+            test_cmd = f"git ls-remote {repo_url} HEAD"
+            test_out, test_err, test_rc = Ogresync.run_command(test_cmd, cwd=vault_path, timeout=10)
+            
+            if test_rc == 0:
+                return True, "Repository is accessible"
+            else:
+                # Parse common error messages
+                if "permission denied" in test_err.lower():
+                    return False, "Permission denied - check SSH key configuration"
+                elif "host key verification failed" in test_err.lower():
+                    return False, "SSH host key verification failed"
+                elif "could not resolve hostname" in test_err.lower():
+                    return False, "Cannot resolve hostname - check network connection"
+                elif "repository not found" in test_err.lower():
+                    return False, "Repository not found or not accessible"
+                elif "timeout" in test_err.lower():
+                    return False, "Connection timeout - check network connectivity"
+                else:
+                    return False, f"Repository access test failed: {test_err.strip()}"
+                    
+        except subprocess.TimeoutExpired:
+            return False, "Connection timeout during repository access test"
+        except Exception as e:
+            return False, f"Repository access test error: {str(e)}"
     
     def _step_repository_sync(self):
         """Step 9: Handle repository conflicts using enhanced two-stage system."""
