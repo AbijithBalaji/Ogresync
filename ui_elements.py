@@ -267,6 +267,171 @@ class PremiumButton:
     @staticmethod
     def create_primary(parent, text, command=None, icon=None, size="md"):
         """Creates a primary button with premium styling."""
+        # Size configurations
+        sizes = {
+            "sm": {"font_size": Typography.SM, "pad_x": 12, "pad_y": 6, "min_width": 60},
+            "md": {"font_size": Typography.MD, "pad_x": 16, "pad_y": 8, "min_width": 80},
+            "lg": {"font_size": Typography.LG, "pad_x": 20, "pad_y": 10, "min_width": 100}
+        }
+        
+        size_config = sizes.get(size, sizes["md"])
+        
+        # Create button text with optional icon
+        button_text = f"{icon} {text}" if icon else text
+        
+        btn = tk.Button(
+            parent,
+            text=button_text,
+            command=command,
+            font=(FONT_FAMILY_PRIMARY, size_config["font_size"], Typography.MEDIUM),
+            bg=Colors.PRIMARY,
+            fg=Colors.TEXT_INVERSE,
+            activebackground=Colors.PRIMARY_HOVER,
+            activeforeground=Colors.TEXT_INVERSE,
+            relief=tk.FLAT,
+            borderwidth=0,
+            cursor="hand2",
+            padx=size_config["pad_x"],
+            pady=size_config["pad_y"]
+        )
+        
+        return btn
+    
+    @staticmethod
+    def create_secondary(parent, text, command=None, icon=None, size="md"):
+        """Creates a secondary button with premium styling."""
+        # Size configurations
+        sizes = {
+            "sm": {"font_size": Typography.SM, "pad_x": 12, "pad_y": 6, "min_width": 60},
+            "md": {"font_size": Typography.MD, "pad_x": 16, "pad_y": 8, "min_width": 80},
+            "lg": {"font_size": Typography.LG, "pad_x": 20, "pad_y": 10, "min_width": 100}
+        }
+        
+        size_config = sizes.get(size, sizes["md"])
+        
+        # Create button text with optional icon
+        button_text = f"{icon} {text}" if icon else text
+        
+        btn = tk.Button(
+            parent,
+            text=button_text,
+            command=command,
+            font=(FONT_FAMILY_PRIMARY, size_config["font_size"], Typography.NORMAL),
+            bg=Colors.BG_CARD,
+            fg=Colors.TEXT_ACCENT,
+            activebackground=Colors.SURFACE_HOVER,
+            activeforeground=Colors.TEXT_ACCENT,
+            relief=tk.SOLID,
+            borderwidth=1,
+            cursor="hand2",
+            padx=size_config["pad_x"],
+            pady=size_config["pad_y"]
+        )
+        
+        return btn
+    
+    @staticmethod
+    def create_success(parent, text, command=None, icon=None, size="md"):
+        """Creates a success button with premium styling."""
+        # Size configurations
+        sizes = {
+            "sm": {"font_size": Typography.SM, "pad_x": 12, "pad_y": 6, "min_width": 60},
+            "md": {"font_size": Typography.MD, "pad_x": 16, "pad_y": 8, "min_width": 80},
+            "lg": {"font_size": Typography.LG, "pad_x": 20, "pad_y": 10, "min_width": 100}
+        }
+        
+        size_config = sizes.get(size, sizes["md"])
+        
+        # Create button text with optional icon
+        button_text = f"{icon} {text}" if icon else text
+        
+        btn = tk.Button(
+            parent,
+            text=button_text,
+            command=command,
+            font=(FONT_FAMILY_PRIMARY, size_config["font_size"], Typography.MEDIUM),
+            bg=Colors.SUCCESS,
+            fg=Colors.TEXT_INVERSE,
+            activebackground=Colors.SUCCESS_HOVER,
+            activeforeground=Colors.TEXT_INVERSE,
+            relief=tk.FLAT,
+            borderwidth=0,
+            cursor="hand2",
+            padx=size_config["pad_x"],
+            pady=size_config["pad_y"]
+        )
+        
+        return btn
+    
+    @staticmethod
+    def create_danger(parent, text, command=None, icon=None, size="md"):
+        """Creates a danger button with premium styling."""
+        # Size configurations
+        sizes = {
+            "sm": {"font_size": Typography.SM, "pad_x": 12, "pad_y": 6, "min_width": 60},
+            "md": {"font_size": Typography.MD, "pad_x": 16, "pad_y": 8, "min_width": 80},
+            "lg": {"font_size": Typography.LG, "pad_x": 20, "pad_y": 10, "min_width": 100}
+        }
+        
+        size_config = sizes.get(size, sizes["md"])
+        
+        # Create button text with optional icon
+        button_text = f"{icon} {text}" if icon else text
+        
+        btn = tk.Button(
+            parent,
+            text=button_text,
+            command=command,
+            font=(FONT_FAMILY_PRIMARY, size_config["font_size"], Typography.MEDIUM),
+            bg=Colors.ERROR,
+            fg=Colors.TEXT_INVERSE,
+            activebackground=Colors.ERROR_HOVER,
+            activeforeground=Colors.TEXT_INVERSE,
+            relief=tk.FLAT,
+            borderwidth=0,
+            cursor="hand2",
+            padx=size_config["pad_x"],
+            pady=size_config["pad_y"]
+        )
+        
+        return btn
+    
+    @staticmethod
+    def create_warning(parent, text, command=None, icon=None, size="md"):
+        """Creates a warning button with premium styling."""
+        # Size configurations
+        sizes = {
+            "sm": {"font_size": Typography.SM, "pad_x": 12, "pad_y": 6, "min_width": 60},
+            "md": {"font_size": Typography.MD, "pad_x": 16, "pad_y": 8, "min_width": 80},
+            "lg": {"font_size": Typography.LG, "pad_x": 20, "pad_y": 10, "min_width": 100}
+        }
+        
+        size_config = sizes.get(size, sizes["md"])
+        
+        # Create button text with optional icon
+        button_text = f"{icon} {text}" if icon else text
+        
+        btn = tk.Button(
+            parent,
+            text=button_text,
+            command=command,
+            font=(FONT_FAMILY_PRIMARY, size_config["font_size"], Typography.MEDIUM),
+            bg=Colors.WARNING,
+            fg=Colors.TEXT_INVERSE,
+            activebackground=Colors.WARNING_HOVER,
+            activeforeground=Colors.TEXT_INVERSE,
+            relief=tk.FLAT,
+            borderwidth=0,
+            cursor="hand2",
+            padx=size_config["pad_x"],
+            pady=size_config["pad_y"]
+        )
+        
+        return btn
+    
+    @staticmethod
+    def create_primary(parent, text, command=None, icon=None, size="md"):
+        """Creates a primary button with premium styling."""
         btn_frame = tk.Frame(parent, bg=Colors.BG_PRIMARY)
         
         # Size configurations
@@ -1181,845 +1346,460 @@ def create_premium_wizard_ui():
     return root, log_text, progress_bar, gen_btn, copy_btn, test_ssh_btn, exit_btn
 
 # =============================================================================
-# PROGRESSIVE SETUP WIZARD
+# STAGE 1 & STAGE 2 CONFLICT RESOLUTION DIALOGS  
 # =============================================================================
 
-class SetupWizardStep:
-    """Represents a single step in the setup wizard."""
-    def __init__(self, title, description, icon="⚪", status="pending"):
-        self.title = title
-        self.description = description
-        self.icon = icon
-        self.status = status  # "pending", "running", "success", "error"
-        self.error_message = ""
+def create_stage1_strategy_dialog(parent_window, remote_ahead_analysis, conflict_analysis, title="Repository Conflict"):
+    """
+    Stage 1: High-level strategy selection dialog.
     
-    def set_status(self, status, error_message=""):
-        self.status = status
-        self.error_message = error_message
-    
-    def get_status_icon(self):
-        if self.status == "success":
-            return "✅"
-        elif self.status == "error":
-            return "❌"
-        elif self.status == "running":
-            return "🔄"
-        else:
-            return "⚪"
-
-def create_progressive_setup_wizard(parent=None):
-    """Creates a progressive setup wizard with step-by-step completion."""
-    
-    # Define all setup steps
-    setup_steps = [
-        SetupWizardStep("Obsidian Checkup", "Verify Obsidian installation", "🔍"),
-        SetupWizardStep("Git Check", "Verify Git installation", "🔧"),
-        SetupWizardStep("Choose Vault", "Select Obsidian vault folder", "📁"),
-        SetupWizardStep("Initialize Git", "Setup Git repository in vault", "📋"),
-        SetupWizardStep("SSH Key Setup", "Generate or verify SSH key", "🔑"),
-        SetupWizardStep("Known Hosts", "Add GitHub to known hosts", "🌐"),
-        SetupWizardStep("Test SSH", "Test SSH connection to GitHub (manual step)", "🔐"),
-        SetupWizardStep("GitHub Repository", "Link GitHub repository", "🔗"),
-        SetupWizardStep("Repository Sync", "Handle repository conflicts", "⚖️"),
-        SetupWizardStep("Final Sync", "Pull latest changes", "📥"),
-        SetupWizardStep("Complete Setup", "Finalize configuration", "🎉")
-    ]
-    
-    # Create the main dialog
-    if parent:
-        dialog = tk.Toplevel(parent)
-    else:
-        # If no parent, create as a regular Tk window, not Toplevel
-        import tkinter as tk
-        dialog = tk.Tk()
-    dialog.title("Ogresync Setup Wizard")
-    dialog.configure(bg=Colors.BG_PRIMARY)
-    dialog.resizable(False, False)
+    Args:
+        parent_window: Parent window for the dialog
+        remote_ahead_analysis: Analysis of remote changes
+        conflict_analysis: Analysis of conflicted files  
+        title: Dialog title
+        
+    Returns:
+        String indicating chosen strategy: "keep_local", "keep_remote", "smart_merge", or "cancelled"
+    """
+    dialog = tk.Toplevel(parent_window)
+    dialog.title(title)
+    dialog.transient(parent_window)
     dialog.grab_set()
+    dialog.resizable(False, False)
+    dialog.configure(bg=Colors.BG_PRIMARY)
     
-    # Center and size the dialog
-    width, height = 900, 700  # Increased from 700x600
+    # Center the dialog
+    dialog.update_idletasks()
+    width, height = 700, 550
     x = (dialog.winfo_screenwidth() // 2) - (width // 2)
     y = (dialog.winfo_screenheight() // 2) - (height // 2)
     dialog.geometry(f"{width}x{height}+{x}+{y}")
     
-    # Initialize fonts and styles
-    init_font_config()
-    setup_premium_styles()
-    
-    # State management
-    wizard_state = {
-        "current_step": 0,
-        "steps": setup_steps,
-        "config_data": {},
-        "vault_path": "",
-        "obsidian_path": "",
-        "github_url": "",
-        "setup_complete": False
-    }
-    
     # Main container
     main_frame = tk.Frame(dialog, bg=Colors.BG_PRIMARY)
-    main_frame.pack(fill=tk.BOTH, expand=True, padx=Spacing.XL, pady=Spacing.LG)
+    main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
     
     # Header
     header_frame = tk.Frame(main_frame, bg=Colors.BG_PRIMARY)
-    header_frame.pack(fill=tk.X, pady=(0, Spacing.LG))
+    header_frame.pack(fill=tk.X, pady=(0, 20))
     
     title_label = tk.Label(
         header_frame,
-        text="🚀 Ogresync Setup Wizard",
-        font=(FONT_FAMILY_PRIMARY, Typography.H2, Typography.BOLD),
+        text=f"⚠️ {title}",
+        font=(FONT_FAMILY_PRIMARY, Typography.XL, Typography.BOLD),
         bg=Colors.BG_PRIMARY,
-        fg=Colors.TEXT_PRIMARY
+        fg=Colors.WARNING
     )
     title_label.pack()
     
-    subtitle_label = tk.Label(
+    # Analysis summary card
+    summary_card = PremiumCard.create(main_frame, padding=Spacing.LG)
+    
+    # Conflict summary
+    total_conflicts = conflict_analysis.get("total_conflicts", 0)
+    auto_mergeable = conflict_analysis.get("auto_mergeable", 0)
+    manual_needed = conflict_analysis.get("needs_manual_resolution", 0)
+    remote_commits = remote_ahead_analysis.get("commits_ahead", 0)
+    
+    summary_text = f"Conflict Summary:\n\n"
+    if remote_commits > 0:
+        summary_text += f"• Remote repository is {remote_commits} commit(s) ahead\n"
+    summary_text += f"• {total_conflicts} files have conflicts\n"
+    if auto_mergeable > 0:
+        summary_text += f"• {auto_mergeable} files can be auto-merged\n"
+    if manual_needed > 0:
+        summary_text += f"• {manual_needed} files need manual resolution\n"
+    
+    summary_label = tk.Label(
+        summary_card,
+        text=summary_text,
+        font=(FONT_FAMILY_PRIMARY, Typography.MD),
+        bg=Colors.BG_CARD,
+        fg=Colors.TEXT_SECONDARY,
+        justify=tk.LEFT,
+        wraplength=600
+    )
+    summary_label.pack(pady=(0, Spacing.LG), anchor=tk.W)
+    
+    # Strategy selection
+    strategy_title = tk.Label(
+        summary_card,
+        text="Choose your conflict resolution strategy:",
+        font=(FONT_FAMILY_PRIMARY, Typography.LG, Typography.BOLD),
+        bg=Colors.BG_CARD,
+        fg=Colors.TEXT_PRIMARY
+    )
+    strategy_title.pack(anchor=tk.W, pady=(0, Spacing.MD))
+    
+    # Choice storage
+    choice = {"value": "cancelled"}
+    
+    def set_choice(selected_choice):
+        choice["value"] = selected_choice
+        dialog.destroy()
+    
+    # Strategy buttons
+    button_frame = tk.Frame(summary_card, bg=Colors.BG_CARD)
+    button_frame.pack(fill=tk.X, pady=(Spacing.MD, 0))
+    
+    # Smart Merge (Recommended)
+    smart_btn = PremiumButton.create_primary(
+        button_frame,
+        "🔄 Smart Merge (Recommended)",
+        lambda: set_choice("smart_merge")
+    )
+    smart_btn.pack(fill=tk.X, pady=(0, Spacing.SM))
+    
+    smart_desc = tk.Label(
+        button_frame,
+        text="Automatically merges non-conflicting files and prompts for manual resolution of conflicts",
+        font=(FONT_FAMILY_PRIMARY, Typography.SM),
+        bg=Colors.BG_CARD,
+        fg=Colors.TEXT_MUTED,
+        wraplength=600,
+        justify=tk.LEFT
+    )
+    smart_desc.pack(anchor=tk.W, pady=(2, Spacing.MD))
+    
+    # Keep All Local
+    local_btn = PremiumButton.create_secondary(
+        button_frame,
+        "📁 Keep All Local Changes",
+        lambda: set_choice("keep_local")
+    )
+    local_btn.pack(fill=tk.X, pady=(0, Spacing.SM))
+    
+    local_desc = tk.Label(
+        button_frame,
+        text="Keeps all your local changes and overwrites remote changes",
+        font=(FONT_FAMILY_PRIMARY, Typography.SM),
+        bg=Colors.BG_CARD,
+        fg=Colors.TEXT_MUTED,
+        wraplength=600,
+        justify=tk.LEFT
+    )
+    local_desc.pack(anchor=tk.W, pady=(2, Spacing.MD))
+    
+    # Keep All Remote
+    remote_btn = PremiumButton.create_secondary(
+        button_frame,
+        "🌐 Keep All Remote Changes",
+        lambda: set_choice("keep_remote")
+    )
+    remote_btn.pack(fill=tk.X, pady=(0, Spacing.SM))
+    
+    remote_desc = tk.Label(
+        button_frame,
+        text="Downloads all remote changes and overwrites your local changes",
+        font=(FONT_FAMILY_PRIMARY, Typography.SM),
+        bg=Colors.BG_CARD,
+        fg=Colors.TEXT_MUTED,
+        wraplength=600,
+        justify=tk.LEFT
+    )
+    remote_desc.pack(anchor=tk.W, pady=(2, Spacing.MD))
+    
+    # Cancel button
+    cancel_btn = tk.Button(
+        button_frame,
+        text="Cancel",
+        command=lambda: set_choice("cancelled"),
+        font=(FONT_FAMILY_PRIMARY, Typography.SM),
+        bg=Colors.BG_CARD,
+        fg=Colors.TEXT_MUTED,
+        relief=tk.FLAT,
+        cursor="hand2",
+        padx=Spacing.MD,
+        pady=Spacing.XS
+    )
+    cancel_btn.pack(pady=(Spacing.SM, 0))
+    
+    # Wait for user choice
+    parent_window.wait_window(dialog)
+    return choice["value"]
+
+
+def create_stage2_smart_merge_dialog(parent_window, remote_ahead_analysis, conflict_analysis):
+    """
+    Stage 2: File-by-file smart merge resolution dialog.
+    
+    Args:
+        parent_window: Parent window for the dialog
+        remote_ahead_analysis: Analysis of remote changes
+        conflict_analysis: Analysis of conflicted files
+        
+    Returns:
+        Dictionary with file resolutions or "cancelled"
+    """
+    dialog = tk.Toplevel(parent_window)
+    dialog.title("Smart Merge - File Resolution")
+    dialog.transient(parent_window)
+    dialog.grab_set()
+    dialog.resizable(True, True)
+    dialog.configure(bg=Colors.BG_PRIMARY)
+    
+    # Set dialog size
+    dialog.update_idletasks()
+    width, height = 900, 700
+    x = (dialog.winfo_screenwidth() // 2) - (width // 2)
+    y = (dialog.winfo_screenheight() // 2) - (height // 2)
+    dialog.geometry(f"{width}x{height}+{x}+{y}")
+    dialog.minsize(800, 600)
+    
+    # Main container
+    main_frame = tk.Frame(dialog, bg=Colors.BG_PRIMARY)
+    main_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+    
+    # Header
+    header_frame = tk.Frame(main_frame, bg=Colors.BG_PRIMARY)
+    header_frame.pack(fill=tk.X, pady=(0, 15))
+    
+    title_label = tk.Label(
         header_frame,
-        text="Setting up your Obsidian vault synchronization",
-        font=(FONT_FAMILY_PRIMARY, Typography.MD, Typography.NORMAL),
+        text="🔄 Smart Merge - File by File Resolution",
+        font=(FONT_FAMILY_PRIMARY, Typography.XL, Typography.BOLD),
+        bg=Colors.BG_PRIMARY,
+        fg=Colors.PRIMARY
+    )
+    title_label.pack(side=tk.LEFT)
+    
+    # Progress info
+    conflicted_files = conflict_analysis.get("conflicted_files", {})
+    total_files = len(conflicted_files)
+    
+    progress_label = tk.Label(
+        header_frame,
+        text=f"0 of {total_files} resolved",
+        font=(FONT_FAMILY_PRIMARY, Typography.MD),
         bg=Colors.BG_PRIMARY,
         fg=Colors.TEXT_SECONDARY
     )
-    subtitle_label.pack(pady=(Spacing.SM, 0))
+    progress_label.pack(side=tk.RIGHT)
     
-    # Content area with card styling
-    content_card = PremiumCard.create(main_frame, padding=Spacing.LG)
+    # File list and resolution area
+    content_frame = tk.Frame(main_frame, bg=Colors.BG_CARD, relief=tk.RAISED, borderwidth=1)
+    content_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
     
-    # Steps list frame
-    steps_frame = tk.Frame(content_card, bg=Colors.BG_CARD)
-    steps_frame.pack(fill=tk.BOTH, expand=True, pady=(0, Spacing.LG))
+    # Scrollable file list
+    list_frame = tk.Frame(content_frame, bg=Colors.BG_CARD)
+    list_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
     
-    # Create two-column layout for steps
-    left_column = tk.Frame(steps_frame, bg=Colors.BG_CARD)
-    left_column.pack(side="left", fill="both", expand=True, padx=(0, Spacing.SM))
-    
-    right_column = tk.Frame(steps_frame, bg=Colors.BG_CARD)
-    right_column.pack(side="right", fill="both", expand=True, padx=(Spacing.SM, 0))
-    
-    # Step display widgets
-    step_widgets = []
-    
-    def create_step_widget(step, index, parent_frame):
-        """Creates a widget for displaying a single step."""
-        step_container = tk.Frame(parent_frame, bg=Colors.BG_CARD)
-        step_container.pack(fill=tk.X, pady=Spacing.XS, padx=Spacing.SM)
-        
-        # Step frame with border
-        step_frame = tk.Frame(
-            step_container,
-            bg=Colors.SURFACE_DEFAULT,
-            relief=tk.SOLID,
-            borderwidth=1
-        )
-        step_frame.pack(fill=tk.X, ipady=Spacing.SM, ipadx=Spacing.MD)
-        
-        # Left side - status icon
-        icon_label = tk.Label(
-            step_frame,
-            text=step.get_status_icon(),
-            font=(FONT_FAMILY_PRIMARY, Typography.LG),
-            bg=Colors.SURFACE_DEFAULT,
-            fg=Colors.TEXT_PRIMARY,
-            width=3
-        )
-        icon_label.pack(side=tk.LEFT, padx=(0, Spacing.SM))
-        
-        # Middle - step info
-        info_frame = tk.Frame(step_frame, bg=Colors.SURFACE_DEFAULT)
-        info_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        
-        title_label = tk.Label(
-            info_frame,
-            text=f"{index + 1}. {step.title}",
-            font=(FONT_FAMILY_PRIMARY, Typography.MD, Typography.SEMIBOLD),
-            bg=Colors.SURFACE_DEFAULT,
-            fg=Colors.TEXT_PRIMARY,
-            anchor="w"
-        )
-        title_label.pack(fill=tk.X)
-        
-        desc_label = tk.Label(
-            info_frame,
-            text=step.description,
-            font=(FONT_FAMILY_PRIMARY, Typography.SM, Typography.NORMAL),
-            bg=Colors.SURFACE_DEFAULT,
-            fg=Colors.TEXT_SECONDARY,
-            anchor="w",
-            wraplength=300  # Reduced wraplength for two-column layout
-        )
-        desc_label.pack(fill=tk.X)
-        
-        # Error message (initially hidden)
-        error_label = tk.Label(
-            info_frame,
-            text="",
-            font=(FONT_FAMILY_PRIMARY, Typography.SM, Typography.NORMAL),
-            bg=Colors.SURFACE_DEFAULT,
-            fg=Colors.ERROR,
-            anchor="w",
-            wraplength=300  # Reduced wraplength for two-column layout
-        )
-        error_label.pack(fill=tk.X)
-        error_label.pack_forget()  # Hide initially
-        
-        return {
-            "container": step_container,
-            "frame": step_frame,
-            "icon": icon_label,
-            "title": title_label,
-            "description": desc_label,
-            "error": error_label
-        }
-    
-    # Create all step widgets in two columns
-    total_steps = len(setup_steps)
-    mid_point = 6  # Force left column to have exactly 6 items (steps 1-6)
-    
-    for i, step in enumerate(setup_steps):
-        if i < mid_point:
-            parent_frame = left_column
-        else:
-            parent_frame = right_column
-        
-        widget = create_step_widget(step, i, parent_frame)
-        step_widgets.append(widget)
-    
-    # Add empty spacer to right column to align button area with left column
-    # and place buttons in this spacer area
-    button_spacer_frame = tk.Frame(
-        right_column, 
-        bg=Colors.SURFACE_DEFAULT,
-        relief=tk.SOLID,
-        borderwidth=1
-    )
-    button_spacer_frame.pack(fill=tk.X, pady=Spacing.MD, padx=Spacing.SM)
-    
-    # Header for button area
-    button_header = tk.Label(
-        button_spacer_frame,
-        text="🎯 Setup Actions",
-        font=(FONT_FAMILY_PRIMARY, Typography.MD, Typography.SEMIBOLD),
-        bg=Colors.SURFACE_DEFAULT,
+    # File list header
+    list_header = tk.Label(
+        list_frame,
+        text="Conflicted Files - Choose resolution for each:",
+        font=(FONT_FAMILY_PRIMARY, Typography.MD, Typography.BOLD),
+        bg=Colors.BG_CARD,
         fg=Colors.TEXT_PRIMARY
     )
-    button_header.pack(anchor=tk.W, padx=Spacing.MD, pady=(Spacing.SM, 0))
+    list_header.pack(anchor=tk.W, pady=(0, 10))
     
-    # Add a separator line below header
-    separator = tk.Frame(button_spacer_frame, bg=Colors.BORDER_DEFAULT, height=1)
-    separator.pack(fill=tk.X, pady=(Spacing.SM, 0), padx=Spacing.MD)
+    # Scrollable frame for files
+    canvas = tk.Canvas(list_frame, bg=Colors.BG_CARD, highlightthickness=0)
+    scrollbar = tk.Scrollbar(list_frame, orient="vertical", command=canvas.yview)
+    scrollable_frame = tk.Frame(canvas, bg=Colors.BG_CARD)
     
-    # Status message in the spacer area
-    status_label = tk.Label(
-        button_spacer_frame,
-        text="Ready to start setup",
-        font=(FONT_FAMILY_PRIMARY, Typography.SM, Typography.NORMAL),
-        bg=Colors.SURFACE_DEFAULT,
-        fg=Colors.TEXT_SECONDARY
+    scrollable_frame.bind(
+        "<Configure>",
+        lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
     )
-    status_label.pack(anchor=tk.W, padx=Spacing.MD, pady=(Spacing.SM, Spacing.XS))
     
-    # Button container with increased height and better spacing
-    button_container = tk.Frame(button_spacer_frame, bg=Colors.SURFACE_DEFAULT, height=80)
-    button_container.pack(fill=tk.X, padx=Spacing.MD, pady=(0, Spacing.MD))
-    button_container.pack_propagate(False)  # Maintain fixed height
+    canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+    canvas.configure(yscrollcommand=scrollbar.set)
     
-    # We'll create these buttons dynamically based on current step
-    current_buttons = {}
-    
-    def update_step_display():
-        """Updates the visual display of all steps."""
-        for i, (step, widget) in enumerate(zip(setup_steps, step_widgets)):
-            # Update icon
-            widget["icon"].config(text=step.get_status_icon())
-            
-            # Update frame styling based on current step
-            if i == wizard_state["current_step"]:
-                widget["frame"].config(
-                    bg=Colors.PRIMARY_GHOST,
-                    highlightbackground=Colors.BORDER_ACCENT,
-                    highlightcolor=Colors.BORDER_ACCENT,
-                    highlightthickness=2
-                )
-                widget["icon"].config(bg=Colors.PRIMARY_GHOST)
-                widget["title"].config(bg=Colors.PRIMARY_GHOST)
-                widget["description"].config(bg=Colors.PRIMARY_GHOST)
-                widget["error"].config(bg=Colors.PRIMARY_GHOST)
-            else:
-                widget["frame"].config(
-                    bg=Colors.SURFACE_DEFAULT,
-                    highlightthickness=1
-                )
-                widget["icon"].config(bg=Colors.SURFACE_DEFAULT)
-                widget["title"].config(bg=Colors.SURFACE_DEFAULT)
-                widget["description"].config(bg=Colors.SURFACE_DEFAULT)
-                widget["error"].config(bg=Colors.SURFACE_DEFAULT)
-            
-            # Show/hide error message
-            if step.status == "error" and step.error_message:
-                widget["error"].config(text=f"Error: {step.error_message}")
-                widget["error"].pack(fill=tk.X)
-            else:
-                widget["error"].pack_forget()
-    
-    # Progress bar
-    progress_frame = tk.Frame(content_card, bg=Colors.BG_CARD)
-    progress_frame.pack(fill=tk.X, pady=(0, Spacing.LG))
-    
-    progress_label = tk.Label(
-        progress_frame,
-        text="Step 1 of 11",
-        font=(FONT_FAMILY_PRIMARY, Typography.SM, Typography.MEDIUM),
-        bg=Colors.BG_CARD,
-        fg=Colors.TEXT_SECONDARY
-    )
-    progress_label.pack(anchor=tk.W, pady=(0, Spacing.XS))
-    
-    progress_var = tk.IntVar()
-    progress_bar = ttk.Progressbar(
-        progress_frame,
-        variable=progress_var,
-        maximum=len(setup_steps),
-        style="Premium.Horizontal.TProgressbar"
-    )
-    progress_bar.pack(fill=tk.X)
+    # Resolution storage
+    resolutions = {}
+    resolved_count = {"value": 0}
     
     def update_progress():
-        """Updates progress bar and label."""
-        current = wizard_state["current_step"] + 1
-        total = len(setup_steps)
-        progress_var.set(current)
-        progress_label.config(text=f"Step {current} of {total}")
+        progress_label.config(text=f"{resolved_count['value']} of {total_files} resolved")
     
-    def set_status_message(message, color=None):
-        """Updates the status message."""
-        status_label.config(text=message)
-        if color:
-            status_label.config(fg=color)
-        else:
-            status_label.config(fg=Colors.TEXT_SECONDARY)
-    
-    def clear_buttons():
-        """Removes all current buttons."""
-        for widget in current_buttons.values():
-            widget.destroy()
-        current_buttons.clear()
-    
-    def create_button(text, command, style="primary", icon=None):
-        """Creates a button with the specified style."""
-        if style == "primary":
-            btn = PremiumButton.create_primary(button_container, text, command, icon=icon, size="md")
-        elif style == "secondary":
-            btn = PremiumButton.create_secondary(button_container, text, command, icon=icon, size="md")
-        elif style == "danger":
-            btn = PremiumButton.create_danger(button_container, text, command, icon=icon, size="md")
-        elif style == "success":
-            btn = PremiumButton.create_success(button_container, text, command, icon=icon, size="md")
+    def create_file_resolution_widget(filename, file_info):
+        """Create resolution widget for a single file."""
+        file_frame = tk.Frame(scrollable_frame, bg=Colors.BG_SECONDARY, relief=tk.RAISED, borderwidth=1)
+        file_frame.pack(fill=tk.X, pady=(0, 5), padx=5)
         
-        return btn
-    
-    # Step execution functions (we'll implement these)
-    def execute_current_step():
-        """Executes the current step."""
-        current_step_index = wizard_state["current_step"]
-        if current_step_index >= len(setup_steps):
-            return
-            
-        step = setup_steps[current_step_index]
-        step.set_status("running")
-        update_step_display()
-        set_status_message(f"Executing: {step.title}...", Colors.INFO)
+        inner_frame = tk.Frame(file_frame, bg=Colors.BG_SECONDARY)
+        inner_frame.pack(fill=tk.X, padx=10, pady=8)
         
-        # Show cancel button during execution
-        show_step_buttons()
-        
-        # Execute the step based on its index
-        success = False
-        error_msg = ""
-        
-        try:
-            if current_step_index == 0:  # Obsidian checkup
-                success, error_msg = step_obsidian_checkup()
-            elif current_step_index == 1:  # Git check
-                success, error_msg = step_git_check()
-            elif current_step_index == 2:  # Choose vault
-                success, error_msg = step_choose_vault()
-            elif current_step_index == 3:  # Initialize git
-                success, error_msg = step_initialize_git()
-            elif current_step_index == 4:  # SSH key setup
-                success, error_msg = step_ssh_key_setup()
-            elif current_step_index == 5:  # Known hosts
-                success, error_msg = step_known_hosts()
-            elif current_step_index == 6:  # Test SSH
-                success, error_msg = step_test_ssh()
-            elif current_step_index == 7:  # GitHub repository
-                success, error_msg = step_github_repository()
-            elif current_step_index == 8:  # Repository sync
-                success, error_msg = step_repository_sync()
-            elif current_step_index == 9:  # Final sync
-                success, error_msg = step_final_sync()
-            elif current_step_index == 10:  # Complete setup
-                success, error_msg = step_complete_setup()
-                
-        except Exception as e:
-            success = False
-            error_msg = str(e)
-        
-        # Update step status
-        if success:
-            step.set_status("success")
-            set_status_message(f"✅ {step.title} completed successfully", Colors.SUCCESS)
-            wizard_state["current_step"] += 1
-            
-            # Update display first
-            update_step_display()
-            update_progress()
-            
-            # Check if all steps are complete
-            if wizard_state["current_step"] >= len(setup_steps):
-                wizard_state["setup_complete"] = True
-                set_status_message("🎉 Setup completed successfully!", Colors.SUCCESS)
-                show_completion_buttons()
-            else:
-                # Show next step UI (which will auto-proceed or wait for SSH test)
-                show_next_step_buttons()
-        else:
-            step.set_status("error", error_msg)
-            set_status_message(f"❌ {step.title} failed", Colors.ERROR)
-            
-            # Update display first
-            update_step_display()
-            update_progress()
-            
-            # Then show retry buttons
-            show_retry_buttons()
-    
-    def show_next_step_buttons():
-        """Shows buttons for proceeding to next step or auto-proceeds."""
-        current_step_index = wizard_state["current_step"]
-        
-        # Always show buttons first
-        show_step_buttons()
-        
-        # Special handling for SSH test step (step 6) - wait for user confirmation
-        if current_step_index == 6:  # Test SSH step
-            set_status_message("⚠️ Please ensure your SSH key is added to GitHub before testing", Colors.WARNING)
-        else:
-            # For all other steps, automatically proceed after a brief delay
-            set_status_message("Proceeding to next step...", Colors.INFO)
-            dialog.after(1500, execute_current_step)  # 1.5 second delay
-    
-    def show_retry_buttons():
-        """Shows retry and cancel buttons when a step fails."""
-        show_step_buttons(failed=True)
-    
-    def show_step_buttons(failed=False):
-        """Shows appropriate buttons based on current step and failure state."""
-        clear_buttons()
-        current_step_index = wizard_state["current_step"]
-        
-        if failed:
-            # Show retry button when step failed
-            retry_btn = create_button("Retry Step", execute_current_step, "primary", Icons.REFRESH)
-            retry_btn.pack(side=tk.LEFT, padx=(0, Spacing.SM))
-            current_buttons["retry"] = retry_btn
-            
-            # For SSH test step, also show a "Skip Test" option
-            if current_step_index == 6:  # Test SSH step
-                skip_btn = create_button("Skip SSH Test", skip_ssh_test, "secondary", Icons.ARROW_RIGHT)
-                skip_btn.pack(side=tk.LEFT, padx=(0, Spacing.SM))
-                current_buttons["skip"] = skip_btn
-        else:
-            # Show Test SSH button only during step 7 (current_step_index 6)
-            if current_step_index == 6:  # Test SSH step
-                test_ssh_btn = create_button("Test SSH", execute_current_step, "primary", Icons.SECURITY)
-                test_ssh_btn.pack(side=tk.LEFT, padx=(0, Spacing.SM))
-                current_buttons["test_ssh"] = test_ssh_btn
-        
-        # Always show Cancel Setup button
-        cancel_style = "danger" if failed else "secondary"
-        cancel_btn = create_button("Cancel Setup", cancel_setup, cancel_style)
-        cancel_btn.pack(side=tk.RIGHT)
-        current_buttons["cancel"] = cancel_btn
-    
-    def show_completion_buttons():
-        """Shows completion buttons."""
-        clear_buttons()
-        
-        finish_btn = create_button("Finish Setup", finish_setup, "success", Icons.SUCCESS)
-        finish_btn.pack(side=tk.LEFT)
-        current_buttons["finish"] = finish_btn
-    
-    def cancel_setup():
-        """Cancels the setup process."""
-        result = ask_premium_yes_no(
-            "Cancel Setup",
-            "Are you sure you want to cancel the setup process?\n\nAny progress will be lost.",
-            dialog
+        # File info
+        file_label = tk.Label(
+            inner_frame,
+            text=f"📄 {filename}",
+            font=(FONT_FAMILY_PRIMARY, Typography.MD, Typography.BOLD),
+            bg=Colors.BG_SECONDARY,
+            fg=Colors.TEXT_PRIMARY
         )
-        if result:
-            # Show cancellation message using the dialog as parent before destroying it
-            show_premium_info(
-                "Setup Cancelled",
-                "Setup was cancelled. Please run Ogresync again when you're ready to set it up.",
-                dialog
+        file_label.pack(anchor=tk.W)
+        
+        desc_label = tk.Label(
+            inner_frame,
+            text=file_info.get("description", "File has conflicts"),
+            font=(FONT_FAMILY_PRIMARY, Typography.SM),
+            bg=Colors.BG_SECONDARY,
+            fg=Colors.TEXT_SECONDARY,
+            wraplength=700,
+            justify=tk.LEFT
+        )
+        desc_label.pack(anchor=tk.W, pady=(2, 8))
+        
+        # Resolution buttons
+        btn_frame = tk.Frame(inner_frame, bg=Colors.BG_SECONDARY)
+        btn_frame.pack(fill=tk.X)
+        
+        def set_resolution(resolution):
+            resolutions[filename] = resolution
+            if filename not in [f for f, _ in resolutions.items() if resolutions[f] is not None]:
+                resolved_count["value"] += 1
+            update_progress()
+            # Visual feedback
+            for widget in btn_frame.winfo_children():
+                if isinstance(widget, tk.Button):
+                    widget.config(bg=Colors.BG_CARD, fg=Colors.TEXT_SECONDARY)
+            
+        # Auto merge button (if available)
+        if file_info.get("auto_mergeable", False):
+            auto_btn = tk.Button(
+                btn_frame,
+                text="🔄 Auto Merge",
+                command=lambda: set_resolution("auto_merge"),
+                font=(FONT_FAMILY_PRIMARY, Typography.SM),
+                bg=Colors.SUCCESS,
+                fg=Colors.TEXT_INVERSE,
+                relief=tk.FLAT,
+                cursor="hand2",
+                padx=12,
+                pady=4
             )
-            wizard_state["setup_complete"] = False
-            dialog.destroy()
-    
-    def finish_setup():
-        """Completes the setup and closes the wizard."""
-        # Show completion message using the dialog as parent before destroying it
-        result = ask_premium_yes_no(
-            "Setup Complete",
-            "🎉 Setup completed successfully!\n\n"
-            "Ogresync is now configured and ready to use.\n"
-            "The application will now restart in sync mode.\n\n"
-            "Click OK to continue.",
-            dialog
-        )
+            auto_btn.pack(side=tk.LEFT, padx=(0, 5))
         
-        wizard_state["setup_complete"] = True
+        # Manual merge button
+        manual_btn = tk.Button(
+            btn_frame,
+            text="✏️ Manual Merge",
+            command=lambda: set_resolution("manual_merge"),
+            font=(FONT_FAMILY_PRIMARY, Typography.SM),
+            bg=Colors.WARNING,
+            fg=Colors.TEXT_INVERSE,
+            relief=tk.FLAT,
+            cursor="hand2",
+            padx=12,
+            pady=4
+        )
+        manual_btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        # Use local button
+        local_btn = tk.Button(
+            btn_frame,
+            text="📁 Use Local",
+            command=lambda: set_resolution("use_local"),
+            font=(FONT_FAMILY_PRIMARY, Typography.SM),
+            bg=Colors.BG_CARD,
+            fg=Colors.PRIMARY,
+            relief=tk.SOLID,
+            borderwidth=1,
+            cursor="hand2",
+            padx=12,
+            pady=4
+        )
+        local_btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        # Use remote button  
+        remote_btn = tk.Button(
+            btn_frame,
+            text="🌐 Use Remote",
+            command=lambda: set_resolution("use_remote"),
+            font=(FONT_FAMILY_PRIMARY, Typography.SM),
+            bg=Colors.BG_CARD,
+            fg=Colors.PRIMARY,
+            relief=tk.SOLID,
+            borderwidth=1,
+            cursor="hand2",
+            padx=12,
+            pady=4
+        )
+        remote_btn.pack(side=tk.LEFT)
+    
+    # Create widgets for each conflicted file
+    for filename, file_info in conflicted_files.items():
+        create_file_resolution_widget(filename, file_info)
+    
+    # Pack scrollable components
+    canvas.pack(side="left", fill="both", expand=True)
+    scrollbar.pack(side="right", fill="y")
+    
+    # Bottom action buttons
+    action_frame = tk.Frame(main_frame, bg=Colors.BG_PRIMARY)
+    action_frame.pack(fill=tk.X)
+    
+    result = {"value": "cancelled"}
+    
+    def apply_resolutions():
+        # Check if all files are resolved
+        unresolved = [f for f in conflicted_files.keys() if f not in resolutions]
+        if unresolved:
+            response = ask_yes_no(
+                "Unresolved Files",
+                f"Some files are not yet resolved:\n{', '.join(unresolved[:3])}\n\n"
+                "Continue anyway? (Unresolved files will use auto-merge if possible)"
+            )
+            if not response:
+                return
+            # Auto-resolve remaining files
+            for filename in unresolved:
+                file_info = conflicted_files[filename]
+                if file_info.get("auto_mergeable", False):
+                    resolutions[filename] = "auto_merge"
+                else:
+                    resolutions[filename] = "manual_merge"
+        
+        result["value"] = resolutions
         dialog.destroy()
     
-    def skip_ssh_test():
-        """Skips the SSH test step and continues with setup."""
-        current_step_index = wizard_state["current_step"]
-        if current_step_index == 6:  # Test SSH step
-            step = setup_steps[current_step_index]
-            step.set_status("success")  # Mark as success even though we skipped
-            wizard_state["current_step"] += 1
-            
-            set_status_message("⚠️ SSH test skipped - continuing with setup", Colors.WARNING)
-            update_step_display()
-            update_progress()
-            
-            # Continue with next step
-            if wizard_state["current_step"] >= len(setup_steps):
-                wizard_state["setup_complete"] = True
-                set_status_message("🎉 Setup completed successfully!", Colors.SUCCESS)
-                show_completion_buttons()
-            else:
-                show_next_step_buttons()
+    def cancel_resolution():
+        result["value"] = "cancelled"
+        dialog.destroy()
     
-    # Step implementation functions will be added here
-    # For now, we'll add placeholder implementations
+    # Action buttons
+    apply_btn = PremiumButton.create_success(
+        action_frame,
+        "Apply Resolutions",
+        apply_resolutions
+    )
+    apply_btn.pack(side=tk.RIGHT, padx=(10, 0))
     
-    def step_obsidian_checkup():
-        """Step 1: Check Obsidian installation."""
-        # Import the actual function from main module
-        import Ogresync
-        try:
-            obsidian_path = Ogresync.find_obsidian_path()
-            if obsidian_path:
-                wizard_state["obsidian_path"] = obsidian_path
-                # Save to config immediately
-                Ogresync.config_data["OBSIDIAN_PATH"] = obsidian_path
-                Ogresync.save_config()
-                print(f"DEBUG: Saved obsidian_path to config: {obsidian_path}")
-                return True, ""
-            else:
-                return False, "Obsidian installation not found. Please install Obsidian first."
-        except Exception as e:
-            return False, f"Error checking Obsidian: {str(e)}"
+    cancel_btn = PremiumButton.create_secondary(
+        action_frame,
+        "Cancel",
+        cancel_resolution
+    )
+    cancel_btn.pack(side=tk.RIGHT)
     
-    def step_git_check():
-        """Step 2: Check Git installation."""
-        import Ogresync
-        try:
-            if Ogresync.is_git_installed():
-                return True, ""
-            else:
-                return False, "Git is not installed. Please install Git first."
-        except Exception as e:
-            return False, f"Error checking Git: {str(e)}"
-    
-    def step_choose_vault():
-        """Step 3: Choose vault folder."""
-        import Ogresync
-        try:
-            vault_path = Ogresync.select_vault_path()
-            if vault_path:
-                wizard_state["vault_path"] = vault_path
-                # Save to config immediately
-                Ogresync.config_data["VAULT_PATH"] = vault_path
-                Ogresync.save_config()
-                print(f"DEBUG: Saved vault_path to config: {vault_path}")
-                return True, ""
-            else:
-                return False, "No vault folder selected."
-        except Exception as e:
-            return False, f"Error selecting vault: {str(e)}"
-    
-    def step_initialize_git():
-        """Step 4: Initialize Git repository."""
-        import Ogresync
-        try:
-            vault_path = wizard_state.get("vault_path")
-            if not vault_path:
-                return False, "Vault path not set."
-            
-            # Initialize git repository (this is safe to call multiple times)
-            Ogresync.initialize_git_repo(vault_path)
-            
-            # Check if repository already has commits
-            head_out, head_err, head_rc = Ogresync.run_command("git rev-parse HEAD", cwd=vault_path)
-            
-            if head_rc == 0:
-                # Repository already has commits, skip initial commit creation
-                print("DEBUG: Repository already has commits, skipping initial commit creation")
-                return True, "Repository already initialized with existing commits"
-            else:
-                # No commits yet, need to create initial commit
-                print("DEBUG: No existing commits found, creating initial commit")
-                
-                # Ensure placeholder file exists
-                Ogresync.ensure_placeholder_file(vault_path)
-                
-                # Create initial commit after adding placeholder file
-                out, err, rc = Ogresync.run_command("git add -A", cwd=vault_path)
-                if rc == 0:
-                    commit_out, commit_err, commit_rc = Ogresync.run_command('git commit -m "Initial commit"', cwd=vault_path)
-                    if commit_rc != 0:
-                        return False, f"Failed to create initial commit: {commit_err}"
-                else:
-                    return False, f"Failed to stage files: {err}"
-                
-                return True, "Git repository initialized with initial commit"
-            
-        except Exception as e:
-            return False, f"Error initializing Git: {str(e)}"
-    
-    def step_ssh_key_setup():
-        """Step 5: Setup SSH key."""
-        import Ogresync
-        import os
-        try:
-            ssh_key_path = os.path.expanduser("~/.ssh/id_rsa.pub")
-            if os.path.exists(ssh_key_path):
-                # SSH key already exists, copy to clipboard for convenience
-                try:
-                    with open(ssh_key_path, "r") as f:
-                        public_key = f.read().strip()
-                    
-                    try:
-                        import subprocess
-                        subprocess.run(["xclip", "-selection", "clipboard"], input=public_key, text=True, check=True)
-                    except:
-                        pass  # Clipboard copy failed, but that's ok
-                
-                except:
-                    pass  # Reading key failed, but we'll continue
-                
-                return True, ""
-            else:
-                # Need to generate SSH key
-                user_email = ask_premium_string(
-                    "SSH Key Generation",
-                    "Enter your email address for the SSH key:",
-                    parent=dialog,
-                    icon=Icons.GEAR
-                )
-                if not user_email:
-                    return False, "Email address required for SSH key generation."
-                
-                # Generate SSH key synchronously for wizard
-                key_path_private = ssh_key_path.replace("id_rsa.pub", "id_rsa")
-                cmd = f'ssh-keygen -t rsa -b 4096 -C "{user_email}" -f "{key_path_private}" -N ""'
-                out, err, rc = Ogresync.run_command(cmd)
-                
-                if rc == 0:
-                    # Copy to clipboard
-                    with open(ssh_key_path, "r") as f:
-                        public_key = f.read().strip()
-                    
-                    try:
-                        import subprocess
-                        subprocess.run(["xclip", "-selection", "clipboard"], input=public_key, text=True, check=True)
-                    except:
-                        pass  # Clipboard copy failed, but that's ok
-                    
-                    # Show custom SSH key success dialog with full SSH key
-                    show_ssh_key_success_dialog(public_key, dialog)
-                    
-                    return True, ""
-                else:
-                    return False, f"Failed to generate SSH key: {err}"
-        except Exception as e:
-            return False, f"Error setting up SSH key: {str(e)}"
-    
-    def step_known_hosts():
-        """Step 6: Add GitHub to known hosts."""
-        import Ogresync
-        try:
-            Ogresync.ensure_github_known_host()
-            return True, ""
-        except Exception as e:
-            return False, f"Error adding GitHub to known hosts: {str(e)}"
-    
-    def step_test_ssh():
-        """Step 7: Test SSH connection."""
-        import Ogresync
-        try:
-            # For automatic wizard, we want to test SSH without showing an additional dialog
-            # since the step description and status messages will provide guidance
-            
-            if Ogresync.test_ssh_connection_sync():
-                return True, ""
-            else:
-                return False, "SSH connection test failed. Please ensure your SSH key is properly added to your GitHub account."
-        except Exception as e:
-            return False, f"Error testing SSH connection: {str(e)}"
-    
-    def step_github_repository():
-        """Step 8: Setup GitHub repository."""
-        import Ogresync
-        try:
-            vault_path = wizard_state.get("vault_path")
-            if not vault_path:
-                return False, "Vault path not set."
-            
-            # First check if remote origin already exists
-            existing_remote_cmd = "git remote get-url origin"
-            existing_remote_out, existing_remote_err, existing_remote_rc = Ogresync.run_command(existing_remote_cmd, cwd=vault_path)
-            
-            if existing_remote_rc == 0:
-                # Remote origin already exists
-                existing_url = existing_remote_out.strip()
-                
-                # Get saved URL from config
-                saved_url = Ogresync.config_data.get("GITHUB_REMOTE_URL", "").strip()
-                
-                if existing_url == saved_url:
-                    # Remote already matches saved URL - all good
-                    return True, ""
-                else:
-                    # Remote exists but doesn't match saved URL - ask user what to do
-                    use_existing = ask_premium_yes_no(
-                        "Existing Remote Found",
-                        f"A remote origin is already configured:\n\n{existing_url}\n\n"
-                        f"Would you like to use this existing remote URL?",
-                        parent=dialog
-                    )
-                    
-                    if use_existing:
-                        # Update config to match existing remote
-                        Ogresync.config_data["GITHUB_REMOTE_URL"] = existing_url
-                        Ogresync.save_config()
-                        return True, ""
-                    else:
-                        # User wants to change the remote URL
-                        new_url = ask_premium_string(
-                            "New GitHub Repository",
-                            "Enter the new GitHub repository URL (e.g., git@github.com:username/repo.git):",
-                            initial_value=saved_url if saved_url else "",
-                            parent=dialog,
-                            icon=Icons.LINK
-                        )
-                        
-                        if not new_url or not new_url.strip():
-                            return False, "No repository URL provided."
-                        
-                        new_url = new_url.strip()
-                        
-                        # Remove existing remote and add new one
-                        remove_cmd = "git remote remove origin"
-                        remove_out, remove_err, remove_rc = Ogresync.run_command(remove_cmd, cwd=vault_path)
-                        
-                        if remove_rc != 0:
-                            return False, f"Failed to remove existing remote: {remove_err}"
-                        
-                        # Add new remote
-                        add_cmd = f"git remote add origin {new_url}"
-                        add_out, add_err, add_rc = Ogresync.run_command(add_cmd, cwd=vault_path)
-                        
-                        if add_rc == 0:
-                            # Update config with new URL
-                            Ogresync.config_data["GITHUB_REMOTE_URL"] = new_url
-                            Ogresync.save_config()
-                            return True, ""
-                        else:
-                            return False, f"Failed to configure new remote: {add_err}"
-            else:
-                # No remote exists - configure one
-                if Ogresync.configure_remote_url_for_vault(vault_path):
-                    return True, ""
-                else:
-                    return False, "Failed to configure GitHub repository."
-        except Exception as e:
-            return False, f"Error setting up GitHub repository: {str(e)}"
-    
-    def step_repository_sync():
-        """Step 9: Handle repository conflicts."""
-        import Ogresync
-        try:
-            vault_path = wizard_state.get("vault_path")
-            if not vault_path:
-                return False, "Vault path not set."
-            
-            # Analyze repository state
-            analysis = Ogresync.analyze_repository_state(vault_path)
-            
-            if analysis["conflict_detected"]:
-                if Ogresync.handle_initial_repository_conflict(vault_path, analysis, dialog):
-                    return True, ""
-                else:
-                    return False, "Failed to resolve repository conflicts."
-            else:
-                return True, ""
-        except Exception as e:
-            return False, f"Error handling repository sync: {str(e)}"
-    
-    def step_final_sync():
-        """Step 10: Final synchronization."""
-        import Ogresync
-        try:
-            vault_path = wizard_state.get("vault_path")
-            if not vault_path:
-                return False, "Vault path not set."
-            
-            # Perform initial commit and push
-            Ogresync.perform_initial_commit_and_push(vault_path)
-            return True, ""
-        except Exception as e:
-            return False, f"Error in final sync: {str(e)}"
-    
-    def step_complete_setup():
-        """Step 11: Complete setup."""
-        try:
-            # Save final configuration
-            import Ogresync
-            
-            print("DEBUG: Starting step_complete_setup")
-            
-            # The individual values should already be saved by now from previous steps
-            # We just need to mark setup as complete
-            Ogresync.config_data["SETUP_DONE"] = "1"
-            
-            print(f"DEBUG: Marking setup as complete in config: {Ogresync.config_data}")
-            
-            Ogresync.save_config()
-            
-            print("DEBUG: step_complete_setup completed successfully")
-            return True, ""
-        except Exception as e:
-            print(f"DEBUG: Error in step_complete_setup: {e}")
-            return False, f"Error completing setup: {str(e)}"
-    
-    # Initialize the wizard
-    update_step_display()
-    update_progress()
-    
-    # Show initial cancel button immediately
-    show_step_buttons()
-    
-    # Start the first step automatically after a brief delay
-    set_status_message("Starting setup wizard...", Colors.INFO)
-    dialog.after(2000, execute_current_step)  # 2 second delay to allow UI to initialize
-    
-    # Return the dialog and completion status
-    return dialog, wizard_state
+    # Wait for user to complete
+    parent_window.wait_window(dialog)
+    return result["value"]
+
+# =============================================================================
+# PROGRESSIVE SETUP WIZARD - COMPATIBILITY FUNCTIONS
+# =============================================================================
+
+def create_progressive_setup_wizard(parent=None):
+    """
+    Compatibility wrapper for the new setup wizard module.
+    This function maintains backward compatibility while using the new modular setup wizard.
+    """
+    try:
+        import setup_wizard
+        return setup_wizard.create_progressive_setup_wizard(parent)
+    except ImportError:
+        # Fallback if setup_wizard module is not available
+        show_premium_error(
+            "Setup Wizard Error", 
+            "Setup wizard module not available. Please ensure all required files are present.",
+            parent
+        )
+        return None, {"setup_complete": False}
 
 # =============================================================================
 # ENHANCED DIALOG SYSTEM
@@ -2039,7 +1819,7 @@ def show_premium_info(title, message, parent=None):
         text=Icons.INFO,
         font=(FONT_FAMILY_PRIMARY, Typography.H1),
         bg=Colors.BG_PRIMARY,
-        fg=Colors.INFO
+                      fg=Colors.INFO
     )
     icon_label.pack(pady=(0, Spacing.MD))
     
@@ -2572,183 +2352,400 @@ def create_repository_conflict_dialog(parent_window, message, analysis):
     return choice["value"]
 
 # =============================================================================
-# SSH KEY SUCCESS DIALOG
+# VAULT RECOVERY DIALOG
 # =============================================================================
 
-def show_ssh_key_success_dialog(public_key_preview, parent=None):
-    """Creates a custom dialog for SSH key generation success with GitHub redirect button."""
-    import webbrowser
-    
-    # Create the dialog
-    if parent:
-        dialog = tk.Toplevel(parent)
-    else:
-        dialog = tk.Tk()
-    
-    dialog.title("SSH Key Generated Successfully")
-    dialog.configure(bg=Colors.BG_PRIMARY)
-    dialog.resizable(False, False)
+def create_vault_recovery_dialog(parent_window, vault_path):
+    """Creates a dialog for vault recovery when the vault directory is missing."""
+    dialog = tk.Toplevel(parent_window)
+    dialog.title("Vault Directory Not Found")
+    dialog.transient(parent_window) 
     dialog.grab_set()
+    dialog.resizable(False, False)
+    dialog.configure(bg=Colors.BG_PRIMARY)
     
-    # Center and size the dialog
-    width, height = 520, 480  # Increased height from 400 to 480
+    # Center the dialog
+    dialog.update_idletasks()
+    width, height = 500, 400
     x = (dialog.winfo_screenwidth() // 2) - (width // 2)
     y = (dialog.winfo_screenheight() // 2) - (height // 2)
     dialog.geometry(f"{width}x{height}+{x}+{y}")
     
-    # Initialize fonts and styles
-    init_font_config()
-    setup_premium_styles()
-    
     # Main container
     main_frame = tk.Frame(dialog, bg=Colors.BG_PRIMARY)
-    main_frame.pack(fill=tk.BOTH, expand=True, padx=Spacing.XL, pady=Spacing.LG)
+    main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
     
-    # Header with success icon
+    # Header
     header_frame = tk.Frame(main_frame, bg=Colors.BG_PRIMARY)
-    header_frame.pack(fill=tk.X, pady=(0, Spacing.LG))
-    
-    # Success icon and title
-    title_frame = tk.Frame(header_frame, bg=Colors.BG_PRIMARY)
-    title_frame.pack(fill=tk.X)
-    
-    icon_label = tk.Label(
-        title_frame,
-        text="🔑",
-        font=(FONT_FAMILY_PRIMARY, Typography.H2),
-        bg=Colors.BG_PRIMARY,
-        fg=Colors.SUCCESS
-    )
-    icon_label.pack(side=tk.LEFT, padx=(0, Spacing.SM))
+    header_frame.pack(fill=tk.X, pady=(0, 20))
     
     title_label = tk.Label(
-        title_frame,
-        text="SSH Key Generated Successfully!",
+        header_frame,
+        text="⚠️ Vault Directory Not Found",
         font=(FONT_FAMILY_PRIMARY, Typography.XL, Typography.BOLD),
         bg=Colors.BG_PRIMARY,
-        fg=Colors.TEXT_PRIMARY
+        fg=Colors.ERROR
     )
-    title_label.pack(side=tk.LEFT, anchor=tk.W)
+    title_label.pack()
     
     # Content card
     content_card = PremiumCard.create(main_frame, padding=Spacing.LG)
     
-    # Success message
-    success_label = tk.Label(
-        content_card,
-        text="✅ SSH key has been generated and copied to clipboard.",
-        font=(FONT_FAMILY_PRIMARY, Typography.MD, Typography.MEDIUM),
-        bg=Colors.BG_CARD,
-        fg=Colors.SUCCESS,
-        justify=tk.LEFT
-    )
-    success_label.pack(pady=(0, Spacing.MD), anchor=tk.W)
-    
-    # Instructions
-    instructions_label = tk.Label(
-        content_card,
-        text="📋 Next Steps:",
-        font=(FONT_FAMILY_PRIMARY, Typography.MD, Typography.SEMIBOLD),
-        bg=Colors.BG_CARD,
-        fg=Colors.TEXT_PRIMARY,
-        justify=tk.LEFT
-    )
-    instructions_label.pack(pady=(0, Spacing.SM), anchor=tk.W)
-    
-    steps_text = (
-        "1. Click the button below to open GitHub SSH settings\n"
-        "2. Click 'New SSH key' on GitHub\n"
-        "3. Paste the key from your clipboard\n"
-        "4. Click 'Add SSH key' to save\n"
-        "5. Return here to continue the setup"
+    # Message
+    message_text = (
+        f"The configured vault directory could not be found:\n\n"
+        f"{vault_path}\n\n"
+        f"This might happen if the directory was moved, deleted, or is on a removable drive that's not connected.\n\n"
+        f"Please choose how you'd like to proceed:"
     )
     
-    steps_label = tk.Label(
+    message_label = tk.Label(
         content_card,
-        text=steps_text,
-        font=(FONT_FAMILY_PRIMARY, Typography.SM),
+        text=message_text,
+        font=(FONT_FAMILY_PRIMARY, Typography.MD),
         bg=Colors.BG_CARD,
         fg=Colors.TEXT_SECONDARY,
-        justify=tk.LEFT
+        justify=tk.LEFT,
+        wraplength=420
     )
-    steps_label.pack(pady=(0, Spacing.MD), anchor=tk.W)
+    message_label.pack(pady=(0, Spacing.LG), anchor=tk.W)
     
-    # Key preview section
-    preview_label = tk.Label(
-        content_card,
-        text="🔍 Key Preview:",
-        font=(FONT_FAMILY_PRIMARY, Typography.SM, Typography.SEMIBOLD),
-        bg=Colors.BG_CARD,
-        fg=Colors.TEXT_PRIMARY
-    )
-    preview_label.pack(anchor=tk.W, pady=(0, Spacing.XS))
+    # Choice storage
+    choice = {"value": None}
     
-    # Key preview in a selectable text widget
-    preview_frame = tk.Frame(content_card, bg=Colors.BG_SECONDARY, relief=tk.SOLID, borderwidth=1)
-    preview_frame.pack(fill=tk.X, pady=(0, Spacing.LG))
-    
-    # Use Text widget for selectable key preview
-    preview_text_widget = tk.Text(
-        preview_frame,
-        height=3,  # 3 lines for the key preview
-        wrap=tk.WORD,
-        font=(FONT_FAMILY_MONO, Typography.XS),
-        bg=Colors.BG_SECONDARY,
-        fg=Colors.TEXT_MUTED,
-        relief=tk.FLAT,
-        borderwidth=0,
-        state=tk.NORMAL,
-        selectbackground=Colors.PRIMARY_LIGHT,
-        selectforeground=Colors.TEXT_PRIMARY,
-        insertbackground=Colors.PRIMARY,
-        cursor="xterm"
-    )
-    preview_text_widget.pack(fill=tk.X, padx=Spacing.SM, pady=Spacing.SM)
-    
-    # Insert the key preview text (full content, no truncation)
-    preview_text_widget.insert("1.0", public_key_preview)
-    preview_text_widget.config(state=tk.DISABLED)  # Make read-only but still selectable
-    
-    # Auto-select all text for easy copying
-    preview_text_widget.tag_add(tk.SEL, "1.0", tk.END)
-    preview_text_widget.focus_set()
-    
-    # Action buttons with better spacing
-    button_frame = tk.Frame(content_card, bg=Colors.BG_CARD)
-    button_frame.pack(fill=tk.X, pady=(Spacing.XL, 0))  # Increased top padding
-    
-    def open_github_ssh():
-        """Opens GitHub SSH settings page."""
-        webbrowser.open("https://github.com/settings/keys")
-    
-    def close_dialog():
-        """Closes the dialog."""
+    def set_choice(selected_choice):
+        choice["value"] = selected_choice
         dialog.destroy()
     
-    # Create a sub-frame to center the buttons properly
-    button_container = tk.Frame(button_frame, bg=Colors.BG_CARD)
-    button_container.pack(fill=tk.X, pady=Spacing.MD)
+    # Buttons
+    button_frame = tk.Frame(content_card, bg=Colors.BG_CARD)
+    button_frame.pack(fill=tk.X, pady=(Spacing.MD, 0))
     
-    # GitHub button (primary action) - full width
-    github_btn = PremiumButton.create_primary(
-        button_container,
-        "🌐 Open GitHub SSH Settings",
-        open_github_ssh,
-        size="md"
+    # Recreate directory button
+    recreate_btn = PremiumButton.create_primary(
+        button_frame,
+        "Recreate Directory",
+        lambda: set_choice("recreate"),
+        Icons.FOLDER
     )
-    github_btn.pack(fill=tk.X, pady=(0, Spacing.SM))  # Stack vertically with spacing
+    recreate_btn.pack(fill=tk.X, pady=(0, Spacing.SM))
     
-    # Close button - full width
-    close_btn = PremiumButton.create_secondary(
-        button_container,
-        "Continue Setup",
-        close_dialog,
-        size="md"
+    # Select new directory button
+    select_btn = PremiumButton.create_secondary(
+        button_frame,
+        "Select Different Directory",
+        lambda: set_choice("select_new"),
+        Icons.FOLDER
     )
-    close_btn.pack(fill=tk.X)
+    select_btn.pack(fill=tk.X, pady=(0, Spacing.SM))
     
-    # Wait for user to close the dialog
-    if parent:
-        parent.wait_window(dialog)
-    else:
-        dialog.mainloop()
+    # Run setup again button
+    setup_btn = PremiumButton.create_secondary(
+        button_frame,
+        "Run Setup Wizard Again",
+        lambda: set_choice("setup"),
+        Icons.GEAR
+    )
+    setup_btn.pack(fill=tk.X, pady=(0, Spacing.SM))
+    
+    # Cancel button
+    cancel_btn = tk.Button(
+        button_frame,
+        text="Cancel",
+        command=lambda: set_choice(None),
+        font=(FONT_FAMILY_PRIMARY, Typography.SM),
+        bg=Colors.BG_CARD,
+        fg=Colors.TEXT_MUTED,
+        relief=tk.FLAT,
+        cursor="hand2",
+        padx=Spacing.MD,
+        pady=Spacing.XS
+    )
+    cancel_btn.pack(pady=(Spacing.SM, 0))
+    
+    # Wait for user choice
+    parent_window.wait_window(dialog)
+    return choice["value"]
+
+# =============================================================================
+# SSH KEY SUCCESS DIALOG
+# =============================================================================
+
+def show_ssh_key_success_dialog(public_key_preview, parent=None):
+    """Shows SSH key generation success dialog with public key preview."""
+    try:
+        dialog = tk.Toplevel(parent if parent else tk.Tk())
+        dialog.title("SSH Key Generated Successfully")
+        dialog.transient(parent)
+        dialog.grab_set()
+        dialog.resizable(True, True)  # Allow resizing
+        dialog.configure(bg=Colors.BG_PRIMARY)
+        
+        # Center the dialog
+        dialog.update_idletasks()
+        width, height = 800, 650  # Increased size for better display
+        x = (dialog.winfo_screenwidth() // 2) - (width // 2)
+        y = (dialog.winfo_screenheight() // 2) - (height // 2)
+        dialog.geometry(f"{width}x{height}+{x}+{y}")
+        
+        # Main container
+        main_frame = tk.Frame(dialog, bg=Colors.BG_PRIMARY)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        # Header
+        header_frame = tk.Frame(main_frame, bg=Colors.BG_PRIMARY)
+        header_frame.pack(fill=tk.X, pady=(0, 20))
+        
+        title_label = tk.Label(
+            header_frame,
+            text="✅ SSH Key Generated Successfully",
+            font=(FONT_FAMILY_PRIMARY, 18, "bold"),
+            bg=Colors.BG_PRIMARY,
+            fg=Colors.SUCCESS
+        )
+        title_label.pack()
+        
+        # Content card (simple frame instead of PremiumCard)
+        content_card = tk.Frame(main_frame, bg=Colors.BG_CARD, relief=tk.SOLID, borderwidth=1)
+        content_card.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Inner padding frame
+        inner_frame = tk.Frame(content_card, bg=Colors.BG_CARD)
+        inner_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        # Success message
+        success_message = (
+            "Your SSH key has been generated and copied to the clipboard!\n\n"
+            "Next steps:\n"
+            "1. The key is already copied to your clipboard\n"
+            "2. Click 'Add SSH Key to GitHub' below\n"
+            "3. Paste the key into GitHub's SSH key field\n"
+            "4. Give it a descriptive title (e.g., 'Ogresync Key')\n"
+            "5. Click 'Add SSH key'\n"
+            "6. Return to Ogresync and click 'Execute: Test SSH' to continue\n\n"
+            "After adding the key to GitHub, the SSH test should pass."
+        )
+        
+        message_label = tk.Label(
+            inner_frame,
+            text=success_message,
+            font=(FONT_FAMILY_PRIMARY, 11),
+            bg=Colors.BG_CARD,
+            fg=Colors.TEXT_SECONDARY,
+            justify=tk.LEFT,
+            wraplength=640
+        )
+        message_label.pack(pady=(0, 20), anchor=tk.W)
+        
+        # Key preview section with copy button
+        key_container = tk.Frame(inner_frame, bg=Colors.BG_CARD)
+        key_container.pack(fill=tk.BOTH, expand=True, pady=(0, 20))
+        
+        # Key preview header with copy button
+        key_header = tk.Frame(key_container, bg=Colors.BG_CARD)
+        key_header.pack(fill=tk.X, pady=(0, 5))
+        
+        key_title = tk.Label(
+            key_header,
+            text="SSH Public Key Preview",
+            font=(FONT_FAMILY_PRIMARY, 12, "bold"),
+            bg=Colors.BG_CARD,
+            fg=Colors.TEXT_PRIMARY
+        )
+        key_title.pack(side=tk.LEFT)
+        
+        # Copy button in the header
+        def copy_key_from_preview():
+            try:
+                import pyperclip
+                pyperclip.copy(public_key_preview)
+                # Show temporary success message
+                copy_status.config(text="✅ Copied!", fg=Colors.SUCCESS)
+                dialog.after(2000, lambda: copy_status.config(text="", fg=Colors.TEXT_SECONDARY))
+            except ImportError:
+                copy_status.config(text="❌ Copy failed - select text manually", fg=Colors.ERROR)
+                dialog.after(3000, lambda: copy_status.config(text="", fg=Colors.TEXT_SECONDARY))
+        
+        copy_preview_btn = tk.Button(
+            key_header,
+            text="📋 Copy",
+            command=copy_key_from_preview,
+            font=(FONT_FAMILY_PRIMARY, 9, "normal"),
+            bg=Colors.PRIMARY,
+            fg=Colors.TEXT_INVERSE,
+            relief=tk.FLAT,
+            cursor="hand2",
+            padx=12,
+            pady=4
+        )
+        copy_preview_btn.pack(side=tk.RIGHT)
+        
+        # Copy status label
+        copy_status = tk.Label(
+            key_header,
+            text="",
+            font=(FONT_FAMILY_PRIMARY, 9),
+            bg=Colors.BG_CARD,
+            fg=Colors.TEXT_SECONDARY
+        )
+        copy_status.pack(side=tk.RIGHT, padx=(0, 10))
+        
+        # SSH Key text area with scrollbar
+        key_text_frame = tk.Frame(key_container, bg=Colors.BG_SECONDARY)
+        key_text_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Create text widget with scrollbar
+        key_text = tk.Text(
+            key_text_frame,
+            height=8,
+            wrap=tk.WORD,
+            font=(FONT_FAMILY_MONO, 9),
+            bg=Colors.BG_SECONDARY,
+            fg=Colors.TEXT_PRIMARY,
+            relief=tk.FLAT,
+            borderwidth=1,
+            selectbackground=Colors.PRIMARY_LIGHT,
+            selectforeground=Colors.TEXT_PRIMARY
+        )
+        
+        # Add scrollbar
+        scrollbar = tk.Scrollbar(key_text_frame, orient=tk.VERTICAL, command=key_text.yview)
+        key_text.configure(yscrollcommand=scrollbar.set)
+        
+        # Pack text widget and scrollbar
+        key_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y, pady=5)
+        
+        # Insert the FULL SSH key content (no truncation)
+        key_text.insert(tk.END, public_key_preview)
+        key_text.config(state=tk.DISABLED)
+        
+        # Bottom buttons
+        button_frame = tk.Frame(inner_frame, bg=Colors.BG_CARD)
+        button_frame.pack(fill=tk.X, pady=(20, 0))
+        
+        def open_github_settings():
+            import webbrowser
+            webbrowser.open("https://github.com/settings/ssh/new")  # Direct link to add SSH key
+        
+        def copy_key_again():
+            try:
+                import pyperclip
+                pyperclip.copy(public_key_preview)
+                copy_status.config(text="✅ Copied to clipboard!", fg=Colors.SUCCESS)
+                dialog.after(2000, lambda: copy_status.config(text="", fg=Colors.TEXT_SECONDARY))
+            except ImportError:
+                copy_status.config(text="❌ Copy failed", fg=Colors.ERROR)
+                dialog.after(3000, lambda: copy_status.config(text="", fg=Colors.TEXT_SECONDARY))
+        
+        # GitHub button (primary action)
+        github_btn = tk.Button(
+            button_frame,
+            text="🌐 Add SSH Key to GitHub",
+            command=open_github_settings,
+            font=(FONT_FAMILY_PRIMARY, 11, "bold"),
+            bg=Colors.SUCCESS,
+            fg=Colors.TEXT_INVERSE,
+            relief=tk.FLAT,
+            cursor="hand2",
+            padx=20,
+            pady=10
+        )
+        github_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Copy again button
+        copy_btn = tk.Button(
+            button_frame,
+            text="📋 Copy Key Again",
+            command=copy_key_again,
+            font=(FONT_FAMILY_PRIMARY, 11, "normal"),
+            bg=Colors.PRIMARY,
+            fg=Colors.TEXT_INVERSE,
+            relief=tk.FLAT,
+            cursor="hand2",
+            padx=20,
+            pady=10
+        )
+        copy_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Close button
+        close_btn = tk.Button(
+            button_frame,
+            text="Close",
+            command=dialog.destroy,
+            font=(FONT_FAMILY_PRIMARY, 11, "normal"),
+            bg=Colors.BG_SECONDARY,
+            fg=Colors.TEXT_PRIMARY,
+            relief=tk.SOLID,
+            borderwidth=1,
+            cursor="hand2",
+            padx=20,
+            pady=10
+        )
+        close_btn.pack(side=tk.RIGHT)
+        
+        # Make sure dialog is modal
+        dialog.focus_set()
+        dialog.grab_set()
+        
+        # Wait for user to close
+        if parent:
+            parent.wait_window(dialog)
+        else:
+            dialog.mainloop()
+            
+    except Exception as e:
+        # Fallback to simple message dialog
+        print(f"Error in SSH dialog: {e}")
+        try:
+            show_info_message(
+                "SSH Key Generated",
+                f"SSH key generated successfully!\n\n"
+                f"Key preview: {public_key_preview[:100]}...\n\n"
+                f"The key has been copied to your clipboard. "
+                f"Please add it to your GitHub account at:\n"
+                f"https://github.com/settings/ssh/new"
+            )
+        except:
+            import tkinter.messagebox as messagebox
+            messagebox.showinfo(
+                "SSH Key Generated",
+                f"SSH key generated successfully!\n\n"
+                f"Please copy your SSH key from ~/.ssh/id_rsa.pub\n"
+                f"and add it to GitHub at:\n"
+                f"https://github.com/settings/ssh/new"
+            )
+
+# =============================================================================
+# ENHANCED CONFLICT RESOLUTION DIALOGS
+# =============================================================================
+
+def create_two_stage_conflict_dialog(parent_window, analysis, vault_path):
+    """
+    Creates an enhanced two-stage conflict resolution dialog.
+    Stage 1: Strategy selection
+    Stage 2: File-by-file resolution (if needed)
+    """
+    try:
+        # Import conflict resolution module
+        import conflict_resolution
+        
+        # Create resolver and show dialog
+        resolver = conflict_resolution.ConflictResolver(vault_path, parent_window)
+        return resolver.resolve_conflicts()
+        
+    except ImportError:
+        # Fallback to original dialog if conflict_resolution module not available
+        return create_repository_conflict_dialog(parent_window, 
+                                                "Repository conflicts detected", 
+                                                analysis)
+    except Exception as e:
+        print(f"Error in two-stage conflict dialog: {e}")
+        # Fallback to original dialog
+        return create_repository_conflict_dialog(parent_window,
+                                                "Repository conflicts detected",
+                                                analysis)
+
+# =============================================================================
+# PREMIUM BUTTON IMPLEMENTATIONS (Previously incomplete)
+# =============================================================================

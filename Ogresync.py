@@ -13,6 +13,8 @@ import webbrowser
 import pyperclip
 import requests
 import ui_elements # Import the new UI module
+import conflict_resolution # Import the new conflict resolution module
+import setup_wizard # Import the new setup wizard module
 
 # ------------------------------------------------
 # CONFIG / GLOBALS
@@ -235,12 +237,59 @@ def open_obsidian(obsidian_path):
 
 def conflict_resolution_dialog(conflict_files):
     """
-    Opens a modal dialog that lists conflicting files and offers three options:
-    "Keep Local Changes" (ours), "Keep Remote Changes" (theirs), or "Merge Manually".
+    Opens a two-stage conflict resolution dialog system.
+    Stage 1: High-level strategy selection (Keep Local, Keep Remote, Smart Merge)
+    Stage 2: File-by-file resolution for conflicting files (if Smart Merge is chosen)
+    
     Returns the user's choice as one of the strings: "ours", "theirs", or "manual".
+    This maintains backward compatibility while providing enhanced resolution capabilities.
     """
-    # Use the new UI element for conflict resolution
-    return ui_elements.create_conflict_resolution_dialog(root, conflict_files)
+    try:
+        # Create conflict analysis from the conflict files
+        analysis = conflict_resolution.ConflictAnalysis()
+        analysis.has_conflicts = True
+        analysis.conflict_type = conflict_resolution.ConflictType.MERGE_CONFLICT
+        analysis.summary = f"Merge conflicts detected in files: {conflict_files}"
+        
+        # Parse conflict files and create conflict info objects
+        if conflict_files and conflict_files.strip():
+            for file_path in conflict_files.strip().split('\n'):
+                if file_path.strip():
+                    conflict_info = conflict_resolution.FileConflictInfo(file_path.strip(), 'both_modified')
+                    conflict_info.has_content_conflict = True
+                    analysis.conflicted_files.append(conflict_info)
+        
+        # Get vault path from config
+        vault_path = config_data.get("VAULT_PATH", "")
+        
+        # Create conflict resolver
+        resolver = conflict_resolution.ConflictResolver(vault_path, root)
+        resolution_result = resolver.resolve_conflicts(conflict_resolution.ConflictType.MERGE_CONFLICT)
+        
+        if not resolution_result['success']:
+            # Fallback to simple choice if resolution failed
+            return None
+        
+        strategy = resolution_result['strategy']
+        
+        # Map new strategies to old format for backward compatibility
+        if strategy == 'keep_local':
+            return 'ours'
+        elif strategy == 'keep_remote':
+            return 'theirs'
+        elif strategy == 'smart_merge':
+            # Apply the smart merge resolution
+            if conflict_resolution.apply_conflict_resolution(vault_path, resolution_result):
+                return 'manual'  # Indicates resolution was handled
+            else:
+                return None  # Resolution failed
+        else:
+            return None
+            
+    except Exception as e:
+        print(f"Error in enhanced conflict resolution: {e}")
+        # Fallback to original UI element for backward compatibility
+        return ui_elements.create_conflict_resolution_dialog(root, conflict_files)
 
 # ------------------------------------------------
 # REPOSITORY CONFLICT RESOLUTION FUNCTIONS
@@ -297,31 +346,78 @@ def analyze_repository_state(vault_path):
 
 def handle_initial_repository_conflict(vault_path, analysis, parent_window=None):
     """
-    Handles repository content conflicts during initial setup.
+    Handles repository content conflicts during initial setup using the enhanced two-stage resolution system.
     Returns True if resolved successfully, False otherwise.
     """
     if not analysis["conflict_detected"]:
         return True
     
-    # Create conflict resolution dialog
-    message = (
-        "Both your local vault and the remote repository contain files. "
-        "How would you like to resolve this conflict?"
-    )
-    
-    # Use the provided parent window or fallback to global root
-    dialog_parent = parent_window if parent_window is not None else root
-    choice = ui_elements.create_repository_conflict_dialog(dialog_parent, message, analysis)
-    
-    if choice == "merge":
-        return handle_merge_strategy(vault_path)
-    elif choice == "local":
-        return handle_local_strategy(vault_path)
-    elif choice == "remote":
-        return handle_remote_strategy(vault_path, analysis)
-    else:
-        safe_update_log("No conflict resolution strategy selected.", None)
-        return False
+    try:
+        # Use the enhanced two-stage conflict resolution system
+        dialog_parent = parent_window if parent_window is not None else root
+        
+        # Create enhanced conflict analysis for the new system
+        enhanced_analysis = conflict_resolution.ConflictAnalysis()
+        enhanced_analysis.has_conflicts = True
+        enhanced_analysis.conflict_type = conflict_resolution.ConflictType.REPOSITORY_SETUP
+        enhanced_analysis.summary = "Repository setup conflicts detected"
+        
+        # Convert analysis data to enhanced format
+        enhanced_analysis.local_only_files = analysis.get("local_files", [])
+        enhanced_analysis.remote_only_files = analysis.get("remote_files", [])
+        
+        # Create file conflict info for files that exist in both but might be different
+        for local_file in analysis.get("local_files", []):
+            if local_file in analysis.get("remote_files", []):
+                conflict_info = conflict_resolution.FileConflictInfo(local_file, 'both_modified')
+                conflict_info.has_content_conflict = True
+                enhanced_analysis.conflicted_files.append(conflict_info)
+        
+        # Use the enhanced conflict resolver
+        resolver = conflict_resolution.ConflictResolver(vault_path, dialog_parent)    
+        resolution_result = resolver.resolve_conflicts(conflict_resolution.ConflictType.REPOSITORY_SETUP)
+        
+        if resolution_result['success']:
+            strategy = resolution_result['strategy']
+            
+            if strategy == 'keep_local':
+                return handle_local_strategy(vault_path)
+            elif strategy == 'keep_remote':
+                return handle_remote_strategy(vault_path, analysis)
+            elif strategy == 'smart_merge':
+                # Apply smart merge with file-by-file resolution
+                success = conflict_resolution.apply_conflict_resolution(vault_path, resolution_result)
+                if not success:
+                    # Fallback to simple merge strategy
+                    safe_update_log("Enhanced resolution failed, falling back to simple merge...", None)
+                    success = handle_merge_strategy(vault_path)
+                return success
+            else:
+                safe_update_log("Unknown resolution strategy selected.", None)
+                return False
+        else:
+            safe_update_log("Conflict resolution was cancelled or failed.", None)
+            return False
+            
+    except Exception as e:
+        safe_update_log(f"Error in enhanced conflict resolution: {e}", None)
+        # Fallback to original conflict resolution dialog
+        message = (
+            "Both your local vault and the remote repository contain files. "
+            "How would you like to resolve this conflict?"
+        )
+        dialog_parent = parent_window if parent_window is not None else root
+        choice = ui_elements.create_repository_conflict_dialog(dialog_parent, message, analysis)
+        
+        if choice == "merge":
+            return handle_merge_strategy(vault_path)
+        elif choice == "local":
+            return handle_local_strategy(vault_path)
+        elif choice == "remote":
+            return handle_remote_strategy(vault_path, analysis)
+        else:
+            safe_update_log("No conflict resolution strategy selected.", None)
+            return False
 
 def ensure_git_user_config():
     """
@@ -1406,11 +1502,9 @@ def run_setup_wizard():
     Runs the new progressive setup wizard that guides users through all setup steps.
     """
     try:
-        dialog, wizard_state = ui_elements.create_progressive_setup_wizard()
-        dialog.mainloop()
+        success, wizard_state = setup_wizard.run_setup_wizard()
         
-        # Check if setup was completed successfully
-        if wizard_state.get("setup_complete", False):
+        if success:
             # Setup completed successfully
             return True
         else:
@@ -1418,10 +1512,13 @@ def run_setup_wizard():
             return False
             
     except Exception as e:
-        ui_elements.show_error_message(
-            "Setup Error",
-            f"An error occurred during setup: {str(e)}"
-        )
+        if ui_elements:
+            ui_elements.show_error_message(
+                "Setup Error",
+                f"An error occurred during setup: {str(e)}"
+            )
+        else:
+            print(f"Setup Error: {str(e)}")
         return False
 
 def setup_new_vault_directory(vault_path):
@@ -1531,23 +1628,67 @@ def setup_new_vault_directory(vault_path):
         if analysis["conflict_detected"]:
             safe_update_log("Content conflict detected between local and remote repositories.", None)
             
-            # Show conflict resolution dialog
-            message = (
-                "Both your new vault directory and the remote repository contain files. "
-                "How would you like to resolve this conflict?"
-            )
-            
-            choice = ui_elements.create_repository_conflict_dialog(root, message, analysis)
-            
-            if choice == "merge":
-                success = handle_merge_strategy(vault_path)
-            elif choice == "local":
-                success = handle_local_strategy(vault_path)
-            elif choice == "remote":
-                success = handle_remote_strategy(vault_path, analysis)
-            else:
-                safe_update_log("No conflict resolution strategy selected.", None)
-                return False
+            # Use the new two-stage conflict resolution system
+            try:
+                # Create enhanced conflict analysis
+                enhanced_analysis = conflict_resolution.ConflictAnalysis()
+                enhanced_analysis.has_conflicts = True
+                enhanced_analysis.conflict_type = conflict_resolution.ConflictType.REPOSITORY_SETUP
+                enhanced_analysis.summary = f"Repository setup conflicts detected"
+                
+                # Convert analysis data to enhanced format
+                enhanced_analysis.local_only_files = analysis.get("local_files", [])
+                enhanced_analysis.remote_only_files = analysis.get("remote_files", [])
+                
+                # Create file conflict info for files that exist in both but are different
+                for local_file in analysis.get("local_files", []):
+                    if local_file in analysis.get("remote_files", []):
+                        conflict_info = conflict_resolution.FileConflictInfo(local_file, 'both_modified')
+                        conflict_info.has_content_conflict = True
+                        enhanced_analysis.conflicted_files.append(conflict_info)
+                
+                # Use the enhanced conflict resolver
+                resolver = conflict_resolution.ConflictResolver(vault_path, root)    
+                resolution_result = resolver.resolve_conflicts(conflict_resolution.ConflictType.REPOSITORY_SETUP)
+                
+                if resolution_result['success']:
+                    strategy = resolution_result['strategy']
+                    
+                    if strategy == 'keep_local':
+                        success = handle_local_strategy(vault_path)
+                    elif strategy == 'keep_remote':
+                        success = handle_remote_strategy(vault_path, analysis)
+                    elif strategy == 'smart_merge':
+                        # Apply smart merge with file-by-file resolution
+                        success = conflict_resolution.apply_conflict_resolution(vault_path, resolution_result)
+                        if not success:
+                            # Fallback to simple merge strategy
+                            success = handle_merge_strategy(vault_path)
+                    else:
+                        safe_update_log("Unknown resolution strategy selected.", None)
+                        success = False
+                else:
+                    safe_update_log("Conflict resolution was cancelled or failed.", None)
+                    success = False
+                    
+            except Exception as e:
+                safe_update_log(f"Error in enhanced conflict resolution: {e}", None)
+                # Fallback to original conflict resolution dialog
+                message = (
+                    "Both your new vault directory and the remote repository contain files. "
+                    "How would you like to resolve this conflict?"
+                )
+                choice = ui_elements.create_repository_conflict_dialog(root, message, analysis)
+                
+                if choice == "merge":
+                    success = handle_merge_strategy(vault_path)
+                elif choice == "local":
+                    success = handle_local_strategy(vault_path)
+                elif choice == "remote":
+                    success = handle_remote_strategy(vault_path, analysis)
+                else:
+                    safe_update_log("No conflict resolution strategy selected.", None)
+                    success = False
             
             if not success:
                 safe_update_log("❌ Failed to resolve repository conflict.", None)
@@ -1676,11 +1817,9 @@ def main():
         root.mainloop()
     else:
         # Not set up yet: run the progressive setup wizard
-        dialog, wizard_state = ui_elements.create_progressive_setup_wizard()
-        dialog.mainloop()
+        success = run_setup_wizard()
         
-        # Check if setup was completed successfully
-        if wizard_state.get("setup_complete", False):
+        if success:
             # Setup completed successfully, reload config to get latest values
             load_config()  # Reload to ensure we have the latest saved values
             
@@ -1688,9 +1827,6 @@ def main():
             if config_data.get("SETUP_DONE", "0") != "1":
                 config_data["SETUP_DONE"] = "1"
                 save_config()
-            
-            # Don't show completion message dialog - it creates unwanted windows
-            # The wizard already shows completion status
             
             # Transition to sync mode
             restart_to_sync_mode()
