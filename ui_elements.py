@@ -3,7 +3,12 @@ from tkinter import ttk, scrolledtext, filedialog, messagebox
 import tkinter.font as tkfont
 import sys
 import os
-from typing import Optional, Callable, Dict, Any, Union
+from typing import Optional, Callable, Dict, Any, Union, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from tkinter import _ButtonCommand
+else:
+    _ButtonCommand = Any
 
 # =============================================================================
 # PREMIUM UI DESIGN SYSTEM - MODERN & SCALABLE
@@ -265,172 +270,7 @@ class PremiumButton:
     """Enhanced button component with hover effects and styling options."""
     
     @staticmethod
-    def create_primary(parent, text, command=None, icon=None, size="md"):
-        """Creates a primary button with premium styling."""
-        # Size configurations
-        sizes = {
-            "sm": {"font_size": Typography.SM, "pad_x": 12, "pad_y": 6, "min_width": 60},
-            "md": {"font_size": Typography.MD, "pad_x": 16, "pad_y": 8, "min_width": 80},
-            "lg": {"font_size": Typography.LG, "pad_x": 20, "pad_y": 10, "min_width": 100}
-        }
-        
-        size_config = sizes.get(size, sizes["md"])
-        
-        # Create button text with optional icon
-        button_text = f"{icon} {text}" if icon else text
-        
-        btn = tk.Button(
-            parent,
-            text=button_text,
-            command=command,
-            font=(FONT_FAMILY_PRIMARY, size_config["font_size"], Typography.MEDIUM),
-            bg=Colors.PRIMARY,
-            fg=Colors.TEXT_INVERSE,
-            activebackground=Colors.PRIMARY_HOVER,
-            activeforeground=Colors.TEXT_INVERSE,
-            relief=tk.FLAT,
-            borderwidth=0,
-            cursor="hand2",
-            padx=size_config["pad_x"],
-            pady=size_config["pad_y"]
-        )
-        
-        return btn
-    
-    @staticmethod
-    def create_secondary(parent, text, command=None, icon=None, size="md"):
-        """Creates a secondary button with premium styling."""
-        # Size configurations
-        sizes = {
-            "sm": {"font_size": Typography.SM, "pad_x": 12, "pad_y": 6, "min_width": 60},
-            "md": {"font_size": Typography.MD, "pad_x": 16, "pad_y": 8, "min_width": 80},
-            "lg": {"font_size": Typography.LG, "pad_x": 20, "pad_y": 10, "min_width": 100}
-        }
-        
-        size_config = sizes.get(size, sizes["md"])
-        
-        # Create button text with optional icon
-        button_text = f"{icon} {text}" if icon else text
-        
-        btn = tk.Button(
-            parent,
-            text=button_text,
-            command=command,
-            font=(FONT_FAMILY_PRIMARY, size_config["font_size"], Typography.NORMAL),
-            bg=Colors.BG_CARD,
-            fg=Colors.TEXT_ACCENT,
-            activebackground=Colors.SURFACE_HOVER,
-            activeforeground=Colors.TEXT_ACCENT,
-            relief=tk.SOLID,
-            borderwidth=1,
-            cursor="hand2",
-            padx=size_config["pad_x"],
-            pady=size_config["pad_y"]
-        )
-        
-        return btn
-    
-    @staticmethod
-    def create_success(parent, text, command=None, icon=None, size="md"):
-        """Creates a success button with premium styling."""
-        # Size configurations
-        sizes = {
-            "sm": {"font_size": Typography.SM, "pad_x": 12, "pad_y": 6, "min_width": 60},
-            "md": {"font_size": Typography.MD, "pad_x": 16, "pad_y": 8, "min_width": 80},
-            "lg": {"font_size": Typography.LG, "pad_x": 20, "pad_y": 10, "min_width": 100}
-        }
-        
-        size_config = sizes.get(size, sizes["md"])
-        
-        # Create button text with optional icon
-        button_text = f"{icon} {text}" if icon else text
-        
-        btn = tk.Button(
-            parent,
-            text=button_text,
-            command=command,
-            font=(FONT_FAMILY_PRIMARY, size_config["font_size"], Typography.MEDIUM),
-            bg=Colors.SUCCESS,
-            fg=Colors.TEXT_INVERSE,
-            activebackground=Colors.SUCCESS_HOVER,
-            activeforeground=Colors.TEXT_INVERSE,
-            relief=tk.FLAT,
-            borderwidth=0,
-            cursor="hand2",
-            padx=size_config["pad_x"],
-            pady=size_config["pad_y"]
-        )
-        
-        return btn
-    
-    @staticmethod
-    def create_danger(parent, text, command=None, icon=None, size="md"):
-        """Creates a danger button with premium styling."""
-        # Size configurations
-        sizes = {
-            "sm": {"font_size": Typography.SM, "pad_x": 12, "pad_y": 6, "min_width": 60},
-            "md": {"font_size": Typography.MD, "pad_x": 16, "pad_y": 8, "min_width": 80},
-            "lg": {"font_size": Typography.LG, "pad_x": 20, "pad_y": 10, "min_width": 100}
-        }
-        
-        size_config = sizes.get(size, sizes["md"])
-        
-        # Create button text with optional icon
-        button_text = f"{icon} {text}" if icon else text
-        
-        btn = tk.Button(
-            parent,
-            text=button_text,
-            command=command,
-            font=(FONT_FAMILY_PRIMARY, size_config["font_size"], Typography.MEDIUM),
-            bg=Colors.ERROR,
-            fg=Colors.TEXT_INVERSE,
-            activebackground=Colors.ERROR_HOVER,
-            activeforeground=Colors.TEXT_INVERSE,
-            relief=tk.FLAT,
-            borderwidth=0,
-            cursor="hand2",
-            padx=size_config["pad_x"],
-            pady=size_config["pad_y"]
-        )
-        
-        return btn
-    
-    @staticmethod
-    def create_warning(parent, text, command=None, icon=None, size="md"):
-        """Creates a warning button with premium styling."""
-        # Size configurations
-        sizes = {
-            "sm": {"font_size": Typography.SM, "pad_x": 12, "pad_y": 6, "min_width": 60},
-            "md": {"font_size": Typography.MD, "pad_x": 16, "pad_y": 8, "min_width": 80},
-            "lg": {"font_size": Typography.LG, "pad_x": 20, "pad_y": 10, "min_width": 100}
-        }
-        
-        size_config = sizes.get(size, sizes["md"])
-        
-        # Create button text with optional icon
-        button_text = f"{icon} {text}" if icon else text
-        
-        btn = tk.Button(
-            parent,
-            text=button_text,
-            command=command,
-            font=(FONT_FAMILY_PRIMARY, size_config["font_size"], Typography.MEDIUM),
-            bg=Colors.WARNING,
-            fg=Colors.TEXT_INVERSE,
-            activebackground=Colors.WARNING_HOVER,
-            activeforeground=Colors.TEXT_INVERSE,
-            relief=tk.FLAT,
-            borderwidth=0,
-            cursor="hand2",
-            padx=size_config["pad_x"],
-            pady=size_config["pad_y"]
-        )
-        
-        return btn
-    
-    @staticmethod
-    def create_primary(parent, text, command=None, icon=None, size="md"):
+    def create_primary(parent, text: str, command: Optional[Callable[[], Any]] = None, icon: Optional[str] = None, size: str = "md"):
         """Creates a primary button with premium styling."""
         btn_frame = tk.Frame(parent, bg=Colors.BG_PRIMARY)
         
@@ -449,7 +289,7 @@ class PremiumButton:
         btn = tk.Button(
             btn_frame,
             text=button_text,
-            command=command,
+            command=command if command is not None else lambda: None,
             font=(FONT_FAMILY_PRIMARY, size_config["font_size"], Typography.MEDIUM),
             bg=Colors.PRIMARY,
             fg=Colors.TEXT_INVERSE,
@@ -475,12 +315,12 @@ class PremiumButton:
         btn.bind("<Leave>", on_leave)
         btn.pack(fill=tk.BOTH, expand=True)
         
-        # Store the actual button widget in the frame for easy access
-        btn_frame.button = btn
+        # Use a custom attribute container to avoid Pylance warnings
+        setattr(btn_frame, '_button', btn)
         return btn_frame
     
     @staticmethod
-    def create_secondary(parent, text, command=None, icon=None, size="md"):
+    def create_secondary(parent, text: str, command: Optional[Callable[[], Any]] = None, icon: Optional[str] = None, size: str = "md"):
         """Creates a secondary button with outline styling."""
         btn_frame = tk.Frame(parent, bg=Colors.BG_PRIMARY)
         
@@ -496,7 +336,7 @@ class PremiumButton:
         btn = tk.Button(
             btn_frame,
             text=button_text,
-            command=command,
+            command=command if command is not None else lambda: None,
             font=(FONT_FAMILY_PRIMARY, size_config["font_size"], Typography.MEDIUM),
             bg=Colors.BG_CARD,
             fg=Colors.TEXT_ACCENT,
@@ -521,55 +361,12 @@ class PremiumButton:
         btn.bind("<Leave>", on_leave)
         btn.pack(fill=tk.BOTH, expand=True)
         
-        # Store the actual button widget in the frame for easy access
-        btn_frame.button = btn
+        # Use a custom attribute container to avoid Pylance warnings
+        setattr(btn_frame, '_button', btn)
         return btn_frame
     
     @staticmethod
-    def create_danger(parent, text, command=None, icon=None, size="md"):
-        """Creates a danger button with error styling."""
-        btn_frame = tk.Frame(parent, bg=Colors.BG_PRIMARY)
-        
-        sizes = {
-            "sm": {"font_size": Typography.SM, "pad_x": 12, "pad_y": 6},
-            "md": {"font_size": Typography.MD, "pad_x": 16, "pad_y": 8},
-            "lg": {"font_size": Typography.LG, "pad_x": 20, "pad_y": 10}
-        }
-        
-        size_config = sizes.get(size, sizes["md"])
-        button_text = f"{icon} {text}" if icon else text
-        
-        btn = tk.Button(
-            btn_frame,
-            text=button_text,
-            command=command,
-            font=(FONT_FAMILY_PRIMARY, size_config["font_size"], Typography.MEDIUM),
-            bg=Colors.ERROR,
-            fg=Colors.TEXT_INVERSE,
-            activebackground=Colors.ERROR_HOVER,
-            activeforeground=Colors.TEXT_INVERSE,
-            relief=tk.FLAT,
-            borderwidth=0,
-            cursor="hand2",
-            padx=size_config["pad_x"],
-            pady=size_config["pad_y"]
-        )
-        
-        def on_enter(e):
-            btn.config(bg=Colors.ERROR_HOVER)
-        
-        def on_leave(e):
-            btn.config(bg=Colors.ERROR)
-            
-        btn.bind("<Enter>", on_enter)
-        btn.bind("<Leave>", on_leave)
-        btn.pack(fill=tk.BOTH, expand=True)
-        
-        btn_frame.button = btn
-        return btn_frame
-    
-    @staticmethod
-    def create_success(parent, text, command=None, icon=None, size="md"):
+    def create_success(parent, text: str, command: Optional[Callable[[], Any]] = None, icon: Optional[str] = None, size: str = "md"):
         """Creates a success button with success styling."""
         btn_frame = tk.Frame(parent, bg=Colors.BG_PRIMARY)
         
@@ -585,7 +382,7 @@ class PremiumButton:
         btn = tk.Button(
             btn_frame,
             text=button_text,
-            command=command,
+            command=command if command is not None else lambda: None,
             font=(FONT_FAMILY_PRIMARY, size_config["font_size"], Typography.MEDIUM),
             bg=Colors.SUCCESS,
             fg=Colors.TEXT_INVERSE,
@@ -608,11 +405,54 @@ class PremiumButton:
         btn.bind("<Leave>", on_leave)
         btn.pack(fill=tk.BOTH, expand=True)
         
-        btn_frame.button = btn
+        setattr(btn_frame, '_button', btn)
         return btn_frame
     
     @staticmethod
-    def create_warning(parent, text, command=None, icon=None, size="md"):
+    def create_danger(parent, text: str, command: Optional[Callable[[], Any]] = None, icon: Optional[str] = None, size: str = "md"):
+        """Creates a danger button with error styling."""
+        btn_frame = tk.Frame(parent, bg=Colors.BG_PRIMARY)
+        
+        sizes = {
+            "sm": {"font_size": Typography.SM, "pad_x": 12, "pad_y": 6},
+            "md": {"font_size": Typography.MD, "pad_x": 16, "pad_y": 8},
+            "lg": {"font_size": Typography.LG, "pad_x": 20, "pad_y": 10}
+        }
+        
+        size_config = sizes.get(size, sizes["md"])
+        button_text = f"{icon} {text}" if icon else text
+        
+        btn = tk.Button(
+            btn_frame,
+            text=button_text,
+            command=command if command is not None else lambda: None,
+            font=(FONT_FAMILY_PRIMARY, size_config["font_size"], Typography.MEDIUM),
+            bg=Colors.ERROR,
+            fg=Colors.TEXT_INVERSE,
+            activebackground=Colors.ERROR_HOVER,
+            activeforeground=Colors.TEXT_INVERSE,
+            relief=tk.FLAT,
+            borderwidth=0,
+            cursor="hand2",
+            padx=size_config["pad_x"],
+            pady=size_config["pad_y"]
+        )
+        
+        def on_enter(e):
+            btn.config(bg=Colors.ERROR_HOVER)
+        
+        def on_leave(e):
+            btn.config(bg=Colors.ERROR)
+            
+        btn.bind("<Enter>", on_enter)
+        btn.bind("<Leave>", on_leave)
+        btn.pack(fill=tk.BOTH, expand=True)
+        
+        setattr(btn_frame, '_button', btn)
+        return btn_frame
+    
+    @staticmethod
+    def create_warning(parent, text: str, command: Optional[Callable[[], Any]] = None, icon: Optional[str] = None, size: str = "md"):
         """Creates a warning button with warning styling."""
         btn_frame = tk.Frame(parent, bg=Colors.BG_PRIMARY)
         
@@ -628,7 +468,7 @@ class PremiumButton:
         btn = tk.Button(
             btn_frame,
             text=button_text,
-            command=command,
+            command=command if command is not None else lambda: None,
             font=(FONT_FAMILY_PRIMARY, size_config["font_size"], Typography.MEDIUM),
             bg=Colors.WARNING,
             fg=Colors.TEXT_INVERSE,
@@ -651,7 +491,7 @@ class PremiumButton:
         btn.bind("<Leave>", on_leave)
         btn.pack(fill=tk.BOTH, expand=True)
         
-        btn_frame.button = btn
+        setattr(btn_frame, '_button', btn)
         return btn_frame
 
 class PremiumCard:
@@ -694,14 +534,17 @@ class PremiumDialog:
     """Enhanced dialog system with modern styling."""
     
     @staticmethod
-    def create_base(parent, title, width=400, height=300):
+    def create_base(parent, title, width=400, height=300, resizable=True):
         """Creates a base dialog with premium styling."""
         dialog = tk.Toplevel(parent)
         dialog.title(title)
         dialog.transient(parent)
         dialog.grab_set()
-        dialog.resizable(False, False)
+        dialog.resizable(resizable, resizable)  # Allow resizing by default
         dialog.configure(bg=Colors.BG_PRIMARY)
+        
+        # Set minimum size to prevent content from being cut off
+        dialog.minsize(min(width, 350), min(height, 200))
         
         # Center the dialog
         dialog.update_idletasks()
@@ -905,8 +748,9 @@ def create_premium_main_window():
     
     # Set window icon
     try:
-        if hasattr(sys, "_MEIPASS"):
-            icon_path = os.path.join(sys._MEIPASS, "assets", "logo.png")
+        # Check if we're running from PyInstaller bundle
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            icon_path = os.path.join(sys._MEIPASS, "assets", "logo.png")  # type: ignore
         else:
             icon_path = os.path.join("assets", "logo.png")
         
@@ -1016,7 +860,8 @@ def create_premium_conflict_dialog(parent_window, conflict_files_text):
         parent_window, 
         "Merge Conflict Detected", 
         width=500, 
-        height=350
+        height=350,
+        resizable=False
     )
     
     # Header with icon and title
@@ -1117,8 +962,9 @@ def create_premium_minimal_ui(auto_run=False):
     
     # Set icon
     try:
-        if hasattr(sys, "_MEIPASS"):
-            icon_path = os.path.join(sys._MEIPASS, "assets", "logo.png")
+        # Check if we're running from PyInstaller bundle
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            icon_path = os.path.join(sys._MEIPASS, "assets", "logo.png")  # type: ignore
         else:
             icon_path = os.path.join("assets", "logo.png")
         
@@ -1211,8 +1057,9 @@ def create_premium_wizard_ui():
     
     # Set icon
     try:
-        if hasattr(sys, "_MEIPASS"):
-            icon_path = os.path.join(sys._MEIPASS, "assets", "logo.png")
+        # Check if we're running from PyInstaller bundle
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            icon_path = os.path.join(sys._MEIPASS, "assets", "logo.png")  # type: ignore
         else:
             icon_path = os.path.join("assets", "logo.png")
         
@@ -1658,6 +1505,16 @@ def create_stage2_smart_merge_dialog(parent_window, remote_ahead_analysis, confl
                 if isinstance(widget, tk.Button):
                     widget.config(bg=Colors.BG_CARD, fg=Colors.TEXT_SECONDARY)
             
+            # Highlight selected button
+            if resolution == "auto_merge" and file_info.get("auto_mergeable", False):
+                auto_btn.config(bg=Colors.SUCCESS_HOVER, fg=Colors.TEXT_INVERSE)
+            elif resolution == "manual_merge":
+                manual_btn.config(bg=Colors.WARNING_HOVER, fg=Colors.TEXT_INVERSE)
+            elif resolution == "use_local":
+                local_btn.config(bg=Colors.PRIMARY_HOVER, fg=Colors.TEXT_INVERSE)
+            elif resolution == "use_remote":
+                remote_btn.config(bg=Colors.PRIMARY_HOVER, fg=Colors.TEXT_INVERSE)
+
         # Auto merge button (if available)
         if file_info.get("auto_mergeable", False):
             auto_btn = tk.Button(
@@ -1733,13 +1590,14 @@ def create_stage2_smart_merge_dialog(parent_window, remote_ahead_analysis, confl
     action_frame = tk.Frame(main_frame, bg=Colors.BG_PRIMARY)
     action_frame.pack(fill=tk.X)
     
-    result = {"value": "cancelled"}
+    result: Dict[str, Any] = {"value": "cancelled"}
     
     def apply_resolutions():
         # Check if all files are resolved
         unresolved = [f for f in conflicted_files.keys() if f not in resolutions]
         if unresolved:
-            response = ask_yes_no(
+            import tkinter.messagebox as messagebox
+            response = messagebox.askyesno(
                 "Unresolved Files",
                 f"Some files are not yet resolved:\n{', '.join(unresolved[:3])}\n\n"
                 "Continue anyway? (Unresolved files will use auto-merge if possible)"
@@ -1754,7 +1612,7 @@ def create_stage2_smart_merge_dialog(parent_window, remote_ahead_analysis, confl
                 else:
                     resolutions[filename] = "manual_merge"
         
-        result["value"] = resolutions
+        result["value"] = dict(resolutions)  # Convert to dict to fix type issue
         dialog.destroy()
     
     def cancel_resolution():
@@ -1779,6 +1637,7 @@ def create_stage2_smart_merge_dialog(parent_window, remote_ahead_analysis, confl
     # Wait for user to complete
     parent_window.wait_window(dialog)
     return result["value"]
+
 
 # =============================================================================
 # PROGRESSIVE SETUP WIZARD - COMPATIBILITY FUNCTIONS
@@ -1807,106 +1666,116 @@ def create_progressive_setup_wizard(parent=None):
 
 def show_premium_info(title, message, parent=None):
     """Show an info message with premium styling."""
-    dialog, main_frame = PremiumDialog.create_base(parent, title, 450, 300) # Increased height from 250
+    # Calculate required size based on message length
+    message_length = len(message)
+    if message_length > 500:
+        width, height = 650, 450
+    elif message_length > 300:
+        width, height = 550, 350
+    elif message_length > 150:
+        width, height = 450, 250
+    else:
+        width, height = 400, 200
+    
+    dialog, main_frame = PremiumDialog.create_base(parent, title, width=width, height=height, resizable=True)
     
     # Icon and message
     content_frame = tk.Frame(main_frame, bg=Colors.BG_PRIMARY)
-    content_frame.pack(fill=tk.BOTH, expand=True, pady=Spacing.LG)
+    content_frame.pack(fill=tk.BOTH, expand=True, pady=(0, Spacing.LG))
     
-    # Info icon
     icon_label = tk.Label(
         content_frame,
         text=Icons.INFO,
-        font=(FONT_FAMILY_PRIMARY, Typography.H1),
-        bg=Colors.BG_PRIMARY,
-                      fg=Colors.INFO
-    )
-    icon_label.pack(pady=(0, Spacing.MD))
-    
-    # Message
-    message_label = tk.Label(
-        content_frame,
-        text=message,
-        font=(FONT_FAMILY_PRIMARY, Typography.MD),
-        bg=Colors.BG_PRIMARY,
-        fg=Colors.TEXT_PRIMARY,
-        wraplength=380,
-        justify=tk.CENTER
-    )
-    message_label.pack(pady=(0, Spacing.LG))
-    
-    # OK button
-    ok_btn = PremiumButton.create_primary(
-        content_frame,
-        "OK",
-        lambda: dialog.destroy(),
-        size="md"
-    )
-    ok_btn.pack(pady=Spacing.SM) # Added pady
-    
-    dialog.wait_window()
-    return True
-
-def show_premium_error(title, message, parent=None):
-    """Show an error message with premium styling."""
-    dialog, main_frame = PremiumDialog.create_base(parent, title, 450, 300) # Increased height from 250
-    
-    content_frame = tk.Frame(main_frame, bg=Colors.BG_PRIMARY)
-    content_frame.pack(fill=tk.BOTH, expand=True, pady=Spacing.LG)
-    
-    # Error icon
-    icon_label = tk.Label(
-        content_frame,
-        text=Icons.ERROR,
-        font=(FONT_FAMILY_PRIMARY, Typography.H1),
-        bg=Colors.BG_PRIMARY,
-        fg=Colors.ERROR
-    )
-    icon_label.pack(pady=(0, Spacing.MD))
-    
-    # Message
-    message_label = tk.Label(
-        content_frame,
-        text=message,
-        font=(FONT_FAMILY_PRIMARY, Typography.MD),
-        bg=Colors.BG_PRIMARY,
-        fg=Colors.TEXT_PRIMARY,
-        wraplength=380,
-        justify=tk.CENTER
-    )
-    message_label.pack(pady=(0, Spacing.LG))
-    
-    # OK button
-    ok_btn = PremiumButton.create_primary(
-        content_frame,
-        "OK",
-        lambda: dialog.destroy(),
-        size="md"
-    )
-    ok_btn.pack(pady=Spacing.SM) # Added pady
-    
-    dialog.wait_window()
-    return True
-
-def ask_premium_yes_no(title, message, parent=None):
-    """Ask a yes/no question with premium styling."""
-    dialog, main_frame = PremiumDialog.create_base(parent, title, 500, 350)
-    
-    result = {"answer": False}
-    
-    # Content frame with proper spacing
-    content_frame = tk.Frame(main_frame, bg=Colors.BG_PRIMARY)
-    content_frame.pack(fill=tk.BOTH, expand=True, padx=Spacing.LG, pady=Spacing.LG)
-    
-    # Question icon
-    icon_label = tk.Label(
-        content_frame,
-        text="❓",
-        font=(FONT_FAMILY_PRIMARY, Typography.H1, Typography.BOLD),
+        font=(FONT_FAMILY_PRIMARY, Typography.XXL),
         bg=Colors.BG_PRIMARY,
         fg=Colors.INFO
     )
-    icon_label.pack(pady=(0, Spacing.MD))
+    icon_label.pack(pady=(0, Spacing.SM))
+    
+    message_label = tk.Label(
+        content_frame,
+        text=message,
+        font=(FONT_FAMILY_PRIMARY, Typography.MD),
+        bg=Colors.BG_PRIMARY,
+        fg=Colors.TEXT_PRIMARY,
+        wraplength=width - 80,  # Dynamic wrap length based on dialog width
+        justify=tk.LEFT  # Changed to LEFT for better readability of long messages
+    )
+    message_label.pack(pady=(0, Spacing.XL))
+    
+    # OK button
+    button_frame = tk.Frame(main_frame, bg=Colors.BG_PRIMARY)
+    button_frame.pack()
+    
+    ok_btn = PremiumButton.create_primary(
+        button_frame,
+        "OK",
+        dialog.destroy,
+        size="md"
+    )
+    ok_btn.pack()
+    
+    parent.wait_window(dialog) if parent else dialog.mainloop()
+
+def show_premium_error(title, message, parent=None):
+    """Show an error message with premium styling."""
+    dialog, main_frame = PremiumDialog.create_base(parent, title, width=400, height=200, resizable=False)
+    
+    # Icon and message
+    content_frame = tk.Frame(main_frame, bg=Colors.BG_PRIMARY)
+    content_frame.pack(fill=tk.BOTH, expand=True, pady=(0, Spacing.LG))
+    
+    icon_label = tk.Label(
+        content_frame,
+        text=Icons.ERROR,
+        font=(FONT_FAMILY_PRIMARY, Typography.XXL),
+        bg=Colors.BG_PRIMARY,
+        fg=Colors.ERROR
+    )
+    icon_label.pack(pady=(0, Spacing.SM))
+    
+    message_label = tk.Label(
+        content_frame,
+        text=message,
+        font=(FONT_FAMILY_PRIMARY, Typography.MD),
+        bg=Colors.BG_PRIMARY,
+        fg=Colors.TEXT_PRIMARY,
+        wraplength=350,
+        justify=tk.CENTER
+    )
+    message_label.pack(pady=(0, Spacing.XL))
+    
+    # OK button
+    button_frame = tk.Frame(main_frame, bg=Colors.BG_PRIMARY)
+    button_frame.pack()
+    
+    ok_btn = PremiumButton.create_danger(
+        button_frame,
+        "OK",
+        dialog.destroy,
+        size="md"
+    )
+    ok_btn.pack()
+    
+    parent.wait_window(dialog) if parent else dialog.mainloop()
+
+def ask_premium_yes_no(title, message, parent=None):
+    """Ask a yes/no question with premium styling."""
+    dialog, main_frame = PremiumDialog.create_base(parent, title, width=450, height=250, resizable=False)
+    
+    # Content frame
+    content_frame = tk.Frame(main_frame, bg=Colors.BG_PRIMARY)
+    content_frame.pack(fill=tk.BOTH, expand=True, pady=(0, Spacing.LG))
+    
+    # Icon
+    icon_label = tk.Label(
+        content_frame,
+        text=Icons.WARNING,
+        font=(FONT_FAMILY_PRIMARY, Typography.XXL),
+        bg=Colors.BG_PRIMARY,
+        fg=Colors.WARNING
+    )
+    icon_label.pack(pady=(0, Spacing.SM))
     
     # Message
     message_label = tk.Label(
@@ -1929,131 +1798,112 @@ def ask_premium_yes_no(title, message, parent=None):
     button_frame = tk.Frame(button_container, bg=Colors.BG_PRIMARY)
     button_frame.pack(expand=True)
     
+    result: Dict[str, Optional[bool]] = {"value": None}
+    
     def yes_clicked():
-        result["answer"] = True
+        result["value"] = True
         dialog.destroy()
     
     def no_clicked():
-        result["answer"] = False
+        result["value"] = False
         dialog.destroy()
     
     # Create buttons with guaranteed minimum size and explicit dimensions
-    yes_btn = tk.Button(
+    yes_btn = PremiumButton.create_primary(
         button_frame,
-        text="Yes",
-        command=yes_clicked,
-        font=(FONT_FAMILY_PRIMARY, Typography.MD, Typography.MEDIUM),
-        bg=Colors.PRIMARY,
-        fg=Colors.TEXT_INVERSE,
-        activebackground=Colors.PRIMARY_HOVER,
-        activeforeground=Colors.TEXT_INVERSE,
-        relief=tk.FLAT,
-        borderwidth=0,
-        cursor="hand2",
-        width=10,  # Increased width
-        height=2   # Increased height
+        "Yes",
+        yes_clicked,
+        size="md"
     )
-    yes_btn.pack(side=tk.LEFT, padx=(0, Spacing.LG), pady=Spacing.MD, ipadx=10, ipady=5)
+    yes_btn.pack(side=tk.LEFT, padx=(0, Spacing.SM))
     
-    no_btn = tk.Button(
+    no_btn = PremiumButton.create_secondary(
         button_frame,
-        text="No",
-        command=no_clicked,
-        font=(FONT_FAMILY_PRIMARY, Typography.MD, Typography.MEDIUM),
-        bg=Colors.BG_CARD,
-        fg=Colors.TEXT_ACCENT,
-        activebackground=Colors.SURFACE_HOVER,
-        activeforeground=Colors.PRIMARY_HOVER,
-        relief=tk.SOLID,
-        borderwidth=1,
-        cursor="hand2",
-        width=10,  # Increased width
-        height=2   # Increased height
+        "No", 
+        no_clicked,
+        size="md"
     )
-    no_btn.pack(side=tk.LEFT, pady=Spacing.MD, ipadx=10, ipady=5)
+    no_btn.pack(side=tk.LEFT)
     
-    # Add hover effects
-    def yes_enter(e):
-        yes_btn.config(bg=Colors.PRIMARY_HOVER)
-    def yes_leave(e):
-        yes_btn.config(bg=Colors.PRIMARY)
-    
-    def no_enter(e):
-        no_btn.config(bg=Colors.SURFACE_HOVER, fg=Colors.PRIMARY_HOVER)
-    def no_leave(e):
-        no_btn.config(bg=Colors.BG_CARD, fg=Colors.TEXT_ACCENT)
-    
-    yes_btn.bind("<Enter>", yes_enter)
-    yes_btn.bind("<Leave>", yes_leave)
-    no_btn.bind("<Enter>", no_enter)
-    no_btn.bind("<Leave>", no_leave)
-    
-    # Focus and keyboard support
-    yes_btn.focus_set()
-    dialog.bind('<Return>', lambda e: yes_clicked())
-    dialog.bind('<Escape>', lambda e: no_clicked())
-    
-    dialog.wait_window()
-    return result["answer"]
+    # Wait for response
+    parent.wait_window(dialog) if parent else dialog.mainloop()
+    return result["value"]
 
-def ask_premium_string(title, prompt, initial_value="", parent=None, icon=None): # Added icon parameter
+def ask_premium_string(title, prompt, initial_value="", parent=None, icon=None):
     """Ask for string input with premium styling."""
-    dialog, main_frame = PremiumDialog.create_base(parent, title, 500, 300)
+    # Calculate dialog size based on prompt length
+    prompt_length = len(prompt)
+    lines_count = prompt.count('\n') + 1
     
-    result = {"value": None}
+    # Dynamic sizing based on content
+    if prompt_length > 300 or lines_count > 6:
+        # Large dialog for complex prompts (like GitHub Repository URL dialog)
+        width, height = 650, 450
+        wrap_length = 580
+    elif prompt_length > 150 or lines_count > 3:
+        # Medium dialog for moderate prompts
+        width, height = 500, 350
+        wrap_length = 450
+    else:
+        # Standard size for simple prompts
+        width, height = 400, 250
+        wrap_length = 350
     
+    dialog, main_frame = PremiumDialog.create_base(parent, title, width=width, height=height)
+    
+    # Content frame
     content_frame = tk.Frame(main_frame, bg=Colors.BG_PRIMARY)
-    content_frame.pack(fill=tk.BOTH, expand=True, pady=Spacing.LG)
+    content_frame.pack(fill=tk.BOTH, expand=True, pady=(0, Spacing.LG))
     
-    # Input icon
-    icon_label = tk.Label(
-        content_frame,
-        text=icon if icon else "📝",  # Use provided icon or default
-        font=(FONT_FAMILY_PRIMARY, Typography.H2),
-        bg=Colors.BG_PRIMARY,
-        fg=Colors.PRIMARY
-    )
-    icon_label.pack(pady=(0, Spacing.MD))
+    # Optional icon
+    if icon:
+        icon_label = tk.Label(
+            content_frame,
+            text=icon,
+            font=(FONT_FAMILY_PRIMARY, Typography.XL),
+            bg=Colors.BG_PRIMARY,
+            fg=Colors.PRIMARY
+        )
+        icon_label.pack(pady=(0, Spacing.SM))
     
-    # Prompt message
+    # Prompt with proper wrapping and left alignment for long text
+    prompt_justify = tk.LEFT if lines_count > 2 else tk.CENTER
     prompt_label = tk.Label(
         content_frame,
         text=prompt,
         font=(FONT_FAMILY_PRIMARY, Typography.MD),
         bg=Colors.BG_PRIMARY,
         fg=Colors.TEXT_PRIMARY,
-        wraplength=420,
-        justify=tk.CENTER
+        wraplength=wrap_length,
+        justify=prompt_justify
     )
-    prompt_label.pack(pady=(0, Spacing.LG))
+    prompt_label.pack(pady=(0, Spacing.MD))
     
-    # Text input with premium styling
-    input_frame = tk.Frame(content_frame, bg=Colors.BG_PRIMARY)
-    input_frame.pack(fill=tk.X, pady=(0, Spacing.LG))
-    
+    # Entry with dynamic width based on dialog size
+    entry_width = 50 if width > 500 else 40 if width > 400 else 30
     entry_var = tk.StringVar(value=initial_value)
     entry = tk.Entry(
-        input_frame,
+        content_frame,
         textvariable=entry_var,
         font=(FONT_FAMILY_PRIMARY, Typography.MD),
         bg=Colors.BG_CARD,
         fg=Colors.TEXT_PRIMARY,
-        relief=tk.FLAT,
-        borderwidth=2,
+        relief=tk.SOLID,
+        borderwidth=1,
         highlightthickness=2,
-        highlightcolor=Colors.BORDER_ACCENT,
+        highlightcolor=Colors.PRIMARY,
         highlightbackground=Colors.BORDER_DEFAULT,
-        insertbackground=Colors.PRIMARY,
-        selectbackground=Colors.PRIMARY_LIGHT,
-        selectforeground=Colors.TEXT_PRIMARY
+        width=entry_width
     )
-    entry.pack(fill=tk.X, ipady=8, padx=Spacing.MD)
+    entry.pack(pady=(0, Spacing.LG))
     entry.focus_set()
     entry.select_range(0, tk.END)
     
     # Button frame
     button_frame = tk.Frame(content_frame, bg=Colors.BG_PRIMARY)
     button_frame.pack(pady=(Spacing.MD, 0))
+    
+    result: Dict[str, Optional[str]] = {"value": None}
     
     def submit():
         result["value"] = entry_var.get().strip()
@@ -2088,7 +1938,8 @@ def ask_premium_string(title, prompt, initial_value="", parent=None, icon=None):
     )
     cancel_btn.pack(side=tk.LEFT)
     
-    dialog.wait_window()
+    # Wait for response
+    parent.wait_window(dialog) if parent else dialog.mainloop()
     return result["value"]
 
 # =============================================================================
@@ -2128,21 +1979,25 @@ def ask_yes_no(title, message, parent=None):
     """Legacy wrapper for ask_premium_yes_no."""
     return ask_premium_yes_no(title, message, parent)
 
-def ask_string_dialog(title, prompt, initial_value="", parent=None, icon=None): # Added icon parameter
+def ask_string_dialog(title, prompt, initial_value="", parent=None, icon=None):
     """Legacy wrapper for ask_premium_string."""
-    return ask_premium_string(title, prompt, initial_value, parent, icon) # Pass icon
+    return ask_premium_string(title, prompt, initial_value, parent, icon)
 
 def ask_file_dialog(title, filetypes=None, parent=None):
     """Open file selection dialog (fallback to tkinter)."""
-    from tkinter import filedialog
-    if filetypes is None:
-        filetypes = [("All files", "*.*")]
-    return filedialog.askopenfilename(title=title, parent=parent, filetypes=filetypes)
+    try:
+        from tkinter import filedialog
+        return filedialog.askopenfilename(title=title, filetypes=filetypes or [])
+    except Exception:
+        return None
 
 def ask_directory_dialog(title, parent=None):
     """Open directory selection dialog (fallback to tkinter)."""
-    from tkinter import filedialog
-    return filedialog.askdirectory(title=title, parent=parent)
+    try:
+        from tkinter import filedialog
+        return filedialog.askdirectory(title=title)
+    except Exception:
+        return None
 
 # Enhanced repository conflict resolution dialog
 def create_repository_conflict_dialog(parent_window, message, analysis):
@@ -2152,105 +2007,150 @@ def create_repository_conflict_dialog(parent_window, message, analysis):
     dialog.title("Repository Content Conflict")
     dialog.transient(parent_window)
     dialog.grab_set()
-    dialog.resizable(False, False)
+    dialog.resizable(True, True)  # Allow resizing
     dialog.configure(bg="#FAFBFC")
     
-    # Center the dialog
+    # Center the dialog - larger size for better readability
     dialog.update_idletasks()
-    width, height = 650, 550
+    width, height = 850, 750  # Increased from 800x700 for better content display
     x = (dialog.winfo_screenwidth() // 2) - (width // 2)
     y = (dialog.winfo_screenheight() // 2) - (height // 2)
     dialog.geometry(f"{width}x{height}+{x}+{y}")
+    dialog.minsize(800, 700)  # Increased minimum size
     
-    # Main container
+    # Force dialog to appear and initialize properly before adding content
+    dialog.update()
+    dialog.lift()
+    dialog.focus_force()
+    dialog.after(10, lambda: None)  # Allow time for window to fully initialize
+    
+    # Main container with increased padding
     main_frame = tk.Frame(dialog, bg="#FAFBFC")
-    main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+    main_frame.pack(fill=tk.BOTH, expand=True, padx=25, pady=25)  # Increased padding
     
     # Header with icon and title
     header_frame = tk.Frame(main_frame, bg="#FAFBFC")
-    header_frame.pack(fill=tk.X, pady=(0, 20))
+    header_frame.pack(fill=tk.X, pady=(0, 25))  # Increased spacing
     
     title_label = tk.Label(
         header_frame,
         text="⚠️ Repository Content Conflict",
-        font=("Arial", 16, "bold"),
+        font=("Arial", 18, "bold"),  # Slightly larger title
         bg="#FAFBFC",
         fg="#1E293B"
     )
     title_label.pack()
     
-    # Content area
+    # Content area with increased padding
     content_frame = tk.Frame(main_frame, bg="#FFFFFF", relief=tk.RAISED, borderwidth=1)
-    content_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 20))
+    content_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 25))  # Increased spacing
     
-    # Padding inside content
+    # Padding inside content with increased margins
     inner_frame = tk.Frame(content_frame, bg="#FFFFFF")
-    inner_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+    inner_frame.pack(fill=tk.BOTH, expand=True, padx=25, pady=25)  # Increased padding
     
-    # Message
+    # Message with increased wrap length
     message_label = tk.Label(
         inner_frame,
         text=message,
-        font=("Arial", 12),
+        font=("Arial", 13),  # Slightly larger font
         bg="#FFFFFF",
         fg="#475569",
-        wraplength=580,
+        wraplength=750,  # Increased wrap length
         justify=tk.LEFT
     )
-    message_label.pack(pady=(0, 20))
+    message_label.pack(pady=(0, 25))  # Increased spacing
     
-    # File details
+    # File details with better formatting
     if analysis["local_files"]:
         local_label = tk.Label(
             inner_frame,
             text=f"📁 Local files ({len(analysis['local_files'])} items):",
-            font=("Arial", 10, "bold"),
+            font=("Arial", 12, "bold"),  # Slightly larger font
             bg="#FFFFFF",
             fg="#1E293B"
         )
-        local_label.pack(anchor=tk.W)
+        local_label.pack(anchor=tk.W, pady=(0, 8))  # Increased spacing
         
-        local_preview = analysis["local_files"][:3]
-        preview_text = ", ".join(local_preview)
-        if len(analysis["local_files"]) > 3:
-            preview_text += f" and {len(analysis['local_files']) - 3} more..."
+        # Create scrollable text widget for better file display
+        local_frame = tk.Frame(inner_frame, bg="#F8F9FA", relief=tk.SUNKEN, borderwidth=1)
+        local_frame.pack(fill=tk.X, pady=(0, 20))  # Increased spacing
         
-        local_files_label = tk.Label(
-            inner_frame,
-            text=preview_text,
-            font=("Arial", 9),
-            bg="#FFFFFF",
+        local_text = tk.Text(
+            local_frame,
+            height=min(8, len(analysis["local_files"]) + 1),  # Increased adaptive height
+            wrap=tk.WORD,
+            font=("Arial", 10),  # Slightly larger font
+            bg="#F8F9FA",
             fg="#64748B",
-            wraplength=580,
-            justify=tk.LEFT
+            relief=tk.FLAT,
+            borderwidth=0,
+            state=tk.DISABLED
         )
-        local_files_label.pack(anchor=tk.W, pady=(2, 10))
+        
+        # Add scrollbar if needed
+        local_scrollbar = tk.Scrollbar(local_frame, orient=tk.VERTICAL, command=local_text.yview)
+        local_text.configure(yscrollcommand=local_scrollbar.set)
+        
+        # Show actual file names with better formatting
+        local_files_text = ""
+        for i, file in enumerate(analysis["local_files"][:15]):  # Show up to 15 files
+            local_files_text += f"• {file}\n"
+        if len(analysis["local_files"]) > 15:
+            local_files_text += f"• ... and {len(analysis['local_files']) - 15} more files\n"
+        
+        local_text.config(state=tk.NORMAL)
+        local_text.insert(1.0, local_files_text.strip())
+        local_text.config(state=tk.DISABLED)
+        
+        local_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10, pady=6)  # Increased padding
+        if len(analysis["local_files"]) > 8:  # Adjusted threshold
+            local_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
     
     if analysis["remote_files"]:
         remote_label = tk.Label(
             inner_frame,
             text=f"🌐 Remote files ({len(analysis['remote_files'])} items):",
-            font=("Arial", 10, "bold"),
+            font=("Arial", 12, "bold"),  # Slightly larger font
             bg="#FFFFFF",
             fg="#1E293B"
         )
-        remote_label.pack(anchor=tk.W)
+        remote_label.pack(anchor=tk.W, pady=(0, 8))  # Increased spacing
         
-        remote_preview = analysis["remote_files"][:3]
-        preview_text = ", ".join(remote_preview)
-        if len(analysis["remote_files"]) > 3:
-            preview_text += f" and {len(analysis['remote_files']) - 3} more..."
+        # Create scrollable text widget for better file display
+        remote_frame = tk.Frame(inner_frame, bg="#F8F9FA", relief=tk.SUNKEN, borderwidth=1)
+        remote_frame.pack(fill=tk.X, pady=(0, 20))  # Increased spacing
         
-        remote_files_label = tk.Label(
-            inner_frame,
-            text=preview_text,
-            font=("Arial", 9),
-            bg="#FFFFFF",
+        remote_text = tk.Text(
+            remote_frame,
+            height=min(8, len(analysis["remote_files"]) + 1),  # Increased adaptive height
+            wrap=tk.WORD,
+            font=("Arial", 10),  # Slightly larger font
+            bg="#F8F9FA",
             fg="#64748B",
-            wraplength=580,
-            justify=tk.LEFT
+            relief=tk.FLAT,
+            borderwidth=0,
+            state=tk.DISABLED
         )
-        remote_files_label.pack(anchor=tk.W, pady=(2, 0))
+        
+        # Add scrollbar if needed
+        remote_scrollbar = tk.Scrollbar(remote_frame, orient=tk.VERTICAL, command=remote_text.yview)
+        remote_text.configure(yscrollcommand=remote_scrollbar.set)
+        
+        # Show actual file names with better formatting
+        remote_files_text = ""
+        for i, file in enumerate(analysis["remote_files"][:15]):  # Show up to 15 files
+            remote_files_text += f"• {file}\n"
+        if len(analysis["remote_files"]) > 15:
+            remote_files_text += f"• ... and {len(analysis['remote_files']) - 15} more files\n"
+        
+        remote_text.config(state=tk.NORMAL)
+        remote_text.insert(1.0, remote_files_text.strip())
+        remote_text.config(state=tk.DISABLED)
+        
+        remote_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=10, pady=6)  # Increased padding
+        if len(analysis["remote_files"]) > 8:  # Adjusted threshold
+            remote_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
     
     # Choice storage
     choice = {"value": None}
@@ -2259,16 +2159,16 @@ def create_repository_conflict_dialog(parent_window, message, analysis):
         choice["value"] = selected_choice
         dialog.destroy()
     
-    # Button area
+    # Button area with increased spacing
     button_frame = tk.Frame(inner_frame, bg="#FFFFFF")
-    button_frame.pack(fill=tk.X, pady=(20, 0))
+    button_frame.pack(fill=tk.X, pady=(25, 0))  # Increased spacing
     
-    # Button 1: Smart Merge (Recommended)
+    # Button 1: Smart Merge (Recommended) with better styling
     merge_btn = tk.Button(
         button_frame,
         text="🔄 Smart Merge (Recommended)",
         command=lambda: set_choice("merge"),
-        font=("Arial", 11, "bold"),
+        font=("Arial", 12, "bold"),  # Slightly larger font
         bg="#6366F1",
         fg="#FFFFFF",
         activebackground="#4F46E5",
@@ -2276,27 +2176,27 @@ def create_repository_conflict_dialog(parent_window, message, analysis):
         relief=tk.FLAT,
         borderwidth=0,
         cursor="hand2",
-        padx=20,
-        pady=12
+        padx=25,  # Increased padding
+        pady=15   # Increased padding
     )
-    merge_btn.pack(fill=tk.X, pady=(0, 5))
+    merge_btn.pack(fill=tk.X, pady=(0, 8))  # Increased spacing
     
     merge_desc = tk.Label(
         button_frame,
         text="Combines both local and remote files. Conflicts will be marked for manual review.",
-        font=("Arial", 9),
+        font=("Arial", 10),  # Slightly larger font
         bg="#FFFFFF",
         fg="#64748B",
-        wraplength=580
+        wraplength=700  # Increased wrap length
     )
-    merge_desc.pack(anchor=tk.W, pady=(2, 15))
+    merge_desc.pack(anchor=tk.W, pady=(3, 18))  # Increased spacing
     
-    # Button 2: Keep Local Files Only
+    # Button 2: Keep Local Files Only with better styling
     local_btn = tk.Button(
         button_frame,
         text="📁 Keep Local Files Only",
         command=lambda: set_choice("local"),
-        font=("Arial", 11),
+        font=("Arial", 12),  # Slightly larger font
         bg="#FFFFFF",
         fg="#6366F1",
         activebackground="#F1F5F9",
@@ -2304,27 +2204,27 @@ def create_repository_conflict_dialog(parent_window, message, analysis):
         relief=tk.SOLID,
         borderwidth=1,
         cursor="hand2",
-        padx=20,
-        pady=12
+        padx=25,  # Increased padding
+        pady=15   # Increased padding
     )
-    local_btn.pack(fill=tk.X, pady=(0, 5))
+    local_btn.pack(fill=tk.X, pady=(0, 8))  # Increased spacing
     
     local_desc = tk.Label(
         button_frame,
         text="Overwrites remote repository with your local files.",
-        font=("Arial", 9),
+        font=("Arial", 10),  # Slightly larger font
         bg="#FFFFFF",
         fg="#64748B",
-        wraplength=580
+        wraplength=700  # Increased wrap length
     )
-    local_desc.pack(anchor=tk.W, pady=(2, 15))
+    local_desc.pack(anchor=tk.W, pady=(3, 18))  # Increased spacing
     
-    # Button 3: Use Remote Files Only
+    # Button 3: Use Remote Files Only with better styling
     remote_btn = tk.Button(
         button_frame,
         text="🌐 Use Remote Files Only", 
         command=lambda: set_choice("remote"),
-        font=("Arial", 11),
+        font=("Arial", 12),  # Slightly larger font
         bg="#FFFFFF",
         fg="#6366F1",
         activebackground="#F1F5F9",
@@ -2332,20 +2232,24 @@ def create_repository_conflict_dialog(parent_window, message, analysis):
         relief=tk.SOLID,
         borderwidth=1,
         cursor="hand2",
-        padx=20,
-        pady=12
+        padx=25,  # Increased padding
+        pady=15   # Increased padding
     )
-    remote_btn.pack(fill=tk.X, pady=(0, 5))
+    remote_btn.pack(fill=tk.X, pady=(0, 8))  # Increased spacing
     
     remote_desc = tk.Label(
         button_frame,
         text="Downloads remote files and backs up your local files.",
-        font=("Arial", 9),
+        font=("Arial", 10),  # Slightly larger font
         bg="#FFFFFF",
         fg="#64748B",
-        wraplength=580
+        wraplength=700  # Increased wrap length
     )
     remote_desc.pack(anchor=tk.W)
+    
+    # Final initialization and rendering - ensure dialog is fully loaded before showing
+    dialog.update_idletasks()
+    dialog.after(50, lambda: None)  # Additional delay to ensure proper rendering
     
     # Wait for user choice
     parent_window.wait_window(dialog)
@@ -2745,7 +2649,3 @@ def create_two_stage_conflict_dialog(parent_window, analysis, vault_path):
         return create_repository_conflict_dialog(parent_window,
                                                 "Repository conflicts detected",
                                                 analysis)
-
-# =============================================================================
-# PREMIUM BUTTON IMPLEMENTATIONS (Previously incomplete)
-# =============================================================================

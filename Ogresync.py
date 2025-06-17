@@ -8,7 +8,9 @@ import psutil
 import shutil
 import random
 import tkinter as tk
+import platform
 from tkinter import ttk, scrolledtext
+from typing import Optional
 import webbrowser
 import pyperclip
 import requests
@@ -30,9 +32,9 @@ config_data = {
 
 SSH_KEY_PATH = os.path.expanduser("~/.ssh/id_rsa.pub")
 
-root = None  # Will be created by ui_elements.create_main_window()
-log_text = None # Will be created by ui_elements.create_main_window()
-progress_bar = None # Will be created by ui_elements.create_main_window()
+root: Optional[tk.Tk] = None  # Will be created by ui_elements.create_main_window()
+log_text: Optional[scrolledtext.ScrolledText] = None # Will be created by ui_elements.create_main_window()
+progress_bar: Optional[ttk.Progressbar] = None # Will be created by ui_elements.create_main_window()
 
 # ------------------------------------------------
 # CONFIG HANDLING
@@ -186,16 +188,18 @@ def is_obsidian_running():
     return False
 
 def safe_update_log(message, progress=None):
-    if log_text and progress_bar and root.winfo_exists():
+    if log_text and progress_bar and root and root.winfo_exists():
         def _update():
-            log_text.config(state='normal')
-            log_text.insert(tk.END, message + "\n")
-            log_text.config(state='disabled')
-            log_text.yview_moveto(1)
-            if progress is not None:
+            if log_text is not None:
+                log_text.config(state='normal')
+                log_text.insert(tk.END, message + "\n")
+                log_text.config(state='disabled')
+                log_text.yview_moveto(1)
+            if progress is not None and progress_bar is not None:
                 progress_bar["value"] = progress
         try:
-            root.after(0, _update)
+            if root is not None:
+                root.after(0, _update)
         except Exception as e:
             print("Error scheduling UI update:", e)
     else:
@@ -374,16 +378,20 @@ def handle_initial_repository_conflict(vault_path, analysis, parent_window=None)
                 enhanced_analysis.conflicted_files.append(conflict_info)
         
         # Use the enhanced conflict resolver
-        resolver = conflict_resolution.ConflictResolver(vault_path, dialog_parent)    
+        resolver = conflict_resolution.ConflictResolver(vault_path, dialog_parent, enhanced_analysis)    
         resolution_result = resolver.resolve_conflicts(conflict_resolution.ConflictType.REPOSITORY_SETUP)
         
         if resolution_result['success']:
             strategy = resolution_result['strategy']
             
             if strategy == 'keep_local':
-                return handle_local_strategy(vault_path)
+                # Use the new conflict resolution system for keep_local
+                success = conflict_resolution.apply_conflict_resolution(vault_path, resolution_result)
+                return success
             elif strategy == 'keep_remote':
-                return handle_remote_strategy(vault_path, analysis)
+                # Use the new conflict resolution system for keep_remote
+                success = conflict_resolution.apply_conflict_resolution(vault_path, resolution_result)
+                return success
             elif strategy == 'smart_merge':
                 # Apply smart merge with file-by-file resolution
                 success = conflict_resolution.apply_conflict_resolution(vault_path, resolution_result)
@@ -392,6 +400,14 @@ def handle_initial_repository_conflict(vault_path, analysis, parent_window=None)
                     safe_update_log("Enhanced resolution failed, falling back to simple merge...", None)
                     success = handle_merge_strategy(vault_path)
                 return success
+            elif strategy == 'no_conflicts':
+                # No conflicts detected - this is a successful resolution
+                safe_update_log("No conflicts detected - proceeding with setup", None)
+                return True
+            elif strategy == 'cancelled':
+                # User cancelled the dialog
+                safe_update_log("Conflict resolution cancelled by user", None)
+                return False
             else:
                 safe_update_log("Unknown resolution strategy selected.", None)
                 return False
@@ -1180,7 +1196,8 @@ def generate_ssh_key_async(user_email):
         )
         webbrowser.open("https://github.com/settings/keys")
     
-    root.after(0, show_dialog_then_open_browser)
+    if root is not None:
+        root.after(0, show_dialog_then_open_browser)
 
 
 def copy_ssh_key():
@@ -1242,7 +1259,8 @@ def auto_sync():
             # Reset the setup flag to trigger setup wizard
             config_data["SETUP_DONE"] = "0"
             save_config()
-            root.after(0, lambda: restart_for_setup())
+            if root is not None:
+                root.after(0, lambda: restart_for_setup())
             return
         
         # Update vault_path if user selected a new directory
@@ -1323,8 +1341,63 @@ def auto_sync():
 
         # Step 4: If online, pull the latest updates (with conflict resolution)
         if network_available:
-            safe_update_log("Pulling the latest updates from GitHub...", 20)
-            out, err, rc = run_command("git pull --rebase origin main", cwd=vault_path)
+            # First, fetch remote refs to ensure we have latest info
+            safe_update_log("Fetching latest remote information...", 18)
+            fetch_out, fetch_err, fetch_rc = run_command("git fetch origin", cwd=vault_path)
+            if fetch_rc != 0:
+                safe_update_log(f"Warning: Could not fetch from remote: {fetch_err}", 18)
+            
+            # Check if local repo only has README (indicating empty repo that should pull all remote files)
+            local_files = []
+            if os.path.exists(vault_path):
+                for root_dir, dirs, files in os.walk(vault_path):
+                    if '.git' in root_dir:
+                        continue
+                    for file in files:
+                        if not file.startswith('.') and file not in ['.gitignore']:
+                            local_files.append(file)
+            
+            only_has_readme = (len(local_files) == 1 and 'README.md' in local_files)
+            
+            if only_has_readme:
+                safe_update_log("Local repository only has README. Checking for remote files to download...", 20)
+                # Check if remote has actual content files
+                ls_out, ls_err, ls_rc = run_command("git ls-tree -r --name-only origin/main", cwd=vault_path)
+                if ls_rc == 0 and ls_out.strip():
+                    remote_files = [f.strip() for f in ls_out.splitlines() if f.strip()]
+                    content_files = [f for f in remote_files if f not in ['README.md', '.gitignore']]
+                    
+                    if content_files:
+                        safe_update_log(f"Remote has {len(content_files)} content files. Downloading them...", 22)
+                        # Use reset to get all remote files (safe since local only has README)
+                        reset_out, reset_err, reset_rc = run_command("git reset --hard origin/main", cwd=vault_path)
+                        if reset_rc == 0:
+                            safe_update_log(f"Successfully downloaded all remote files! ({len(content_files)} files)", 25)
+                            # Verify files were actually downloaded
+                            new_local_files = []
+                            for root_dir, dirs, files in os.walk(vault_path):
+                                if '.git' in root_dir:
+                                    continue
+                                for file in files:
+                                    if not file.startswith('.'):
+                                        new_local_files.append(file)
+                            safe_update_log(f"Local directory now has {len(new_local_files)} files", 25)
+                            out, err, rc = reset_out, reset_err, reset_rc
+                        else:
+                            safe_update_log(f"Error with reset, trying pull: {reset_err}", 22)
+                            # Fall back to pull with unrelated histories
+                            out, err, rc = run_command("git pull origin main --allow-unrelated-histories", cwd=vault_path)
+                            if rc == 0:
+                                safe_update_log("Successfully pulled remote files using fallback method", 25)
+                    else:
+                        safe_update_log("Remote repository only has README/gitignore - no content to pull", 20)
+                        out, err, rc = "", "", 0  # Simulate successful pull
+                else:
+                    safe_update_log("Remote repository is empty - no files to pull", 20)
+                    out, err, rc = "", "", 0  # Simulate successful pull
+            else:
+                safe_update_log("Pulling the latest updates from GitHub...", 20)
+                out, err, rc = run_command("git pull --rebase origin main", cwd=vault_path)
             if rc != 0:
                 if "Could not resolve hostname" in err or "network" in err.lower():
                     safe_update_log("❌ Unable to pull updates due to a network error. Local changes remain safely stashed.", 30)
@@ -1648,22 +1721,32 @@ def setup_new_vault_directory(vault_path):
                         enhanced_analysis.conflicted_files.append(conflict_info)
                 
                 # Use the enhanced conflict resolver
-                resolver = conflict_resolution.ConflictResolver(vault_path, root)    
+                resolver = conflict_resolution.ConflictResolver(vault_path, root, enhanced_analysis)    
                 resolution_result = resolver.resolve_conflicts(conflict_resolution.ConflictType.REPOSITORY_SETUP)
                 
                 if resolution_result['success']:
                     strategy = resolution_result['strategy']
                     
                     if strategy == 'keep_local':
-                        success = handle_local_strategy(vault_path)
+                        # Use the new conflict resolution system for keep_local
+                        success = conflict_resolution.apply_conflict_resolution(vault_path, resolution_result)
                     elif strategy == 'keep_remote':
-                        success = handle_remote_strategy(vault_path, analysis)
+                        # Use the new conflict resolution system for keep_remote
+                        success = conflict_resolution.apply_conflict_resolution(vault_path, resolution_result)
                     elif strategy == 'smart_merge':
                         # Apply smart merge with file-by-file resolution
                         success = conflict_resolution.apply_conflict_resolution(vault_path, resolution_result)
                         if not success:
                             # Fallback to simple merge strategy
                             success = handle_merge_strategy(vault_path)
+                    elif strategy == 'no_conflicts':
+                        # No conflicts detected - this is a successful resolution
+                        safe_update_log("No conflicts detected - proceeding with setup", None)
+                        success = True
+                    elif strategy == 'cancelled':
+                        # User cancelled the dialog
+                        safe_update_log("Conflict resolution cancelled by user", None)
+                        success = False
                     else:
                         safe_update_log("Unknown resolution strategy selected.", None)
                         success = False
@@ -1757,6 +1840,8 @@ def restart_to_sync_mode():
     global root, log_text, progress_bar
     
     try:
+        print("DEBUG: Starting transition to sync mode")
+        
         # Ensure we have the latest config before transitioning
         load_config()
         
@@ -1765,27 +1850,39 @@ def restart_to_sync_mode():
             config_data["SETUP_DONE"] = "1"
             save_config()
         
-        # Close any existing windows
+        print("DEBUG: Config verified for sync mode")
+        
+        # Safer approach: directly restart the process instead of trying to transition UI
+        print("DEBUG: Restarting process in sync mode")
+        
+        # Close current window cleanly
         if root and root.winfo_exists():
-            root.quit()  # Exit the mainloop
-            root.destroy()
-            root = None
+            try:
+                root.quit()
+                root.destroy()
+            except Exception as e:
+                print(f"DEBUG: Error closing window: {e}")
         
-        # Give a moment for cleanup
-        import time
-        time.sleep(0.1)
+        # Restart the process
+        import sys
+        import os
+        print("DEBUG: Restarting Python process")
         
-        # Create new sync mode UI
-        root, log_text, progress_bar = ui_elements.create_minimal_ui(auto_run=True)
-        
-        # Start auto-sync
-        auto_sync()
-        
-        # Note: We don't call mainloop() here anymore, let main() handle it
+        # Use os.execv to replace the current process completely
+        python_executable = sys.executable
+        script_path = os.path.abspath(__file__)
+        os.execv(python_executable, [python_executable, script_path])
         
     except Exception as e:
         print(f"Error transitioning to sync mode: {e}")
-        sys.exit(1)
+        # Fallback: try to create minimal UI directly
+        try:
+            root, log_text, progress_bar = ui_elements.create_minimal_ui(auto_run=True)
+            auto_sync()
+            root.mainloop()
+        except Exception as e2:
+            print(f"Fallback also failed: {e2}")
+            sys.exit(1)
 
 # ------------------------------------------------
 # MAIN ENTRY POINT
@@ -1812,14 +1909,17 @@ def main():
         # Already set up: run auto-sync with a minimal window or even no window.
         # If you truly want NO window at all, you can remove the UI entirely.
         # But let's provide a small log window for user feedback.
+        print("DEBUG: Running in sync mode")
         root, log_text, progress_bar = ui_elements.create_minimal_ui(auto_run=True)
         auto_sync()
         root.mainloop()
     else:
         # Not set up yet: run the progressive setup wizard
+        print("DEBUG: Running setup wizard")
         success = run_setup_wizard()
         
         if success:
+            print("DEBUG: Setup completed successfully")
             # Setup completed successfully, reload config to get latest values
             load_config()  # Reload to ensure we have the latest saved values
             
@@ -1828,15 +1928,14 @@ def main():
                 config_data["SETUP_DONE"] = "1"
                 save_config()
             
+            print("DEBUG: Transitioning to sync mode")
             # Transition to sync mode
             restart_to_sync_mode()
             
-            # Now run the sync mode mainloop
-            if root and root.winfo_exists():
-                root.mainloop()
+            # The restart_to_sync_mode function will handle the mainloop
             
-            return  # Exit this main function call
         else:
+            print("DEBUG: Setup was cancelled or failed")
             # Setup was cancelled or failed - no need to show message since it's handled in cancel_setup()
             return  # Exit without running mainloop
 
