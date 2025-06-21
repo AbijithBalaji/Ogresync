@@ -22,6 +22,7 @@ import webbrowser
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, simpledialog
 import threading
+import datetime
 
 # Optional imports
 try:
@@ -39,9 +40,12 @@ except ImportError:
     ui_elements = None
 
 try:
-    import conflict_resolution
+    import conflict_resolution_v2 as conflict_resolution
+    CONFLICT_RESOLUTION_AVAILABLE = True
+    print("✓ Enhanced conflict resolution module loaded")
 except ImportError:
     conflict_resolution = None
+    CONFLICT_RESOLUTION_AVAILABLE = False
 
 try:
     import Ogresync
@@ -96,8 +100,8 @@ class OgresyncSetupWizard:
             SetupWizardStep("Known Hosts", "Add GitHub to known hosts", "🌐"),
             SetupWizardStep("Test SSH", "Test SSH connection to GitHub (manual step)", "🔐"),
             SetupWizardStep("GitHub Repository", "Link GitHub repository", "🔗"),
-            SetupWizardStep("Repository Sync", "Handle repository conflicts", "⚖️"),
-            SetupWizardStep("Final Sync", "Pull latest changes", "📥"),
+            SetupWizardStep("Enhanced Repository Sync", "Two-stage conflict resolution with history preservation", "⚖️"),
+            SetupWizardStep("Final Sync", "Complete synchronization", "📥"),
             SetupWizardStep("Complete Setup", "Finalize configuration", "🎉")
         ]
         
@@ -886,6 +890,7 @@ Your configuration has been saved and Ogresync is ready to use!"""
             if os.path.exists(vault_path):
                 # Check if there's existing git history
                 try:
+                    import subprocess  # Ensure subprocess is available for this check
                     result = subprocess.run(['git', 'log', '--oneline'], 
                                           cwd=vault_path, capture_output=True, text=True)
                     if result.returncode == 0 and result.stdout.strip():
@@ -1360,11 +1365,22 @@ Your configuration has been saved and Ogresync is ready to use!"""
                         if config_data:
                             config_data["GITHUB_REMOTE_URL"] = new_url
                             self._safe_ogresync_call('save_config')
+                        # Also save to wizard state
+                        self.wizard_state["github_url"] = new_url
                         return True, f"Repository updated to: {new_url}"
                     else:
                         return False, f"Failed to configure new remote: {add_error}"
                 else:
-                    return True, f"Using existing repository: {existing_out.strip()}"
+                    # User wants to keep existing repository - save it to config
+                    existing_url = existing_out.strip()
+                    config_data = self._safe_ogresync_get('config_data')
+                    if config_data:
+                        config_data["GITHUB_REMOTE_URL"] = existing_url
+                        self._safe_ogresync_call('save_config')
+                        self._update_status(f"Existing repository URL saved to config: {existing_url}")
+                    # Also save to wizard state
+                    self.wizard_state["github_url"] = existing_url
+                    return True, f"Using existing repository: {existing_url}"
             else:
                 # No remote exists - configure one with enhanced validation
                 success, repo_url, message = self._get_validated_repository_url(vault_path)
@@ -1387,6 +1403,8 @@ Your configuration has been saved and Ogresync is ready to use!"""
                     if config_data:
                         config_data["GITHUB_REMOTE_URL"] = repo_url
                         self._safe_ogresync_call('save_config')
+                    # Also save to wizard state
+                    self.wizard_state["github_url"] = repo_url
                     return True, f"GitHub repository configured: {repo_url}"
                 else:
                     return False, f"Failed to configure remote: {add_error}"
@@ -1600,337 +1618,698 @@ Your configuration has been saved and Ogresync is ready to use!"""
             return False, f"Repository access test error: {str(e)}"
     
     def _step_repository_sync(self):
-        """Step 9: Handle repository sync - simple pull for empty repos, two-stage conflict resolution for repos with files."""
+        """Step 8: Enhanced Repository Sync with Two-Stage Conflict Resolution System"""
+        print(f"[DEBUG] _step_repository_sync: Starting repository sync step")
         try:
             vault_path = self.wizard_state.get("vault_path")
+            github_url = self.wizard_state.get("github_url")
+            print(f"[DEBUG] _step_repository_sync: vault_path={vault_path}, github_url={github_url}")
+            
+            # If URL not in wizard state, try to get it from config
+            if not github_url:
+                config_data = self._safe_ogresync_get('config_data')
+                if config_data:
+                    github_url = config_data.get("GITHUB_REMOTE_URL")
+                    if github_url:
+                        # Save it to wizard state for future use
+                        self.wizard_state["github_url"] = github_url
+                        print(f"[DEBUG] _step_repository_sync: Retrieved github_url from config: {github_url}")
+            
             if not vault_path:
+                print(f"[DEBUG] _step_repository_sync: ERROR - No vault path")
                 return False, "Vault path not set."
+            if not github_url:
+                print(f"[DEBUG] _step_repository_sync: ERROR - No GitHub URL")
+                return False, "GitHub repository URL not set."
             
             # Update step status to running
             current_step = self.setup_steps[8]  # 0-indexed, step 9
             current_step.set_status("running")
             self._update_step_display()
+            print(f"[DEBUG] _step_repository_sync: Set step status to running")
             
-            self._update_status("Analyzing local repository state...")
+            self._update_status("🔍 Analyzing repository state for enhanced conflict resolution...")
             
-            # Check what files exist locally (excluding common non-content files)
-            local_files = []
+            # Use the enhanced conflict resolution system
+            if conflict_resolution and CONFLICT_RESOLUTION_AVAILABLE:
+                print(f"[DEBUG] _step_repository_sync: Using enhanced conflict resolution")
+                try:
+                    # Create conflict resolution engine
+                    resolver = conflict_resolution.ConflictResolver(vault_path, self.dialog if isinstance(self.dialog, tk.Tk) else None)
+                    print(f"[DEBUG] _step_repository_sync: Created resolver")
+                    
+                    # Analyze the repository state
+                    self._update_status("🔬 Performing detailed repository analysis...")
+                    engine = conflict_resolution.ConflictResolutionEngine(vault_path)
+                    print(f"[DEBUG] _step_repository_sync: Created engine, analyzing conflicts...")
+                    analysis = engine.analyze_conflicts(github_url)
+                    print(f"[DEBUG] _step_repository_sync: Analysis complete")
+                    
+                    # Determine scenario and handle accordingly
+                    scenario = self._determine_repository_scenario(analysis, vault_path)
+                    self._update_status(f"📊 Repository scenario detected: {scenario}")
+                    print(f"[DEBUG] Step 9: Detected scenario '{scenario}' - routing to appropriate handler")
+                    
+                    if scenario == "both_empty":
+                        # Scenario 1: Both repos are empty - create README and push
+                        print(f"[DEBUG] Step 9: Calling _handle_both_empty_scenario")
+                        result = self._handle_both_empty_scenario(vault_path, current_step)
+                        print(f"[DEBUG] Step 9: _handle_both_empty_scenario returned: {result}")
+                        return result
+                        
+                    elif scenario == "local_empty_remote_has_files":
+                        # Scenario 2: Local is empty, remote has files - simple pull
+                        print(f"[DEBUG] Step 9: Calling _handle_local_empty_scenario")
+                        result = self._handle_local_empty_scenario(analysis, vault_path, current_step, engine)
+                        print(f"[DEBUG] Step 9: _handle_local_empty_scenario returned: {result}")
+                        return result
+                        
+                    elif scenario == "local_has_files_remote_empty":
+                        # Scenario 3: Local has files, remote is empty - simple push will happen in next step
+                        print(f"[DEBUG] Step 9: Local has files, remote empty - will push in final sync")
+                        self._update_status("✅ Local repository has files, remote is empty - ready for initial push")
+                        current_step.set_status("success")
+                        result = True, "Local files ready for initial push to empty remote repository"
+                        print(f"[DEBUG] Step 9: Returning success for local_has_files_remote_empty: {result}")
+                        return result
+                        
+                    elif scenario == "both_have_files":
+                        # Scenario 4: Both have files - use two-stage conflict resolution
+                        print(f"[DEBUG] Step 9: Calling _handle_both_have_files_scenario")
+                        result = self._handle_both_have_files_scenario(resolver, analysis, current_step)
+                        print(f"[DEBUG] Step 9: _handle_both_have_files_scenario returned: {result}")
+                        return result
+                        
+                    else:
+                        # Unknown scenario - fallback to simple handling
+                        print(f"[DEBUG] Step 9: Unknown scenario '{scenario}' - using fallback")
+                        result = self._handle_fallback_scenario(vault_path, current_step)
+                        print(f"[DEBUG] Step 9: Fallback scenario returned: {result}")
+                        return result
+                        
+                except Exception as e:
+                    print(f"[DEBUG] Step 9: Exception in enhanced conflict resolution: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    self._update_status(f"⚠️ Enhanced conflict resolution failed: {str(e)}")
+                    # Fall back to simple conflict handling
+                    current_step.set_status("error", f"Enhanced conflict resolution failed: {str(e)}")
+                    result = self._handle_fallback_scenario(vault_path, current_step)
+                    print(f"[DEBUG] Step 9: Exception fallback returned: {result}")
+                    return result
+            else:
+                # Conflict resolution module not available - use fallback
+                print(f"[DEBUG] _step_repository_sync: Enhanced conflict resolution not available")
+                self._update_status("⚠️ Enhanced conflict resolution not available - using fallback method")
+                result = self._handle_fallback_scenario(vault_path, current_step)
+                print(f"[DEBUG] Step 9: No conflict resolution fallback returned: {result}")
+                return result
+                
+        except Exception as e:
+            # Ensure current_step is defined for error handling
+            print(f"[DEBUG] _step_repository_sync: Outer exception: {e}")
+            import traceback
+            traceback.print_exc()
+            try:
+                current_step = self.setup_steps[8]  # Repository sync step
+                current_step.set_status("error", str(e))
+            except (IndexError, AttributeError):
+                # If we can't access the step, at least log the error
+                self._update_status(f"❌ Critical error during repository sync: {str(e)}")
+            result = False, f"Error during repository sync: {str(e)}"
+            print(f"[DEBUG] _step_repository_sync: Outer exception returning: {result}")
+            return result
+    
+    def _is_meaningful_file(self, file_path):
+        """Check if a file should be considered meaningful user content"""
+        file_name = os.path.basename(file_path)
+        
+        # System and temporary files to ignore
+        ignored_files = {
+            'README.md', '.gitignore', '.DS_Store', 'Thumbs.db', 
+            'desktop.ini', '.env', '.env.local', '.env.example'
+        }
+        
+        # File extensions to ignore
+        ignored_extensions = {
+            '.pyc', '.pyo', '.pyd', '.so', '.dll', '.dylib',
+            '.tmp', '.temp', '.log', '.cache'
+        }
+        
+        # Directory patterns to ignore in file paths
+        ignored_dir_patterns = {
+            '.git/', '.obsidian/', '__pycache__/', '.vscode/', 
+            '.idea/', '.vs/', 'node_modules/', '.pytest_cache/',
+            '.mypy_cache/', '.coverage/', 'venv/', '.venv/',
+            'env/', '.env/'
+        }
+        
+        # Check if file name is in ignored list
+        if file_name in ignored_files:
+            return False
+        
+        # Check if file starts with dot (hidden files)
+        if file_name.startswith('.'):
+            return False
+        
+        # Check file extension
+        _, ext = os.path.splitext(file_name)
+        if ext.lower() in ignored_extensions:
+            return False
+        
+        # Check if file path contains ignored directory patterns
+        normalized_path = file_path.replace('\\', '/')
+        for pattern in ignored_dir_patterns:
+            if pattern in normalized_path:
+                return False
+        
+        return True
+    
+    def _determine_repository_scenario(self, analysis, vault_path):
+        """Determine which of the 4 repository scenarios we're dealing with"""
+        try:
+            # Check local files (excluding system files, generated files, and temp files)
+            local_content_files = []
             if os.path.exists(vault_path):
                 for root_dir, dirs, files in os.walk(vault_path):
-                    # Skip .git directory
-                    if '.git' in root_dir:
-                        continue
+                    # Skip certain directories entirely
+                    dirs[:] = [d for d in dirs if d not in {'.git', '.obsidian', '__pycache__', '.vscode', '.idea', 'node_modules'}]
+                    
                     for file in files:
-                        # Skip hidden files and common non-content files
-                        if not file.startswith('.') and file not in ['.gitignore']:
-                            rel_path = os.path.relpath(os.path.join(root_dir, file), vault_path)
-                            local_files.append(rel_path)
+                        file_path = os.path.relpath(os.path.join(root_dir, file), vault_path)
+                        if self._is_meaningful_file(file_path):
+                            local_content_files.append(file)
             
-            # Check if local repo only has README.md (indicating it was empty and we created it)
-            only_has_readme = (len(local_files) == 1 and local_files[0] == "README.md")
+            # Check remote files from analysis (excluding system and generated files)
+            remote_content_files = []
+            if analysis.remote_files:
+                remote_content_files = [f for f in analysis.remote_files 
+                                      if self._is_meaningful_file(f)]
             
-            if only_has_readme:
-                # Local repo was empty, just pull remote files
-                self._update_status("Local repository only has README. Checking remote repository...")
-                
-                import subprocess
-                try:
-                    # First, fetch to get latest remote info
-                    self._update_status("Fetching remote repository information...")
-                    fetch_result = subprocess.run(['git', 'fetch', 'origin'], 
-                                                cwd=vault_path, capture_output=True, text=True)
-                    
-                    if fetch_result.returncode == 0:
-                        # Check if remote main branch exists and has files
-                        self._update_status("Checking if remote has files...")
-                        ls_result = subprocess.run(['git', 'ls-tree', '-r', '--name-only', 'origin/main'], 
-                                                 cwd=vault_path, capture_output=True, text=True)
-                        
-                        if ls_result.returncode == 0 and ls_result.stdout.strip():
-                            # Remote has files, pull them
-                            remote_files = [f.strip() for f in ls_result.stdout.splitlines() if f.strip()]
-                            remote_files = [f for f in remote_files if f not in ['.gitignore', 'README.md']]
-                            
-                            if remote_files:
-                                self._update_status(f"Remote has {len(remote_files)} files. Pulling them...")
-                                
-                                # Since local only has README, we can safely merge remote files
-                                # First try a merge pull with unrelated histories
-                                self._update_status("Merging remote files into local repository...")
-                                pull_result = subprocess.run(['git', 'pull', 'origin', 'main', '--allow-unrelated-histories', '--no-rebase'], 
-                                                           cwd=vault_path, capture_output=True, text=True)
-                                
-                                if pull_result.returncode == 0:
-                                    self._update_status("Successfully merged remote files!")
-                                    # Verify files were actually pulled
-                                    final_files = []
-                                    for root_dir, dirs, files in os.walk(vault_path):
-                                        if '.git' in root_dir:
-                                            continue
-                                        for file in files:
-                                            if not file.startswith('.') and file not in ['.gitignore']:
-                                                final_files.append(file)
-                                    
-                                    if len(final_files) > 1:  # More than just README
-                                        current_step.set_status("success")
-                                        return True, f"Remote files merged successfully ({len(final_files)} files total)"
-                                    else:
-                                        # Still only README, merge didn't bring files
-                                        self._update_status("Merge succeeded but no files retrieved. Trying reset method...")
-                                        # Fall through to reset method
-                                else:
-                                    # Pull failed, try reset approach
-                                    self._update_status(f"Merge pull failed ({pull_result.stderr}). Trying reset to remote state...")
-                                
-                                # Try reset to remote (fallback method)
-                                self._update_status("Resetting to remote state to retrieve all files...")
-                                
-                                # First ensure we have latest remote state
-                                fetch_again_result = subprocess.run(['git', 'fetch', 'origin', 'main'], 
-                                                                  cwd=vault_path, capture_output=True, text=True)
-                                
-                                # Reset to remote state (preserves git history)
-                                reset_result = subprocess.run(['git', 'reset', '--hard', 'origin/main'], 
-                                                            cwd=vault_path, capture_output=True, text=True)
-                                
-                                if reset_result.returncode == 0:
-                                    # Verify files were actually retrieved
-                                    final_files = []
-                                    for root_dir, dirs, files in os.walk(vault_path):
-                                        if '.git' in root_dir:
-                                            continue
-                                        for file in files:
-                                            if not file.startswith('.') and file not in ['.gitignore']:
-                                                final_files.append(file)
-                                    
-                                    if len(final_files) > 1:  # More than just README
-                                        self._update_status(f"Successfully reset to remote state! Retrieved {len(final_files)} files.")
-                                        current_step.set_status("success")
-                                        return True, f"Remote files retrieved successfully ({len(final_files)} files)"
-                                    else:
-                                        # Still only README, something is wrong
-                                        self._update_status("Reset succeeded but no remote files found locally. Repository may be empty.")
-                                        current_step.set_status("success")  # Continue anyway
-                                        return True, "Reset completed but no remote content files found"
-                                else:
-                                    # Both pull and reset failed
-                                    self._update_status(f"Could not retrieve remote files: {reset_result.stderr}")
-                                    current_step.set_status("error", "Failed to retrieve remote files")
-                                    return False, f"Failed to retrieve remote files: {reset_result.stderr}"
-                            else:
-                                # Remote only has README or gitignore
-                                self._update_status("Remote repository only has README/gitignore - ready to push local files")
-                                current_step.set_status("success")
-                                return True, "Remote repository is essentially empty - ready for first push"
-                        else:
-                            # Remote main branch doesn't exist or is empty
-                            self._update_status("Remote repository is empty - ready to push local files")
-                            current_step.set_status("success")
-                            return True, "Remote repository is empty - ready for first push"
-                    else:
-                        # Fetch failed
-                        if "couldn't find remote ref" in fetch_result.stderr.lower() or "does not exist" in fetch_result.stderr.lower():
-                            self._update_status("Remote repository is empty - ready to push local files")
-                            current_step.set_status("success")
-                            return True, "Remote repository is empty - ready for first push"
-                        else:
-                            self._update_status(f"Warning: Could not fetch from remote: {fetch_result.stderr}")
-                            current_step.set_status("success")  # Continue anyway
-                            return True, f"Repository sync completed with warnings: {fetch_result.stderr}"
-                            
-                except Exception as e:
-                    self._update_status(f"Error during remote check: {str(e)}")
-                    current_step.set_status("success")  # Continue anyway
-                    return True, f"Repository sync completed with issues: {str(e)}"
+            has_local_content = len(local_content_files) > 0
+            has_remote_content = len(remote_content_files) > 0
+            
+            print(f"[DEBUG] Local content files: {local_content_files}")
+            print(f"[DEBUG] Remote content files: {remote_content_files}")
+            print(f"[DEBUG] Has local content: {has_local_content}")
+            print(f"[DEBUG] Has remote content: {has_remote_content}")
+            
+            # CRITICAL FIX: Always prioritize meaningful file content over git history
+            # This ensures that if local has no meaningful files but remote does,
+            # we treat it as "local_empty_remote_has_files" regardless of git commits
+            if not has_local_content and not has_remote_content:
+                return "both_empty"
+            elif not has_local_content and has_remote_content:
+                # This is the critical case: local deleted files but remote still has them
+                print(f"[DEBUG] CRITICAL: Local has no meaningful files but remote has {len(remote_content_files)} files")
+                print(f"[DEBUG] This should trigger PULL from remote, NOT push to remote")
+                return "local_empty_remote_has_files"
+            elif has_local_content and not has_remote_content:
+                return "local_has_files_remote_empty"
             else:
-                # Local repo has files, need to check for conflicts
-                self._update_status("Local repository has files. Checking for conflicts with remote...")
+                return "both_have_files"
                 
-                # Analyze repository state for conflicts
-                analysis, error = self._safe_ogresync_call('analyze_repository_state', vault_path)
+        except Exception as e:
+            print(f"[DEBUG] Error determining scenario: {e}")
+            return "unknown"
+    
+    def _handle_both_empty_scenario(self, vault_path, current_step):
+        """Handle scenario where both repositories are empty"""
+        try:
+            self._update_status("📝 Both repositories are empty - creating initial README file...")
+            
+            # Create a basic README.md file
+            readme_path = os.path.join(vault_path, "README.md")
+            readme_content = f"""# My Obsidian Vault
+
+Welcome to my Obsidian vault! This vault is synchronized with GitHub using Ogresync.
+
+## Setup Information
+- Created: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+- Synchronized with: {self.wizard_state.get('github_url', 'GitHub Repository')}
+- Tool: Ogresync Setup Wizard
+
+## Getting Started
+You can start creating notes in this vault. All changes will be automatically synchronized with your GitHub repository.
+
+Happy note-taking! 📚
+"""
+            
+            with open(readme_path, 'w', encoding='utf-8') as f:
+                f.write(readme_content)
+            
+            # Commit and push the README
+            import subprocess
+            
+            # Add the README file
+            add_result = subprocess.run(['git', 'add', 'README.md'], 
+                                      cwd=vault_path, capture_output=True, text=True)
+            if add_result.returncode != 0:
+                raise Exception(f"Failed to add README: {add_result.stderr}")
+            
+            # Commit the README
+            commit_result = subprocess.run(['git', 'commit', '-m', 'Initial commit: Add README'], 
+                                         cwd=vault_path, capture_output=True, text=True)
+            if commit_result.returncode != 0:
+                raise Exception(f"Failed to commit README: {commit_result.stderr}")
+            
+            # Push to remote
+            self._update_status("📤 Pushing initial README to remote repository...")
+            push_result = subprocess.run(['git', 'push', '-u', 'origin', 'main'], 
+                                       cwd=vault_path, capture_output=True, text=True)
+            if push_result.returncode != 0:
+                raise Exception(f"Failed to push README: {push_result.stderr}")
+            
+            self._update_status("✅ Initial README created and pushed successfully!")
+            current_step.set_status("success")
+            return True, "Both repositories were empty - created and pushed initial README"
+            
+        except Exception as e:
+            self._update_status(f"❌ Failed to create initial README: {str(e)}")
+            current_step.set_status("error", f"Failed to initialize empty repositories: {str(e)}")
+            return False, f"Failed to initialize empty repositories: {str(e)}"
+    
+    def _handle_local_empty_scenario(self, analysis, vault_path, current_step, engine=None):
+        """Handle scenario where local is empty but remote has files"""
+        print(f"[DEBUG] _handle_local_empty_scenario: Starting with vault_path={vault_path}")
+        try:
+            self._update_status("📥 Local repository is empty, remote has files - pulling remote content...")
+            print(f"[DEBUG] _handle_local_empty_scenario: Status updated")
+            
+            import subprocess
+            
+            # Get the correct remote branch from the engine
+            remote_branch = "origin/main"  # Default fallback
+            if engine and hasattr(engine, 'default_remote_branch'):
+                remote_branch = engine.default_remote_branch
+                print(f"[DEBUG] _handle_local_empty_scenario: Using detected remote branch: {remote_branch}")
+            else:
+                print(f"[DEBUG] _handle_local_empty_scenario: Using default remote branch: {remote_branch}")
+            
+            # Check if local repository has any commits
+            print(f"[DEBUG] _handle_local_empty_scenario: Checking for local commits...")
+            log_result = subprocess.run(['git', 'log', '--oneline'], 
+                                      cwd=vault_path, capture_output=True, text=True)
+            has_local_commits = log_result.returncode == 0 and log_result.stdout.strip()
+            print(f"[DEBUG] _handle_local_empty_scenario: Has local commits: {has_local_commits}")
+            
+            # Fetch latest remote information
+            print(f"[DEBUG] _handle_local_empty_scenario: Fetching from remote...")
+            fetch_result = subprocess.run(['git', 'fetch', 'origin'], 
+                                        cwd=vault_path, capture_output=True, text=True)
+            if fetch_result.returncode != 0:
+                print(f"[DEBUG] _handle_local_empty_scenario: Fetch failed: {fetch_result.stderr}")
+                raise Exception(f"Failed to fetch remote: {fetch_result.stderr}")
+            print(f"[DEBUG] _handle_local_empty_scenario: Fetch successful")
+            
+            if has_local_commits:
+                # Local has commits, use merge strategy
+                print(f"[DEBUG] _handle_local_empty_scenario: Using merge strategy with {remote_branch}...")
+                self._update_status("🔄 Merging remote files into local repository...")
+                branch_name = remote_branch.split('/')[-1]  # Extract branch name (e.g., 'main' or 'master')
+                pull_result = subprocess.run(['git', 'pull', 'origin', branch_name, '--allow-unrelated-histories', '--no-rebase'], 
+                                           cwd=vault_path, capture_output=True, text=True)
+                print(f"[DEBUG] _handle_local_empty_scenario: Pull result: {pull_result.returncode}, stdout: {pull_result.stdout}, stderr: {pull_result.stderr}")
                 
-                if error:
-                    # Fallback simple conflict detection
-                    try:
-                        import subprocess
-                        # Try to fetch remote
-                        fetch_result = subprocess.run(['git', 'fetch', 'origin'], 
-                                                    cwd=vault_path, capture_output=True, text=True)
-                        if fetch_result.returncode == 0:
-                            # Check if remote has files
-                            ls_result = subprocess.run(['git', 'ls-tree', '-r', '--name-only', 'origin/main'], 
-                                                     cwd=vault_path, capture_output=True, text=True)
-                            if ls_result.returncode == 0 and ls_result.stdout.strip():
-                                remote_files = [f.strip() for f in ls_result.stdout.splitlines() if f.strip()]
-                                remote_files = [f for f in remote_files if f not in ['.gitignore']]
-                                analysis = {
-                                    "conflict_detected": len(remote_files) > 0,
-                                    "local_files": local_files,
-                                    "remote_files": remote_files,
-                                    "has_local_files": len(local_files) > 0,
-                                    "has_remote_files": len(remote_files) > 0
-                                }
-                            else:
-                                analysis = {"conflict_detected": False}
-                        else:
-                            analysis = {"conflict_detected": False}
-                    except Exception:
-                        analysis = {"conflict_detected": False}
+                if pull_result.returncode != 0:
+                    # Try reset method as fallback
+                    print(f"[DEBUG] _handle_local_empty_scenario: Pull failed, trying reset method with {remote_branch}...")
+                    self._update_status("🔄 Trying reset method to retrieve remote files...")
+                    reset_result = subprocess.run(['git', 'reset', '--hard', remote_branch], 
+                                                cwd=vault_path, capture_output=True, text=True)
+                    print(f"[DEBUG] _handle_local_empty_scenario: Reset result: {reset_result.returncode}, stdout: {reset_result.stdout}, stderr: {reset_result.stderr}")
+                    if reset_result.returncode != 0:
+                        raise Exception(f"Failed to pull remote files: {pull_result.stderr}")
+            else:
+                # Local has no commits, use reset to adopt remote state
+                print(f"[DEBUG] _handle_local_empty_scenario: No local commits, using reset method with {remote_branch}...")
+                self._update_status("🔄 Local repository has no commits, adopting remote state...")
+                reset_result = subprocess.run(['git', 'reset', '--hard', remote_branch], 
+                                            cwd=vault_path, capture_output=True, text=True)
+                print(f"[DEBUG] _handle_local_empty_scenario: Reset result: {reset_result.returncode}, stdout: {reset_result.stdout}, stderr: {reset_result.stderr}")
+                if reset_result.returncode != 0:
+                    raise Exception(f"Failed to adopt remote state: {reset_result.stderr}")
+            
+            # Verify files were actually pulled/retrieved
+            print(f"[DEBUG] _handle_local_empty_scenario: Verifying pulled files...")
+            pulled_files = []
+            for root_dir, dirs, files in os.walk(vault_path):
+                if '.git' in root_dir:
+                    continue
+                for file in files:
+                    if not file.startswith('.'):
+                        pulled_files.append(file)
+            
+            print(f"[DEBUG] _handle_local_empty_scenario: Found {len(pulled_files)} pulled files: {pulled_files}")
+            self._update_status(f"✅ Successfully retrieved {len(pulled_files)} files from remote repository!")
+            current_step.set_status("success")
+            return True, f"Remote files retrieved successfully ({len(pulled_files)} files)"
+                    
+        except Exception as e:
+            print(f"[DEBUG] _handle_local_empty_scenario: Exception occurred: {e}")
+            self._update_status(f"❌ Failed to retrieve remote files: {str(e)}")
+            current_step.set_status("error", f"Failed to retrieve remote files: {str(e)}")
+            return False, f"Failed to retrieve remote files: {str(e)}"
+    
+    def _handle_both_have_files_scenario(self, resolver, analysis, current_step):
+        """Handle scenario where both repositories have files - use two-stage conflict resolution"""
+        try:
+            self._update_status("⚖️ Both repositories have files - launching enhanced conflict resolution...")
+            
+            # Show informative message about the conflict resolution process
+            if ui_elements:
+                from ui_dialogs import show_conflict_info
                 
-                if analysis and analysis.get("conflict_detected"):
-                    self._update_status("Repository conflicts detected - launching two-stage resolution...")
-                    
-                    # Show user-friendly message about conflict resolution
-                    if ui_elements:
-                        info_msg = (
-                            "🤝 Repository Synchronization Conflict Detected!\n\n"
-                            "Both your local vault and the remote repository contain files. "
-                            "Ogresync will now guide you through resolving these conflicts using our "
-                            "enhanced two-stage resolution system.\n\n"
-                            "🔄 Stage 1: Choose overall strategy\n"
-                            "• Smart Merge: Intelligently combine files (recommended)\n"
-                            "• Keep Local: Use only your local files\n"
-                            "• Keep Remote: Use only remote files\n\n"
-                            "🎯 Stage 2: File-by-file resolution (if Smart Merge chosen)\n"
-                            "• Review each conflicting file individually\n"
-                            "• Choose auto-merge, manual merge, or keep specific versions\n\n"
-                            "Your choice will be immediately applied to both local and remote repositories.\n\n"
-                            "Click OK to begin conflict resolution."
-                        )
-                        ui_elements.show_premium_info("Repository Sync - Conflict Resolution", info_msg, self.dialog)
-                    
-                    # Use the enhanced two-stage conflict resolution system
-                    success, conflict_error = self._safe_ogresync_call('handle_initial_repository_conflict', 
-                                                                     vault_path, analysis, self.dialog)
-                    
-                    if not conflict_error and success:
-                        self._update_status("Repository conflicts resolved successfully!")
-                        current_step.set_status("success")
-                        return True, "Repository conflicts resolved using two-stage resolution system"
+                # Show the themed conflict info dialog
+                proceed = show_conflict_info(self.dialog)
+                if not proceed:
+                    self._update_status("❌ Conflict resolution cancelled by user")
+                    current_step.set_status("skipped", "Conflict resolution cancelled by user")
+                    return
+            
+            # Launch the two-stage conflict resolution
+            self._update_status("🚀 Starting Stage 1: High-level strategy selection...")
+            
+            result = resolver.resolve_initial_setup_conflicts(self.wizard_state.get("github_url"))
+            
+            if result.success:
+                self._update_status(f"✅ Conflict resolution completed successfully! Strategy: {result.strategy.value if result.strategy else 'N/A'}")
+                
+                # Show success message with details
+                if ui_elements:
+                    success_msg = (
+                        f"🎉 Repository Synchronization Complete!\n\n"
+                        f"✅ Resolution Strategy: {result.strategy.value.replace('_', ' ').title() if result.strategy else 'Default'}\n"
+                        f"📁 Files Processed: {len(result.files_processed)}\n"
+                        f"💾 Backup Created: {result.backup_created or 'N/A'}\n\n"
+                        f"Your local vault and remote repository are now fully synchronized.\n"
+                        f"All git history has been preserved and no commits were lost.\n\n"
+                        f"📋 Summary: {result.message}"
+                    )
+                    ui_elements.show_premium_info("Conflict Resolution Successful", success_msg, self.dialog)
+                
+                current_step.set_status("success")
+                return True, f"Two-stage conflict resolution completed: {result.message}"
+            else:
+                    # Check if user cancelled vs actual error
+                    if "cancelled by user" in result.message.lower():
+                        self._update_status("⏭ Conflict resolution cancelled - you can retry this step later")
+                        
+                        # Show user-friendly cancellation message
+                        if ui_elements:
+                            cancel_msg = (
+                                f"⏸ Conflict Resolution Cancelled\n\n"
+                                f"You can continue with the setup and resolve conflicts later, or:\n\n"
+                                f"🔄 Retry: Click 'Execute Step' to try conflict resolution again\n"
+                                f"⏭ Skip: Continue setup and handle conflicts manually later\n"
+                                f"❌ Cancel: Exit the setup wizard\n\n"
+                                f"💡 Tip: All your data is safe - no changes have been made to your repositories."
+                            )
+                            ui_elements.show_premium_info("Resolution Cancelled", cancel_msg, self.dialog)
+                        
+                        current_step.set_status("pending")  # Reset to pending so user can retry
+                        return False, "Conflict resolution cancelled - can retry or skip"
                     else:
-                        self._update_status("Failed to resolve repository conflicts")
-                        current_step.set_status("error", "Failed to resolve repository conflicts")
-                        return False, f"Failed to resolve repository conflicts: {conflict_error}"
-                else:
-                    # No conflicts, try to sync with remote
-                    self._update_status("No conflicts detected. Synchronizing with remote repository...")
-                    
-                    import subprocess
-                    try:
-                        # First, ensure we have the latest remote information
-                        fetch_result = subprocess.run(['git', 'fetch', 'origin'], 
-                                                    cwd=vault_path, capture_output=True, text=True)
+                        self._update_status(f"❌ Conflict resolution failed: {result.message}")
                         
-                        if fetch_result.returncode != 0:
-                            self._update_status(f"Warning: Could not fetch remote information: {fetch_result.stderr}")
+                        # Show detailed error information  
+                        if ui_elements:
+                            error_msg = (
+                                f"❌ Repository Conflict Resolution Failed\n\n"
+                                f"Error: {result.message}\n\n"
+                                f"This can happen when:\n"
+                                f"• Network connectivity issues during synchronization\n"
+                                f"• Repository permissions are restricted\n"
+                                f"• Git merge strategies encounter incompatible histories\n\n"
+                                f"💡 Suggested Solutions:\n"
+                                f"1. Check your network connection and repository access\n"
+                                f"2. Verify you have write permissions to the repository\n"
+                                f"3. Try the conflict resolution step again\n"
+                                f"4. Contact support if the issue persists\n\n"
+                                f"Repository: {self.wizard_state.get('github_url', 'N/A')}"
+                            )
+                            ui_elements.show_premium_error("Conflict Resolution Failed", error_msg, self.dialog)
                         
-                        # Try a merge-style pull to preserve git history
-                        result = subprocess.run(['git', 'pull', 'origin', 'main', '--allow-unrelated-histories', '--no-rebase'], 
-                                              cwd=vault_path, capture_output=True, text=True)
-                        
-                        if result.returncode == 0:
-                            self._update_status("Successfully synchronized with remote repository!")
-                            current_step.set_status("success")
-                            return True, "Repository synchronized successfully"
-                        else:
-                            if "couldn't find remote ref" in result.stderr.lower():
-                                self._update_status("Remote repository is empty - ready for first push")
-                                current_step.set_status("success")
-                                return True, "Remote repository is empty - ready for first push"
-                            elif "Already up to date" in result.stdout:
-                                self._update_status("Repository is already up to date")
-                                current_step.set_status("success")
-                                return True, "Repository is already synchronized"
-                            else:
-                                # Try without no-rebase flag as fallback
-                                self._update_status("Trying alternative sync method...")
-                                fallback_result = subprocess.run(['git', 'pull', 'origin', 'main', '--allow-unrelated-histories'], 
-                                                               cwd=vault_path, capture_output=True, text=True)
-                                
-                                if fallback_result.returncode == 0:
-                                    self._update_status("Successfully synchronized using fallback method!")
-                                    current_step.set_status("success")
-                                    return True, "Repository synchronized successfully (fallback method)"
-                                else:
-                                    self._update_status(f"Warning: Could not sync with remote: {fallback_result.stderr}")
-                                    current_step.set_status("success")  # Continue anyway
-                                    return True, f"Repository sync completed with warnings: {fallback_result.stderr}"
-                                
-                    except Exception as e:
-                        self._update_status(f"Error during sync: {str(e)}")
-                        current_step.set_status("success")  # Continue anyway
-                        return True, f"Repository sync completed with issues: {str(e)}"
+                        current_step.set_status("error", f"Conflict resolution failed: {result.message}")
+                        return False, f"Two-stage conflict resolution failed: {result.message}"
                         
         except Exception as e:
-            current_step.set_status("error", str(e))
-            return False, f"Error during repository sync: {str(e)}"
+            self._update_status(f"❌ Error during conflict resolution: {str(e)}")
+            current_step.set_status("error", f"Conflict resolution error: {str(e)}")
+            return False, f"Error during conflict resolution: {str(e)}"
+    
+    def _handle_fallback_scenario(self, vault_path, current_step):
+        """Fallback scenario handling when enhanced conflict resolution is not available"""
+        try:
+            self._update_status("🔄 Using fallback synchronization method...")
+            
+            import subprocess
+            
+            # Try to fetch and sync with basic git commands
+            fetch_result = subprocess.run(['git', 'fetch', 'origin'], 
+                                        cwd=vault_path, capture_output=True, text=True)
+            
+            if fetch_result.returncode == 0:
+                # Try merge-style pull
+                pull_result = subprocess.run(['git', 'pull', 'origin', 'main', '--allow-unrelated-histories', '--no-rebase'], 
+                                           cwd=vault_path, capture_output=True, text=True)
+                
+                if pull_result.returncode == 0:
+                    self._update_status("✅ Repository synchronized using fallback method")
+                    current_step.set_status("success")
+                    return True, "Repository synchronized successfully (fallback method)"
+                else:
+                    if "couldn't find remote ref" in pull_result.stderr.lower():
+                        self._update_status("✅ Remote repository is empty - ready for initial push")
+                        current_step.set_status("success")
+                        return True, "Remote repository is empty - ready for initial push"
+                    else:
+                        self._update_status(f"⚠️ Sync completed with warnings: {pull_result.stderr}")
+                        current_step.set_status("success")
+                        return True, f"Repository sync completed with warnings: {pull_result.stderr}"
+            else:
+                if "couldn't find remote ref" in fetch_result.stderr.lower():
+                    self._update_status("✅ Remote repository is empty - ready for initial push")
+                    current_step.set_status("success")
+                    return True, "Remote repository is empty - ready for initial push"
+                else:
+                    self._update_status(f"⚠️ Fetch completed with warnings: {fetch_result.stderr}")
+                    current_step.set_status("success")
+                    return True, f"Repository sync completed with warnings: {fetch_result.stderr}"
+                    
+        except Exception as e:
+            self._update_status(f"❌ Fallback sync failed: {str(e)}")
+            current_step.set_status("error", f"Fallback sync failed: {str(e)}")
+            return False, f"Fallback sync failed: {str(e)}"
     
     def _step_final_sync(self):
-        """Step 10: Final synchronization - smart push only when needed."""
+        """Step 10: Final synchronization - intelligent push only when truly needed."""
         try:
             vault_path = self.wizard_state.get("vault_path")
             if not vault_path:
                 return False, "Vault path not set."
             
-            self._update_status("Checking if final push is needed...")
+            self._update_status("Checking final synchronization status...")
             
             import subprocess
             
-            # Check if we have commits to push
-            unpushed_result = subprocess.run(['git', 'log', 'origin/main..HEAD', '--oneline'], 
-                                           cwd=vault_path, capture_output=True, text=True)
+            # CRITICAL SAFEGUARD: Check if we just handled a "local_empty_remote_has_files" scenario
+            # If so, we should NEVER push, only ensure we have the remote content
+            current_local_files = []
+            if os.path.exists(vault_path):
+                for root_dir, dirs, files in os.walk(vault_path):
+                    dirs[:] = [d for d in dirs if d not in {'.git', '.obsidian', '__pycache__', '.vscode', '.idea', 'node_modules'}]
+                    for file in files:
+                        file_path = os.path.relpath(os.path.join(root_dir, file), vault_path)
+                        if self._is_meaningful_file(file_path):
+                            current_local_files.append(file)
             
-            if unpushed_result.returncode == 0 and unpushed_result.stdout.strip():
-                # We have unpushed commits, push them
-                unpushed_commits = unpushed_result.stdout.strip().split('\n')
-
-                self._update_status(f"Pushing {len(unpushed_commits)} commit(s) to remote...")
+            has_local_meaningful_files = len(current_local_files) > 0
+            print(f"[DEBUG] Current local meaningful files: {current_local_files}")
+            print(f"[DEBUG] Has local meaningful files: {has_local_meaningful_files}")
+            
+            # If local has no meaningful files, we should NOT push anything
+            if not has_local_meaningful_files:
+                self._update_status("🚫 Local repository has no meaningful files - ensuring remote content is preserved")
                 
-                push_result = subprocess.run(['git', 'push', 'origin', 'main'], 
-                                           cwd=vault_path, capture_output=True, text=True)
-                
-                if push_result.returncode == 0:
-                    self._update_status("Successfully pushed local commits to remote!")
-                    return True, f"Final synchronization completed - {len(unpushed_commits)} commit(s) pushed"
-                else:
-                    # Try with force if it's just a fast-forward issue
-                    if "non-fast-forward" in push_result.stderr or "rejected" in push_result.stderr:
-                        self._update_status("Attempting force push due to remote changes...")
-                        force_result = subprocess.run(['git', 'push', '--force', 'origin', 'main'], 
-                                                    cwd=vault_path, capture_output=True, text=True)
-                        if force_result.returncode == 0:
-                            self._update_status("Successfully force-pushed local commits!")
-                            return True, f"Final synchronization completed - {len(unpushed_commits)} commit(s) force-pushed"
-                        else:
-                            return False, f"Failed to push commits: {force_result.stderr}"
-                    else:
-                        return False, f"Failed to push commits: {push_result.stderr}"
-            else:
-                # Check if remote has the same commits as local
-                self._update_status("Verifying synchronization with remote...")
-                
-                # Fetch latest remote state
+                # Ensure we have the latest remote content
                 fetch_result = subprocess.run(['git', 'fetch', 'origin'], 
                                             cwd=vault_path, capture_output=True, text=True)
                 
-                if fetch_result.returncode == 0:
-                    # Check if we're behind remote
-                    behind_result = subprocess.run(['git', 'log', 'HEAD..origin/main', '--oneline'], 
-                                                 cwd=vault_path, capture_output=True, text=True)
+                # Check if remote has content we don't have locally
+                current_branch_result = subprocess.run(['git', 'branch', '--show-current'], 
+                                                     cwd=vault_path, capture_output=True, text=True)
+                current_branch = current_branch_result.stdout.strip() if current_branch_result.returncode == 0 else "main"
+                
+                # Check if we're behind remote
+                behind_result = subprocess.run(['git', 'log', f'HEAD..origin/{current_branch}', '--oneline'], 
+                                             cwd=vault_path, capture_output=True, text=True)
+                
+                if behind_result.returncode == 0 and behind_result.stdout.strip():
+                    # We're behind remote, pull the changes
+                    self._update_status("📥 Pulling missing remote content to local repository...")
+                    pull_result = subprocess.run(['git', 'pull', 'origin', current_branch, '--no-rebase'], 
+                                               cwd=vault_path, capture_output=True, text=True)
                     
-                    if behind_result.returncode == 0 and behind_result.stdout.strip():
-                        # We're behind, this shouldn't happen at this stage
-                        behind_commits = behind_result.stdout.strip().split('\n')
-                        self._update_status(f"Warning: Remote has {len(behind_commits)} newer commit(s)")
-                        return True, f"Final sync completed with warning - remote has {len(behind_commits)} newer commits"
+                    if pull_result.returncode == 0:
+                        # Count the files we got
+                        final_local_files = []
+                        for root_dir, dirs, files in os.walk(vault_path):
+                            dirs[:] = [d for d in dirs if d not in {'.git', '.obsidian', '__pycache__', '.vscode', '.idea', 'node_modules'}]
+                            for file in files:
+                                file_path = os.path.relpath(os.path.join(root_dir, file), vault_path)
+                                if self._is_meaningful_file(file_path):
+                                    final_local_files.append(file)
+                        
+                        self._update_status(f"✅ Successfully retrieved {len(final_local_files)} files from remote repository")
+                        return True, f"Final synchronization completed - pulled {len(final_local_files)} files from remote (no push needed)"
                     else:
-                        # We're in sync
-                        self._update_status("Local and remote are synchronized!")
-                        return True, "Final synchronization completed - repositories are in sync"
+                        return False, f"Failed to pull remote content: {pull_result.stderr}"
                 else:
-                    # Can't fetch, but that's okay
-                    self._update_status("Final synchronization completed (offline)")
-                    return True, "Final synchronization completed (offline mode)"
+                    self._update_status("✅ Local and remote are synchronized - no action needed")
+                    return True, "Final synchronization completed - repositories are in sync (no push needed)"
+            
+            # Continue with normal final sync logic only if local has meaningful files
+            # First, ensure we're up to date with remote
+            fetch_result = subprocess.run(['git', 'fetch', 'origin'], 
+                                        cwd=vault_path, capture_output=True, text=True)
+            
+            if fetch_result.returncode != 0:
+                self._update_status("Warning: Could not fetch from remote, proceeding anyway...")
+            
+            # Check current repository state
+            status_result = subprocess.run(['git', 'status', '--porcelain'], 
+                                         cwd=vault_path, capture_output=True, text=True)
+            
+            has_uncommitted_changes = status_result.returncode == 0 and status_result.stdout.strip()
+            
+            # Get current branch and remote tracking info
+            current_branch_result = subprocess.run(['git', 'branch', '--show-current'], 
+                                                 cwd=vault_path, capture_output=True, text=True)
+            current_branch = current_branch_result.stdout.strip() if current_branch_result.returncode == 0 else "main"
+            
+            # Check if we have meaningful unpushed commits
+            unpushed_result = subprocess.run(['git', 'log', f'origin/{current_branch}..HEAD', '--oneline'], 
+                                           cwd=vault_path, capture_output=True, text=True)
+            
+            # Check if local and remote are in sync (same commit hash)
+            local_commit_result = subprocess.run(['git', 'rev-parse', 'HEAD'], 
+                                                cwd=vault_path, capture_output=True, text=True)
+            remote_commit_result = subprocess.run(['git', 'rev-parse', f'origin/{current_branch}'], 
+                                                 cwd=vault_path, capture_output=True, text=True)
+            
+            local_commit = local_commit_result.stdout.strip() if local_commit_result.returncode == 0 else ""
+            remote_commit = remote_commit_result.stdout.strip() if remote_commit_result.returncode == 0 else ""
+            
+            print(f"[DEBUG] Local commit: {local_commit}")
+            print(f"[DEBUG] Remote commit: {remote_commit}")
+            print(f"[DEBUG] Commits are same: {local_commit == remote_commit}")
+            print(f"[DEBUG] Has uncommitted changes: {has_uncommitted_changes}")
+            
+            # CRITICAL: If local and remote are pointing to the same commit, no push needed
+            if local_commit == remote_commit and not has_uncommitted_changes:
+                self._update_status("✅ Local and remote are perfectly synchronized - no push needed")
+                return True, "Final synchronization completed - repositories are already in sync"
+            
+            # If we have uncommitted changes, commit them first
+            if has_uncommitted_changes:
+                self._update_status("📝 Committing final changes...")
+                
+                # Check if these are meaningful changes or just system files
+                meaningful_changes = False
+                for line in status_result.stdout.strip().split('\n'):
+                    if line.strip():
+                        file_path = line[3:].strip()  # Remove status indicators
+                        if self._is_meaningful_file(file_path):
+                            meaningful_changes = True
+                            break
+                
+                if meaningful_changes:
+                    # Commit meaningful changes
+                    subprocess.run(['git', 'add', '-A'], cwd=vault_path, capture_output=True, text=True)
+                    subprocess.run(['git', 'commit', '-m', 'Final setup wizard changes'], 
+                                 cwd=vault_path, capture_output=True, text=True)
+                    print("[DEBUG] Committed meaningful changes")
+                else:
+                    # Only system files changed, be more conservative
+                    print("[DEBUG] Only system files changed, skipping commit")
+                    return True, "Final synchronization completed - only system files changed, no push needed"
+            
+            # Now check for unpushed commits again
+            unpushed_result = subprocess.run(['git', 'log', f'origin/{current_branch}..HEAD', '--oneline'], 
+                                           cwd=vault_path, capture_output=True, text=True)
+            
+            if unpushed_result.returncode == 0 and unpushed_result.stdout.strip():
+                unpushed_commits = unpushed_result.stdout.strip().split('\n')
+                
+                # Analyze the commits to see if they're meaningful
+                meaningful_commits = []
+                for commit_line in unpushed_commits:
+                    # Check if this commit contains meaningful changes
+                    commit_hash = commit_line.split()[0]
+                    commit_files_result = subprocess.run(['git', 'show', '--name-only', '--format=', commit_hash], 
+                                                       cwd=vault_path, capture_output=True, text=True)
+                    
+                    if commit_files_result.returncode == 0:
+                        commit_files = commit_files_result.stdout.strip().split('\n')
+                        has_meaningful_files = any(self._is_meaningful_file(f) for f in commit_files if f.strip())
+                        
+                        if has_meaningful_files:
+                            meaningful_commits.append(commit_line)
+                        else:
+                            print(f"[DEBUG] Commit {commit_hash} has only system files: {commit_files}")
+                
+                print(f"[DEBUG] Total unpushed commits: {len(unpushed_commits)}")
+                print(f"[DEBUG] Meaningful unpushed commits: {len(meaningful_commits)}")
+                
+                # Only push if we have meaningful commits
+                if meaningful_commits:
+                    self._update_status(f"📤 Pushing {len(meaningful_commits)} meaningful commit(s) to remote...")
+                    
+                    push_result = subprocess.run(['git', 'push', 'origin', current_branch], 
+                                               cwd=vault_path, capture_output=True, text=True)
+                    
+                    if push_result.returncode == 0:
+                        self._update_status("✅ Successfully pushed meaningful commits to remote!")
+                        return True, f"Final synchronization completed - {len(meaningful_commits)} meaningful commit(s) pushed"
+                    else:
+                        # Handle push rejection carefully
+                        if "non-fast-forward" in push_result.stderr or "rejected" in push_result.stderr:
+                            self._update_status("🔄 Remote has new changes, checking if merge is safe...")
+                            
+                            # Check what's on remote that we don't have
+                            remote_ahead_result = subprocess.run(['git', 'log', f'HEAD..origin/{current_branch}', '--oneline'], 
+                                                               cwd=vault_path, capture_output=True, text=True)
+                            
+                            if remote_ahead_result.returncode == 0 and remote_ahead_result.stdout.strip():
+                                # Remote has commits we don't have - this is a real conflict situation
+                                return False, f"Remote repository has new commits that conflict with local changes. Please use the conflict resolution system."
+                            else:
+                                # Try the push again (might be a transient issue)
+                                retry_push = subprocess.run(['git', 'push', 'origin', current_branch], 
+                                                          cwd=vault_path, capture_output=True, text=True)
+                                if retry_push.returncode == 0:
+                                    return True, f"Final synchronization completed after retry - {len(meaningful_commits)} commit(s) pushed"
+                                else:
+                                    return False, f"Failed to push commits: {retry_push.stderr}"
+                        else:
+                            return False, f"Failed to push commits: {push_result.stderr}"
+                else:
+                    # All commits are system-only, don't push them to avoid overwriting remote content
+                    self._update_status("⚠️ All unpushed commits contain only system files - skipping push to preserve remote content")
+                    
+                    # Reset to remote state to avoid future confusion
+                    reset_result = subprocess.run(['git', 'reset', '--hard', f'origin/{current_branch}'], 
+                                                cwd=vault_path, capture_output=True, text=True)
+                    if reset_result.returncode == 0:
+                        self._update_status("✅ Reset to remote state - repositories are now synchronized")
+                        return True, "Final synchronization completed - system commits discarded, remote content preserved"
+                    else:
+                        return True, "Final synchronization completed - unpushed commits contain only system files"
+            else:
+                # No unpushed commits
+                self._update_status("✅ No unpushed commits found - repositories are synchronized")
+                return True, "Final synchronization completed - repositories are in sync"
                     
         except Exception as e:
             return False, f"Error in final sync: {str(e)}"

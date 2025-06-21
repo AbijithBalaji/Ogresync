@@ -1008,9 +1008,13 @@ def create_premium_minimal_ui(auto_run=False):
         progress_frame,
         mode='determinate',
         length=400,
-        style="Premium.Horizontal.TProgressbar"
+        style="Premium.Horizontal.TProgressbar",
+        maximum=100
     )
     progress_bar.pack(fill=tk.X, pady=(Spacing.SM, 0))
+    
+    # Initialize progress bar
+    progress_bar["value"] = 0
     
     # Log area
     log_frame = tk.Frame(main_frame, bg=Colors.BG_PRIMARY)
@@ -1042,6 +1046,28 @@ def create_premium_minimal_ui(auto_run=False):
         state='disabled'
     )
     log_text.pack(fill=tk.BOTH, expand=True, pady=(Spacing.SM, 0))
+    
+    # Add initial message to show UI is working
+    log_text.config(state='normal')
+    log_text.insert(tk.END, "Ogresync sync interface ready. Initializing sync process...\n")
+    log_text.config(state='disabled')
+    
+    # Force UI update to show initial message
+    root.update_idletasks()
+    root.update()
+    
+    # Initialize after() callback tracking for cleanup
+    if not hasattr(root, '_after_ids'):
+        root._after_ids = []  # type: ignore
+    
+    # Override after() method to track callbacks for cleanup
+    original_after = root.after
+    def tracked_after(ms, func, *args):  # type: ignore
+        after_id = original_after(ms, func, *args)
+        if hasattr(root, '_after_ids'):
+            root._after_ids.append(after_id)  # type: ignore
+        return after_id
+    root.after = tracked_after  # type: ignore
     
     return root, log_text, progress_bar
 

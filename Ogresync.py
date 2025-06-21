@@ -9,6 +9,7 @@ import shutil
 import random
 import tkinter as tk
 import platform
+import datetime
 from tkinter import ttk, scrolledtext
 from typing import Optional
 import webbrowser
@@ -187,23 +188,107 @@ def is_obsidian_running():
             continue
     return False
 
+# Global flag to prevent UI updates during transition
+_ui_updating_enabled = True
+_ui_lock = threading.Lock()
+
+def disable_ui_updates():
+    """Disable UI updates during transition"""
+    global _ui_updating_enabled
+    with _ui_lock:
+        _ui_updating_enabled = False
+
+def enable_ui_updates():
+    """Re-enable UI updates after transition"""
+    global _ui_updating_enabled
+    with _ui_lock:
+        _ui_updating_enabled = True
+
 def safe_update_log(message, progress=None):
-    if log_text and progress_bar and root and root.winfo_exists():
-        def _update():
-            if log_text is not None:
-                log_text.config(state='normal')
-                log_text.insert(tk.END, message + "\n")
-                log_text.config(state='disabled')
-                log_text.yview_moveto(1)
-            if progress is not None and progress_bar is not None:
-                progress_bar["value"] = progress
+    # Always print to console for debugging
+    print(f"LOG: {message}")
+    
+    # Check if UI updates are enabled
+    with _ui_lock:
+        if not _ui_updating_enabled:
+            return
+    
+    # Check if we have valid UI components
+    if not (log_text and progress_bar and root):
+        return
+        
+    def _update():
         try:
-            if root is not None:
-                root.after(0, _update)
-        except Exception as e:
-            print("Error scheduling UI update:", e)
-    else:
-        print(message)
+            # Double-check that UI is still valid inside the update function
+            with _ui_lock:
+                if not _ui_updating_enabled:
+                    return
+                    
+            if not (log_text and root):
+                return
+                
+            # Verify root window still exists
+            if not root.winfo_exists():
+                return
+                
+            # Update log text
+            if log_text is not None:
+                try:
+                    log_text.config(state='normal')
+                    log_text.insert(tk.END, message + "\n")
+                    log_text.config(state='disabled')
+                    log_text.yview_moveto(1)
+                except tk.TclError:
+                    # Widget destroyed between checks
+                    return
+                    
+            # Update progress bar
+            if progress is not None and progress_bar is not None:
+                try:
+                    progress_bar["value"] = progress
+                except tk.TclError:
+                    # Progress bar destroyed between checks
+                    pass
+                    
+            # Force immediate UI update only if we're in main thread
+            current_thread = threading.current_thread()
+            is_main_thread = current_thread == threading.main_thread()
+            
+            if is_main_thread and root is not None:
+                try:
+                    root.update_idletasks()
+                    root.update()  # Force full update cycle
+                except tk.TclError:
+                    # Root destroyed during update
+                    pass
+                    
+        except (tk.TclError, AttributeError, RuntimeError):
+            # Widget destroyed or invalid - silently ignore
+            pass
+            
+    try:
+        # Check if we're in the main thread
+        current_thread = threading.current_thread()
+        is_main_thread = current_thread == threading.main_thread()
+        
+        if is_main_thread:
+            # We're in main thread, update immediately
+            _update()
+        else:
+            # We're in background thread, schedule update more safely
+            try:
+                # Use a simple flag check to prevent scheduling on destroyed UI
+                if root is not None and root.winfo_exists():
+                    root.after_idle(_update)
+                    # Very small delay to allow UI processing
+                    time.sleep(0.01)
+            except (tk.TclError, RuntimeError):
+                # Root destroyed while scheduling - silently ignore
+                pass
+                
+    except (tk.TclError, AttributeError, RuntimeError):
+        # Any other error - silently ignore to prevent crashes
+        pass
 
 def is_network_available():
     """
@@ -396,9 +481,10 @@ def handle_initial_repository_conflict(vault_path, analysis, parent_window=None)
                 # Apply smart merge with file-by-file resolution
                 success = conflict_resolution.apply_conflict_resolution(vault_path, resolution_result)
                 if not success:
-                    # Fallback to simple merge strategy
-                    safe_update_log("Enhanced resolution failed, falling back to simple merge...", None)
-                    success = handle_merge_strategy(vault_path)
+                    # Fallback to simple merge strategy using the new system
+                    safe_update_log("Enhanced resolution failed, attempting fallback merge...", None)
+                    fallback_result = {'strategy': 'smart_merge', 'file_resolutions': {}}
+                    success = conflict_resolution.apply_conflict_resolution(vault_path, fallback_result)
                 return success
             elif strategy == 'no_conflicts':
                 # No conflicts detected - this is a successful resolution
@@ -417,22 +503,20 @@ def handle_initial_repository_conflict(vault_path, analysis, parent_window=None)
             
     except Exception as e:
         safe_update_log(f"Error in enhanced conflict resolution: {e}", None)
-        # Fallback to original conflict resolution dialog
-        message = (
-            "Both your local vault and the remote repository contain files. "
-            "How would you like to resolve this conflict?"
-        )
-        dialog_parent = parent_window if parent_window is not None else root
-        choice = ui_elements.create_repository_conflict_dialog(dialog_parent, message, analysis)
-        
-        if choice == "merge":
-            return handle_merge_strategy(vault_path)
-        elif choice == "local":
-            return handle_local_strategy(vault_path)
-        elif choice == "remote":
-            return handle_remote_strategy(vault_path, analysis)
-        else:
-            safe_update_log("No conflict resolution strategy selected.", None)
+        # Fallback to the new conflict resolution system
+        safe_update_log("Attempting fallback conflict resolution using new system...", None)
+        try:
+            # Use the new conflict resolution system as fallback
+            resolver = conflict_resolution.ConflictResolver(vault_path, parent_window)
+            fallback_result = resolver.resolve_conflicts(conflict_resolution.ConflictType.REPOSITORY_SETUP)
+            
+            if fallback_result and fallback_result.get('strategy') != 'cancelled':
+                return conflict_resolution.apply_conflict_resolution(vault_path, fallback_result)
+            else:
+                safe_update_log("Fallback conflict resolution was cancelled.", None)
+                return False
+        except Exception as fallback_error:
+            safe_update_log(f"Fallback conflict resolution also failed: {fallback_error}", None)
             return False
 
 def ensure_git_user_config():
@@ -456,132 +540,20 @@ def ensure_git_user_config():
     except Exception as e:
         safe_update_log(f"Warning: Could not configure Git user settings: {e}", None)
 
-def handle_merge_strategy(vault_path):
-    """
-    Handles the merge strategy - combines local and remote files.
-    """
-    try:
-        # Ensure Git user configuration is set
-        ensure_git_user_config()
-        
-        safe_update_log("Resolving conflict using merge strategy...", None)
-        
-        # First, commit any local changes
-        safe_update_log("Committing local files before merge...", None)
-        run_command("git add -A", cwd=vault_path)
-        commit_out, commit_err, commit_rc = run_command('git commit -m "Local files before merge"', cwd=vault_path)
-        
-        if commit_rc != 0:
-            safe_update_log(f"⚠️ Warning: Could not commit local files: {commit_err}", None)
-            # Continue anyway - might be no changes to commit
-        
-        # Pull remote changes with merge strategy
-        safe_update_log("Attempting to merge remote changes...", None)
-        merge_out, merge_err, merge_rc = run_command("git pull origin main --no-rebase --allow-unrelated-histories", cwd=vault_path)
-        
-        safe_update_log(f"Merge command output: {merge_out}", None)
-        if merge_err:
-            safe_update_log(f"Merge command stderr: {merge_err}", None)
-        
-        if merge_rc == 0:
-            safe_update_log("✅ Files merged successfully. Both local and remote files are now combined.", None)
-            # Push the merged result back to remote repository
-            safe_update_log("Pushing merged files to remote repository...", None)
-            push_out, push_err, push_rc = run_command("git push origin main", cwd=vault_path)
-            if push_rc == 0:
-                safe_update_log("✅ Merged files successfully pushed to remote repository.", None)
-            else:
-                safe_update_log(f"⚠️ Warning: Could not push merged files: {push_err}", None)
-                safe_update_log("💡 You can push the changes manually later.", None)
-            return True
-        elif "CONFLICT" in (merge_out + merge_err):
-            safe_update_log("⚠️ Automatic merge created conflicts. These will need to be resolved manually during first use.", None)
-            # For now, let's still consider this a success since user can resolve later
-            return True
-        elif "Already up to date" in (merge_out + merge_err):
-            safe_update_log("✅ Repository is already up to date. Merge completed.", None)
-            return True
-        else:
-            # More detailed error reporting
-            safe_update_log(f"❌ Merge failed with return code {merge_rc}", None)
-            safe_update_log(f"❌ Error details: {merge_err}", None)
-            safe_update_log("💡 Don't worry - files will be merged during regular sync process.", None)
-            # Instead of failing completely, let's allow setup to continue
-            return True
-            
-    except Exception as e:
-        safe_update_log(f"❌ Error in merge strategy: {e}", None)
-        safe_update_log("💡 Don't worry - files will be merged during regular sync process.", None)
-        # Instead of failing completely, let's allow setup to continue
-        return True
-
-def handle_local_strategy(vault_path):
-    """
-    Handles the local strategy - keeps local files, overwrites remote.
-    """
-    try:
-        safe_update_log("Resolving conflict using local strategy (keeping local files)...", None)
-        
-        # Commit local files
-        run_command("git add -A", cwd=vault_path)
-        commit_out, commit_err, commit_rc = run_command('git commit -m "Initial commit with local files"', cwd=vault_path)
-        
-        if commit_rc == 0:
-            # Force push to overwrite remote
-            push_out, push_err, push_rc = run_command("git push origin main --force", cwd=vault_path)
-            if push_rc == 0:
-                safe_update_log("✅ Local files have been pushed to remote repository.", None)
-                return True
-            else:
-                safe_update_log(f"❌ Error pushing local files: {push_err}", None)
-                return False
-        else:
-            safe_update_log(f"❌ Error committing local files: {commit_err}", None)
-            return False
-            
-    except Exception as e:
-        safe_update_log(f"❌ Error in local strategy: {e}", None)
-        return False
-
-def handle_remote_strategy(vault_path, analysis):
-    """
-    Handles the remote strategy - downloads remote files, backs up local files.
-    """
-    try:
-        safe_update_log("Resolving conflict using remote strategy (downloading remote files)...", None)
-        
-        # Create backup of local files with descriptive naming
-        backup_dir, backup_name = create_descriptive_backup_dir(vault_path, "before_remote_download", analysis["local_files"])
-        
-        # Move local content files to backup
-        for file_path in analysis["local_files"]:
-            full_path = os.path.join(vault_path, file_path)
-            if os.path.exists(full_path):
-                backup_path = os.path.join(backup_dir, file_path)
-                os.makedirs(os.path.dirname(backup_path), exist_ok=True)
-                shutil.move(full_path, backup_path)
-        
-        # Pull remote files
-        pull_out, pull_err, pull_rc = run_command("git pull origin main", cwd=vault_path)
-        
-        if pull_rc == 0:
-            safe_update_log(f"✅ Remote files downloaded successfully. Local files backed up to: {backup_name}", None)
-            return True
-        else:
-            safe_update_log(f"❌ Error downloading remote files: {pull_err}", None)
-            # Restore backup if pull failed
-            for file_path in analysis["local_files"]:
-                backup_path = os.path.join(backup_dir, file_path)
-                if os.path.exists(backup_path):
-                    full_path = os.path.join(vault_path, file_path)
-                    os.makedirs(os.path.dirname(full_path), exist_ok=True)
-                    shutil.move(backup_path, full_path)
-            os.rmdir(backup_dir) if os.path.exists(backup_dir) and not os.listdir(backup_dir) else None
-            return False
-            
-    except Exception as e:
-        safe_update_log(f"❌ Error in remote strategy: {e}", None)
-        return False
+# ===== DEPRECATED FUNCTIONS REMOVED =====
+# The following functions have been replaced by the enhanced conflict_resolution module:
+# - handle_merge_strategy() -> Use conflict_resolution.ConflictResolver
+# - handle_local_strategy() -> Use conflict_resolution._apply_keep_local_strategy  
+# - handle_remote_strategy() -> Use conflict_resolution._apply_keep_remote_strategy
+# 
+# These old functions contained potentially destructive operations and have been
+# replaced with non-destructive alternatives that preserve git history and create backups.
+#
+# All conflict resolution is now handled through:
+# - conflict_resolution.ConflictResolver.resolve_conflicts()  
+# - conflict_resolution.apply_conflict_resolution()
+#
+# See conflict_resolution.py for the new implementation.
 
 def create_descriptive_backup_dir(vault_path, operation_description, file_list=None):
     """
@@ -735,6 +707,36 @@ def set_github_remote(vault_path):
                     pull_out, pull_err, pull_rc = run_command("git pull origin main", cwd=vault_path)
                     if pull_rc == 0:
                         safe_update_log("Remote files downloaded successfully.", 35)
+                    elif "CONFLICT" in (pull_out + pull_err):
+                        # Unexpected conflict during repository linking - use enhanced conflict resolution
+                        safe_update_log("❌ Unexpected merge conflict during repository linking.", 32)
+                        safe_update_log("Using enhanced conflict resolution system...", 33)
+                        
+                        try:
+                            # Create backup branch before conflict resolution
+                            timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+                            backup_branch = f"backup-before-linking-conflict-{timestamp}"
+                            run_command(f"git branch {backup_branch}", cwd=vault_path)
+                            safe_update_log(f"State backed up to: {backup_branch}", 33)
+                            
+                            # Use enhanced conflict resolver
+                            resolver = conflict_resolution.ConflictResolver(vault_path, root)
+                            resolution_result = resolver.resolve_conflicts(conflict_resolution.ConflictType.REPOSITORY_SETUP)
+                            
+                            if resolution_result and resolution_result.get('strategy') != 'cancelled':
+                                success = conflict_resolution.apply_conflict_resolution(vault_path, resolution_result)
+                                if success:
+                                    safe_update_log("✅ Repository linking conflicts resolved successfully", 35)
+                                else:
+                                    safe_update_log("❌ Enhanced conflict resolution failed during repository linking", 35)
+                                    return False
+                            else:
+                                safe_update_log("❌ Repository linking conflict resolution was cancelled", 35)
+                                return False
+                                
+                        except Exception as e:
+                            safe_update_log(f"❌ Error in enhanced conflict resolution during repository linking: {e}", 35)
+                            return False
                     else:
                         safe_update_log(f"Warning: Could not download remote files: {pull_err}", 35)
                 elif analysis["has_local_files"]:
@@ -757,23 +759,34 @@ def set_github_remote(vault_path):
 
 def ensure_placeholder_file(vault_path):
     """
-    Creates a placeholder file (README.md) in the vault if it doesn't already exist.
-    This ensures that there's at least one file to commit.
+    Creates a placeholder file (README.md) in the vault ONLY if the vault is empty.
+    This ensures that there's at least one file to commit for empty vaults.
     Handles directory creation if needed.
     """
     try:
         # Ensure the vault directory exists
         os.makedirs(vault_path, exist_ok=True)
         
-        placeholder_path = os.path.join(vault_path, "README.md")
-        if not os.path.exists(placeholder_path):
+        # Check if the vault has any files (excluding .git directory)
+        vault_files = []
+        for root, dirs, files in os.walk(vault_path):
+            # Skip .git directory
+            if '.git' in dirs:
+                dirs.remove('.git')
+            # Add files from this directory level
+            vault_files.extend([os.path.join(root, f) for f in files])
+        
+        # Only create placeholder if vault is completely empty
+        if not vault_files:
+            placeholder_path = os.path.join(vault_path, "README.md")
             with open(placeholder_path, "w", encoding="utf-8") as f:
                 f.write("# Welcome to your Obsidian Vault\n\nThis placeholder file was generated automatically by Ogresync to initialize the repository.")
             safe_update_log("Placeholder file 'README.md' created, as the vault was empty.", 5)
         else:
-            safe_update_log("Placeholder file 'README.md' already exists.", 5)
+            safe_update_log(f"Vault contains {len(vault_files)} files - no placeholder needed.", 5)
+            
     except Exception as e:
-        safe_update_log(f"❌ Error ensuring placeholder file: {e}", 5)
+        safe_update_log(f"❌ Error checking/creating placeholder file: {e}", 5)
         raise  # Re-raise to be handled by caller
 
 def configure_remote_url_for_vault(vault_path):
@@ -799,6 +812,10 @@ def configure_remote_url_for_vault(vault_path):
             out, err, rc = run_command(f"git remote add origin {saved_url}", cwd=vault_path)
             if rc == 0:
                 safe_update_log("Git remote configured successfully.", None)
+                # Ensure the URL is saved in config (it should be, but make sure)
+                config_data["GITHUB_REMOTE_URL"] = saved_url
+                save_config()
+                safe_update_log("GitHub remote URL confirmed in configuration.", None)
                 return True
             else:
                 safe_update_log(f"❌ Failed to configure remote: {err}", None)
@@ -878,6 +895,33 @@ def validate_vault_directory(vault_path):
                     pull_out, pull_err, pull_rc = run_command("git pull origin main", cwd=vault_path)
                     if pull_rc == 0:
                         safe_update_log("✅ Remote files downloaded successfully.", None)
+                    elif "CONFLICT" in (pull_out + pull_err):
+                        # Conflict during vault recovery - use enhanced conflict resolution
+                        safe_update_log("❌ Merge conflict detected during vault recovery.", None)
+                        safe_update_log("Using enhanced conflict resolution system...", None)
+                        
+                        try:
+                            # Create backup branch before conflict resolution
+                            timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+                            backup_branch = f"backup-before-recovery-conflict-{timestamp}"
+                            run_command(f"git branch {backup_branch}", cwd=vault_path)
+                            safe_update_log(f"State backed up to: {backup_branch}", None)
+                            
+                            # Use enhanced conflict resolver
+                            resolver = conflict_resolution.ConflictResolver(vault_path, root)
+                            resolution_result = resolver.resolve_conflicts(conflict_resolution.ConflictType.REPOSITORY_SETUP)
+                            
+                            if resolution_result and resolution_result.get('strategy') != 'cancelled':
+                                success = conflict_resolution.apply_conflict_resolution(vault_path, resolution_result)
+                                if success:
+                                    safe_update_log("✅ Vault recovery conflicts resolved successfully", None)
+                                else:
+                                    safe_update_log("❌ Enhanced conflict resolution failed during vault recovery", None)
+                            else:
+                                safe_update_log("❌ Vault recovery conflict resolution was cancelled", None)
+                                
+                        except Exception as e:
+                            safe_update_log(f"❌ Error in enhanced conflict resolution during vault recovery: {e}", None)
                     else:
                         # Remote might be empty or main branch doesn't exist yet
                         if "couldn't find remote ref" in pull_err.lower() or "fatal: couldn't find remote ref main" in pull_err.lower():
@@ -940,6 +984,170 @@ def validate_vault_directory(vault_path):
         return False, False, None
     
     return True, True, None
+
+# ------------------------------------------------
+# MISSING UTILITY FUNCTIONS
+# ------------------------------------------------
+
+def setup_new_vault_directory(vault_path):
+    """
+    Set up a new vault directory with git initialization and remote configuration.
+    
+    Args:
+        vault_path: Path to the new vault directory
+    
+    Returns:
+        bool: True if setup was successful, False otherwise
+    """
+    try:
+        safe_update_log(f"Setting up new vault directory: {vault_path}", None)
+        
+        # Initialize git repository
+        if not initialize_git_repo(vault_path):
+            safe_update_log("❌ Failed to initialize git repository", None)
+            return False
+        
+        # Configure remote URL
+        if not configure_remote_url_for_vault(vault_path):
+            safe_update_log("❌ Failed to configure remote repository", None)
+            return False
+        
+        # Analyze and handle any repository conflicts
+        analysis = analyze_repository_state(vault_path)
+        if analysis["conflict_detected"]:
+            safe_update_log("Repository conflicts detected, resolving...", None)
+            if not handle_initial_repository_conflict(vault_path, analysis, root):
+                safe_update_log("❌ Failed to resolve repository conflicts", None)
+                return False
+        
+        safe_update_log("✅ New vault directory setup completed successfully", None)
+        return True
+        
+    except Exception as e:
+        safe_update_log(f"❌ Error setting up new vault directory: {e}", None)
+        return False
+
+def restart_for_setup():
+    """
+    Restart the application to run the setup wizard.
+    """
+    try:
+        safe_update_log("Restarting for setup wizard...", None)
+        
+        # Close current UI if it exists
+        if root is not None:
+            root.quit()
+            root.destroy()
+        
+        # Re-run the main function which will detect SETUP_DONE=0 and run the wizard
+        main()
+        
+    except Exception as e:
+        safe_update_log(f"❌ Error restarting for setup: {e}", None)
+
+def restart_to_sync_mode():
+    """
+    Restart the application in sync mode after setup completion.
+    """
+    global root, log_text, progress_bar
+    
+    try:
+        print("DEBUG: Transitioning to sync mode...")
+        
+        # CRITICAL: Disable UI updates immediately to prevent threading conflicts
+        disable_ui_updates()
+        
+        # Kill any remaining background threads that might call safe_update_log
+        print("DEBUG: Stopping any remaining background operations...")
+        
+        # Clean shutdown of existing UI with better thread safety
+        if root is not None:
+            try:
+                # Cancel all pending after() calls to prevent threading issues
+                print("DEBUG: Cancelling pending UI callbacks...")
+                for after_id in getattr(root, '_after_ids', []):
+                    try:
+                        root.after_cancel(after_id)
+                    except:
+                        pass
+                
+                # Clear the tracking list
+                if hasattr(root, '_after_ids'):
+                    getattr(root, '_after_ids').clear()
+                
+                # Stop any pending after() calls
+                try:
+                    root.after_idle(lambda: None)  # Flush pending events
+                except:
+                    pass
+                
+                # Proper cleanup sequence
+                print("DEBUG: Destroying UI...")
+                root.quit()  
+                root.update_idletasks()  # Process pending updates
+                time.sleep(0.5)  # Allow threads to finish UI operations
+                root.destroy()
+                
+                # Clear global references immediately
+                root = None
+                log_text = None
+                progress_bar = None
+                
+                print("DEBUG: UI destroyed successfully")
+                
+            except Exception as cleanup_error:
+                print(f"UI cleanup warning: {cleanup_error}")
+        
+        # Longer delay to ensure complete cleanup and avoid threading conflicts
+        print("DEBUG: Waiting for complete cleanup...")
+        time.sleep(1.5)
+        
+        # Create new minimal UI for sync mode  
+        print("DEBUG: Creating new UI...")
+        root, log_text, progress_bar = ui_elements.create_minimal_ui(auto_run=False)
+        
+        # Ensure UI is fully rendered and stable before starting sync
+        root.update()
+        root.update_idletasks()
+        time.sleep(0.3)  # Additional stability delay
+        
+        # Re-enable UI updates now that new UI is ready
+        enable_ui_updates()
+        
+        print("DEBUG: UI transition complete, starting sync")
+        
+        # During transition, run sync in main thread to avoid threading conflicts
+        # This is safer during the critical transition period
+        def delayed_sync():
+            try:
+                print("DEBUG: Starting sync in main thread during transition")
+                # Run sync directly in main thread during transition to avoid threading issues
+                auto_sync(use_threading=False)
+            except Exception as sync_error:
+                safe_update_log(f"❌ Error during sync: {sync_error}", None)
+                print(f"Sync error: {sync_error}")
+        
+        # Use delay to ensure UI is completely stable
+        root.after(1000, delayed_sync)  # 1 second delay for stability
+        
+        # Run the main loop
+        root.mainloop()
+        
+    except Exception as e:
+        print(f"Error transitioning to sync mode: {e}")
+        # Ensure UI updates are re-enabled even in error case
+        enable_ui_updates()
+        
+        # Fallback: create simple console-based sync
+        try:
+            print("Falling back to console mode...")
+            # Call auto_sync without threading in fallback mode
+            auto_sync(use_threading=False)
+            
+        except Exception as fallback_error:
+            print(f"Console fallback failed: {fallback_error}")
+            print("Manual intervention required. Please check configuration.")
+
 # ------------------------------------------------
 # WIZARD STEPS (Used Only if SETUP_DONE=0)
 # ------------------------------------------------
@@ -1110,6 +1318,43 @@ def perform_initial_commit_and_push(vault_path):
                         safe_update_log("Initial commit pushed to remote repository successfully.", 60)
                     else:
                         safe_update_log(f"Error pushing after pull: {err_push}", 60)
+                elif "CONFLICT" in (pull_out + pull_err):
+                    # Conflict during initial setup pull - use enhanced conflict resolution
+                    safe_update_log("❌ Merge conflict detected during initial setup pull.", 56)
+                    safe_update_log("Using enhanced conflict resolution system...", 57)
+                    
+                    try:
+                        # Create backup branch before conflict resolution
+                        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+                        backup_branch = f"backup-before-setup-conflict-{timestamp}"
+                        run_command(f"git branch {backup_branch}", cwd=vault_path)
+                        safe_update_log(f"State backed up to: {backup_branch}", 57)
+                        
+                        # Analyze conflicts using the new system
+                        analysis = conflict_resolution.analyze_repository_conflicts(vault_path)
+                        
+                        # Use enhanced conflict resolver for setup conflicts
+                        resolver = conflict_resolution.ConflictResolver(vault_path, root, analysis)
+                        resolution_result = resolver.resolve_conflicts(conflict_resolution.ConflictType.REPOSITORY_SETUP)
+                        
+                        if resolution_result and resolution_result.get('strategy') != 'cancelled':
+                            success = conflict_resolution.apply_conflict_resolution(vault_path, resolution_result)
+                            if success:
+                                safe_update_log("✅ Setup conflicts resolved successfully", 59)
+                                # Try to push again after resolution
+                                out_push, err_push, rc_push = run_command("git push -u origin main", cwd=vault_path)
+                                if rc_push == 0:
+                                    safe_update_log("Initial commit pushed to remote repository successfully.", 60)
+                                else:
+                                    safe_update_log(f"Warning: Could not push after conflict resolution: {err_push}", 60)
+                            else:
+                                safe_update_log("❌ Enhanced conflict resolution failed during setup", 59)
+                        else:
+                            safe_update_log("❌ Setup conflict resolution was cancelled", 59)
+                            
+                    except Exception as e:
+                        safe_update_log(f"❌ Error in enhanced conflict resolution during setup: {e}", 59)
+                        safe_update_log("Initial setup may be incomplete. Please resolve conflicts manually.", 59)
                 else:
                     safe_update_log(f"Error pulling remote commits: {pull_err}", 60)
             else:
@@ -1219,7 +1464,7 @@ def copy_ssh_key():
 # AUTO-SYNC (Used if SETUP_DONE=1)
 # ------------------------------------------------
 
-def auto_sync():
+def auto_sync(use_threading=True):
     """
     This function is executed if setup is complete.
     It performs the following steps:
@@ -1236,7 +1481,13 @@ def auto_sync():
       7. Upon Obsidian closure, stages and commits any changes.
       8. If online, pushes any unpushed commits to GitHub.
       9. Displays a final synchronization completion message.
+      
+    Args:
+        use_threading: If True, run sync in a background thread. If False, run directly.
     """
+    print(f"DEBUG: auto_sync called with use_threading={use_threading}")
+    safe_update_log("Initializing auto-sync...", 0)
+    
     vault_path = config_data["VAULT_PATH"]
     obsidian_path = config_data["OBSIDIAN_PATH"]
 
@@ -1246,6 +1497,12 @@ def auto_sync():
 
     def sync_thread():
         nonlocal vault_path
+        safe_update_log("🔄 Starting sync process...", 0)
+        print("DEBUG: sync_thread started")
+        
+        # Ensure immediate UI update
+        time.sleep(0.1)
+        
         # Step 0: Validate vault directory exists
         is_valid, should_continue, new_vault_path = validate_vault_directory(vault_path)
         
@@ -1327,6 +1584,40 @@ def auto_sync():
                         pull_out, pull_err, pull_rc = run_command("git pull origin main --allow-unrelated-histories", cwd=vault_path)
                         if pull_rc == 0:
                             safe_update_log("Successfully pulled remote commits.", 15)
+                        elif "CONFLICT" in (pull_out + pull_err):
+                            # Conflict during sync initialization - use enhanced conflict resolution
+                            safe_update_log("❌ Merge conflict detected during sync initialization.", 16)
+                            safe_update_log("Using enhanced conflict resolution system...", 17)
+                            
+                            try:
+                                # Create backup branch before conflict resolution
+                                timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+                                backup_branch = f"backup-before-sync-init-conflict-{timestamp}"
+                                run_command(f"git branch {backup_branch}", cwd=vault_path)
+                                safe_update_log(f"State backed up to: {backup_branch}", 17)
+                                
+                                # Analyze conflicts using the new system
+                                analysis = conflict_resolution.analyze_repository_conflicts(vault_path)
+                                
+                                # Use enhanced conflict resolver for sync initialization conflicts
+                                resolver = conflict_resolution.ConflictResolver(vault_path, root, analysis)
+                                resolution_result = resolver.resolve_conflicts(conflict_resolution.ConflictType.REPOSITORY_SETUP)
+                                
+                                if resolution_result and resolution_result.get('strategy') != 'cancelled':
+                                    success = conflict_resolution.apply_conflict_resolution(vault_path, resolution_result)
+                                    if success:
+                                        safe_update_log("✅ Sync initialization conflicts resolved successfully", 18)
+                                    else:
+                                        safe_update_log("❌ Enhanced conflict resolution failed during sync initialization", 18)
+                                        network_available = False
+                                else:
+                                    safe_update_log("❌ Sync initialization conflict resolution was cancelled", 18)
+                                    network_available = False
+                                    
+                            except Exception as e:
+                                safe_update_log(f"❌ Error in enhanced conflict resolution during sync init: {e}", 18)
+                                safe_update_log("Sync initialization may be incomplete. Manual resolution required.", 18)
+                                network_available = False
                         else:
                             safe_update_log(f"Error pulling remote commits: {pull_err}", 15)
                     else:
@@ -1369,26 +1660,97 @@ def auto_sync():
                     
                     if content_files:
                         safe_update_log(f"Remote has {len(content_files)} content files. Downloading them...", 22)
-                        # Use reset to get all remote files (safe since local only has README)
-                        reset_out, reset_err, reset_rc = run_command("git reset --hard origin/main", cwd=vault_path)
-                        if reset_rc == 0:
-                            safe_update_log(f"Successfully downloaded all remote files! ({len(content_files)} files)", 25)
-                            # Verify files were actually downloaded
-                            new_local_files = []
-                            for root_dir, dirs, files in os.walk(vault_path):
-                                if '.git' in root_dir:
-                                    continue
-                                for file in files:
-                                    if not file.startswith('.'):
-                                        new_local_files.append(file)
-                            safe_update_log(f"Local directory now has {len(new_local_files)} files", 25)
-                            out, err, rc = reset_out, reset_err, reset_rc
+                        # Create backup branch before any operation for safety
+                        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+                        backup_branch = f"backup-local-before-download-{timestamp}"
+                        run_command(f"git branch {backup_branch}", cwd=vault_path)
+                        safe_update_log(f"Local state backed up to: {backup_branch}", 23)
+                        
+                        # For functional equivalence to reset --hard, we need working directory to exactly match remote
+                        # But we want to preserve history, so we'll use a hybrid approach
+                        safe_update_log("Downloading remote files with history preservation...", 24)
+                        
+                        # First, try merge approach for history preservation
+                        merge_out, merge_err, merge_rc = run_command("git merge origin/main --no-ff -m 'Download remote files - preserve history'", cwd=vault_path)
+                        
+                        if merge_rc == 0:
+                            # Check if working directory exactly matches remote (for functional equivalence)
+                            ls_remote_out, _, ls_remote_rc = run_command("git ls-tree -r --name-only origin/main", cwd=vault_path)
+                            if ls_remote_rc == 0:
+                                remote_files_set = set(f.strip() for f in ls_remote_out.splitlines() if f.strip())
+                                
+                                # Check current working directory files
+                                current_files_set = set()
+                                for root_dir, dirs, files in os.walk(vault_path):
+                                    if '.git' in root_dir:
+                                        continue
+                                    for file in files:
+                                        if not file.startswith('.'):
+                                            rel_path = os.path.relpath(os.path.join(root_dir, file), vault_path)
+                                            current_files_set.add(rel_path.replace(os.sep, '/'))
+                                
+                                # Remove any extra local files for true functional equivalence
+                                extra_files = current_files_set - remote_files_set
+                                if extra_files:
+                                    safe_update_log(f"Removing {len(extra_files)} extra local files for functional equivalence...", 24)
+                                    for extra_file in extra_files:
+                                        try:
+                                            extra_path = os.path.join(vault_path, extra_file)
+                                            if os.path.exists(extra_path):
+                                                os.remove(extra_path)
+                                        except Exception as e:
+                                            safe_update_log(f"Warning: Could not remove {extra_file}: {e}", 24)
+                                    
+                                    # Update git state
+                                    run_command("git add -A", cwd=vault_path)
+                                    run_command('git commit --amend --no-edit', cwd=vault_path)
+                            
+                            safe_update_log(f"Successfully downloaded all remote files with history preservation! ({len(content_files)} files)", 25)
+                            safe_update_log(f"Note: Previous local state preserved in git history and backup branch: {backup_branch}", 25)
+                            
                         else:
-                            safe_update_log(f"Error with reset, trying pull: {reset_err}", 22)
-                            # Fall back to pull with unrelated histories
-                            out, err, rc = run_command("git pull origin main --allow-unrelated-histories", cwd=vault_path)
-                            if rc == 0:
-                                safe_update_log("Successfully pulled remote files using fallback method", 25)
+                            # If merge fails, try merge with allow-unrelated-histories
+                            safe_update_log("Standard merge failed, trying with unrelated histories...", 24)
+                            unrelated_out, unrelated_err, unrelated_rc = run_command("git merge origin/main --allow-unrelated-histories --no-ff -m 'Download remote files - unrelated histories'", cwd=vault_path)
+                            
+                            if unrelated_rc == 0:
+                                safe_update_log(f"Successfully downloaded remote files with history preservation! ({len(content_files)} files)", 25)
+                            else:
+                                # Last resort: use reset --hard but with comprehensive backup protection
+                                safe_update_log("Merge strategies failed, using reset method with backup protection...", 24)
+                                safe_update_log(f"Note: All local work is safely preserved in backup branch: {backup_branch}", 24)
+                                
+                                reset_out, reset_err, reset_rc = run_command("git reset --hard origin/main", cwd=vault_path)
+                                if reset_rc == 0:
+                                    safe_update_log(f"Downloaded remote files - local history safe in: {backup_branch}", 25)
+                                    
+                                    # Create recovery instructions
+                                    recovery_file = os.path.join(vault_path, f"RECOVERY_INSTRUCTIONS_{timestamp}.txt")
+                                    try:
+                                        with open(recovery_file, 'w', encoding='utf-8') as f:
+                                            f.write("OGRESYNC RECOVERY INSTRUCTIONS\\n")
+                                            f.write("=" * 40 + "\\n\\n")
+                                            f.write(f"Backup branch: {backup_branch}\\n")
+                                            f.write("To recover your local work:\\n")
+                                            f.write(f"  git checkout {backup_branch}\\n")
+                                            f.write(f"  git checkout -b recovery {backup_branch}\\n")
+                                    except Exception as e:
+                                        safe_update_log(f"Note: Could not create recovery file: {e}", 25)
+                                else:
+                                    safe_update_log(f"Error with fallback method: {reset_err}", 22)
+                        
+                        # Verify files were actually downloaded
+                        new_local_files = []
+                        for root_dir, dirs, files in os.walk(vault_path):
+                            if '.git' in root_dir:
+                                continue
+                            for file in files:
+                                if not file.startswith('.'):
+                                    new_local_files.append(file)
+                        safe_update_log(f"Local directory now has {len(new_local_files)} files", 25)
+                        
+                        # Set output variables for later use
+                        out, err, rc = "", "", 0  # Success - files downloaded
                     else:
                         safe_update_log("Remote repository only has README/gitignore - no content to pull", 20)
                         out, err, rc = "", "", 0  # Simulate successful pull
@@ -1403,36 +1765,40 @@ def auto_sync():
                     safe_update_log("❌ Unable to pull updates due to a network error. Local changes remain safely stashed.", 30)
                 elif "CONFLICT" in (out + err):  # Detect merge conflicts
                     safe_update_log("❌ A merge conflict was detected during the pull operation.", 30)
-                    # Retrieve the list of conflicting files
-                    conflict_files, _, _ = run_command("git diff --name-only --diff-filter=U", cwd=vault_path)
-                    if not conflict_files.strip():
-                        conflict_files = "Unknown files"
-                    # Prompt user for resolution choice
-                    choice = conflict_resolution_dialog(conflict_files)
-                    if choice == "ours":
-                        safe_update_log("Resolving conflict by keeping local changes...", 30)
-                        run_command("git checkout --ours .", cwd=vault_path)
-                        run_command("git add -A", cwd=vault_path)
-                        rc_rebase, err_rebase, _ = run_command("git rebase --continue", cwd=vault_path)
-                        if rc_rebase != 0:
-                            safe_update_log(f"Error continuing rebase: {err_rebase}", 30)
+                    safe_update_log("Using enhanced conflict resolution system...", 32)
+                    
+                    # Use the new conflict resolution system instead of the old manual approach
+                    try:
+                        # Create backup branch before conflict resolution
+                        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+                        backup_branch = f"backup-before-conflict-resolution-{timestamp}"
+                        run_command(f"git branch {backup_branch}", cwd=vault_path)
+                        safe_update_log(f"State backed up to: {backup_branch}", 33)
+                        
+                        # Analyze conflicts using the new system
+                        analysis = conflict_resolution.analyze_repository_conflicts(vault_path)
+                        
+                        # Use enhanced conflict resolver
+                        resolver = conflict_resolution.ConflictResolver(vault_path, root, analysis)
+                        resolution_result = resolver.resolve_conflicts(conflict_resolution.ConflictType.MERGE_CONFLICT)
+                        
+                        if resolution_result and resolution_result.get('strategy') != 'cancelled':
+                            success = conflict_resolution.apply_conflict_resolution(vault_path, resolution_result)
+                            if success:
+                                safe_update_log("✅ Conflicts resolved successfully using enhanced system", 35)
+                            else:
+                                safe_update_log("❌ Enhanced conflict resolution failed", 35)
+                                # Abort the operation to prevent data loss
+                                run_command("git rebase --abort", cwd=vault_path)
+                        else:
+                            safe_update_log("❌ Conflict resolution was cancelled", 35)
                             run_command("git rebase --abort", cwd=vault_path)
-                    elif choice == "theirs":
-                        safe_update_log("Resolving conflict by using remote changes...", 30)
-                        run_command("git checkout --theirs .", cwd=vault_path)
-                        run_command("git add -A", cwd=vault_path)
-                        rc_rebase, err_rebase, _ = run_command("git rebase --continue", cwd=vault_path)
-                        if rc_rebase != 0:
-                            safe_update_log(f"Error continuing rebase: {err_rebase}", 30)
-                            run_command("git rebase --abort", cwd=vault_path)
-                    elif choice == "manual":
-                        safe_update_log("Please resolve the conflicts manually. After resolving, click OK to continue.", 30)
-                        ui_elements.show_info_message("Manual Merge", "Please resolve the conflicts in the affected files manually and then click OK.")
-                        run_command("git add -A", cwd=vault_path)
-                        rc_rebase, err_rebase, _ = run_command("git rebase --continue", cwd=vault_path)
-                        if rc_rebase != 0:
-                            safe_update_log(f"Error continuing rebase after manual merge: {err_rebase}", 30)
-                            run_command("git rebase --abort", cwd=vault_path)
+                            
+                    except Exception as e:
+                        safe_update_log(f"❌ Error in enhanced conflict resolution: {e}", 35)
+                        # Fallback: abort the rebase to prevent data loss
+                        run_command("git rebase --abort", cwd=vault_path)
+                        safe_update_log("Rebase aborted to prevent data loss. Please resolve conflicts manually.", 35)
                     else:
                         safe_update_log("No valid conflict resolution chosen. Aborting rebase.", 30)
                         run_command("git rebase --abort", cwd=vault_path)
@@ -1457,432 +1823,292 @@ def auto_sync():
                 return
         safe_update_log("Successfully reapplied stashed local changes.", 35)
 
-        # Step 6: Open Obsidian for editing using the helper function
+        # Step 6: Capture current remote state before opening Obsidian
+        remote_head_before_obsidian = ""
+        if network_available:
+            remote_head_before_obsidian = get_current_remote_head(vault_path)
+            safe_update_log(f"Remote state captured before opening Obsidian: {remote_head_before_obsidian[:8]}...", 38)
+        
+        # Step 7: Open Obsidian for editing using the helper function
         safe_update_log("Launching Obsidian. Please edit your vault and close Obsidian when finished.", 40)
         try:
             open_obsidian(obsidian_path)
+            # Give Obsidian time to start properly before continuing
+            safe_update_log("Obsidian is starting up...", 42)
+            time.sleep(2.0)
+            safe_update_log("Obsidian should now be open. Edit your files and close Obsidian when done.", 43)
         except Exception as e:
             safe_update_log(f"Error launching Obsidian: {e}", 40)
             return
         safe_update_log("Waiting for Obsidian to close...", 45)
+        
+        # Monitor Obsidian with periodic updates
+        check_count = 0
         while is_obsidian_running():
             time.sleep(0.5)
+            check_count += 1
+            # Update UI every 10 seconds to show we're still waiting
+            if check_count % 20 == 0:  # Every 10 seconds (20 * 0.5s)
+                safe_update_log("Still waiting for Obsidian to close...", 45)
 
-
-        # Step 7: Pull any new changes from GitHub after Obsidian closes
+        # Step 8: Check if remote has advanced during Obsidian session
         safe_update_log("Obsidian has been closed. Checking for new remote changes before committing...", 50)
-
-        # Re-check network connectivity before pulling
+        remote_changes_detected = False
+        
+        # Re-check network connectivity before checking remote changes  
         network_available = is_network_available()
-        if network_available:
-            safe_update_log("Pulling any new updates from GitHub before committing...", 50)
+        if network_available and remote_head_before_obsidian:
+            has_remote_changes, new_remote_head, change_count = check_remote_changes_during_session(
+                vault_path, remote_head_before_obsidian
+            )
+            
+            if has_remote_changes:
+                remote_changes_detected = True
+                safe_update_log(f"⚠️ Remote repository has advanced by {change_count} commit(s) during your Obsidian session!", 52)
+                safe_update_log("Pulling new remote changes before committing your local changes...", 53)
+                
+                # Pull the new remote changes with enhanced conflict resolution
+                out, err, rc = run_command("git pull --rebase origin main", cwd=vault_path)
+                if rc != 0:
+                    if "Could not resolve hostname" in err or "network" in err.lower():
+                        safe_update_log("❌ Unable to pull updates due to network error. Continuing with local commit.", 54)
+                        remote_changes_detected = False
+                    elif "CONFLICT" in (out + err):  # Detect merge conflicts
+                        safe_update_log("❌ Merge conflict detected with new remote changes during sync.", 54)
+                        safe_update_log("Using enhanced conflict resolution system...", 55)
+                        
+                        # Use the new conflict resolution system
+                        try:
+                            # Create backup branch before conflict resolution
+                            timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+                            backup_branch = f"backup-before-session-sync-conflict-{timestamp}"
+                            run_command(f"git branch {backup_branch}", cwd=vault_path)
+                            safe_update_log(f"State backed up to: {backup_branch}", 56)
+                            
+                            # Analyze conflicts using the new system
+                            analysis = conflict_resolution.analyze_repository_conflicts(vault_path)
+                            
+                            # Use enhanced conflict resolver for session sync conflicts
+                            resolver = conflict_resolution.ConflictResolver(vault_path, root, analysis)
+                            resolution_result = resolver.resolve_conflicts(conflict_resolution.ConflictType.MERGE_CONFLICT)
+                            
+                            if resolution_result and resolution_result.get('strategy') != 'cancelled':
+                                success = conflict_resolution.apply_conflict_resolution(vault_path, resolution_result)
+                                if success:
+                                    safe_update_log("✅ Session sync conflicts resolved successfully using enhanced system", 58)
+                                else:
+                                    safe_update_log("❌ Enhanced conflict resolution failed during session sync", 58)
+                                    # Abort the operation to prevent data loss
+                                    run_command("git rebase --abort", cwd=vault_path)
+                            else:
+                                safe_update_log("❌ Session sync conflict resolution was cancelled", 58)
+                                run_command("git rebase --abort", cwd=vault_path)
+                                
+                        except Exception as e:
+                            safe_update_log(f"❌ Error in enhanced conflict resolution during session sync: {e}", 58)
+                            # Fallback: abort the rebase to prevent data loss
+                            run_command("git rebase --abort", cwd=vault_path)
+                            safe_update_log("Rebase aborted to prevent data loss. Please resolve conflicts manually.", 58)
+                    else:
+                        safe_update_log("❌ Error pulling new remote changes during session sync.", 54)
+                else:
+                    safe_update_log("✅ New remote changes have been successfully pulled and integrated.", 55)
+                    # Log pulled changes
+                    for line in out.splitlines():
+                        if line.strip():
+                            safe_update_log(f"✓ Integrated: {line}", 55)
+            else:
+                safe_update_log("✅ No remote changes detected during Obsidian session.", 52)
+        elif network_available:
+            safe_update_log("Checking for any new remote changes...", 52)
+            # Fallback: do a simple fetch and check
             out, err, rc = run_command("git pull --rebase origin main", cwd=vault_path)
             if rc != 0:
                 if "Could not resolve hostname" in err or "network" in err.lower():
-                    safe_update_log("❌ Unable to pull updates due to network error. Continuing with local commit.", 50)
-                elif "CONFLICT" in (out + err):  # Detect merge conflicts
-                    safe_update_log("❌ Merge conflict detected in new remote changes.", 50)
-                    # Retrieve the list of conflicting files
-                    conflict_files, _, _ = run_command("git diff --name-only --diff-filter=U", cwd=vault_path)
-                    if not conflict_files.strip():
-                        conflict_files = "Unknown files"
-                    # Prompt user for conflict resolution
-                    choice = conflict_resolution_dialog(conflict_files)
-                    if choice == "ours":
-                        safe_update_log("Resolving conflict by keeping local changes...", 50)
-                        run_command("git checkout --ours .", cwd=vault_path)
-                        run_command("git add -A", cwd=vault_path)
-                        rc_rebase, err_rebase, _ = run_command("git rebase --continue", cwd=vault_path)
-                        if rc_rebase != 0:
-                            safe_update_log(f"Error continuing rebase: {err_rebase}", 50)
+                    safe_update_log("❌ Unable to pull updates due to network error. Continuing with local commit.", 52)
+                elif "CONFLICT" in (out + err):  # Same conflict resolution as above
+                    safe_update_log("❌ Merge conflict detected in new remote changes.", 52)
+                    safe_update_log("Using enhanced conflict resolution system...", 53)
+                    
+                    try:
+                        # Create backup branch before conflict resolution
+                        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+                        backup_branch = f"backup-before-sync-conflict-{timestamp}"
+                        run_command(f"git branch {backup_branch}", cwd=vault_path)
+                        safe_update_log(f"State backed up to: {backup_branch}", 53)
+                        
+                        # Analyze conflicts using the new system
+                        analysis = conflict_resolution.analyze_repository_conflicts(vault_path)
+                        
+                        # Use enhanced conflict resolver
+                        resolver = conflict_resolution.ConflictResolver(vault_path, root, analysis)
+                        resolution_result = resolver.resolve_conflicts(conflict_resolution.ConflictType.MERGE_CONFLICT)
+                        
+                        if resolution_result and resolution_result.get('strategy') != 'cancelled':
+                            success = conflict_resolution.apply_conflict_resolution(vault_path, resolution_result)
+                            if success:
+                                safe_update_log("✅ Sync conflicts resolved successfully using enhanced system", 55)
+                            else:
+                                safe_update_log("❌ Enhanced conflict resolution failed", 55)
+                                # Abort the operation to prevent data loss
+                                run_command("git rebase --abort", cwd=vault_path)
+                        else:
+                            safe_update_log("❌ Conflict resolution was cancelled", 55)
                             run_command("git rebase --abort", cwd=vault_path)
-                    elif choice == "theirs":
-                        safe_update_log("Resolving conflict by using remote changes...", 50)
-                        run_command("git checkout --theirs .", cwd=vault_path)
-                        run_command("git add -A", cwd=vault_path)
-                        rc_rebase, err_rebase, _ = run_command("git rebase --continue", cwd=vault_path)
-                        if rc_rebase != 0:
-                            safe_update_log(f"Error continuing rebase: {err_rebase}", 50)
-                            run_command("git rebase --abort", cwd=vault_path)
-                    elif choice == "manual":
-                        safe_update_log("Please resolve the conflicts manually. After resolving, click OK to continue.", 50)
-                        ui_elements.show_info_message("Manual Merge", "Please resolve the conflicts in the affected files manually and then click OK.")
-                        run_command("git add -A", cwd=vault_path)
-                        rc_rebase, err_rebase, _ = run_command("git rebase --continue", cwd=vault_path)
-                        if rc_rebase != 0:
-                            safe_update_log(f"Error continuing rebase after manual merge: {err_rebase}", 50)
-                            run_command("git rebase --abort", cwd=vault_path)
-                    else:
-                        safe_update_log("No valid conflict resolution chosen. Aborting rebase.", 50)
+                            
+                    except Exception as e:
+                        safe_update_log(f"❌ Error in enhanced conflict resolution: {e}", 55)
+                        # Fallback: abort the rebase to prevent data loss
                         run_command("git rebase --abort", cwd=vault_path)
+                        safe_update_log("Rebase aborted to prevent data loss. Please resolve conflicts manually.", 55)
                 else:
-                    safe_update_log("New remote updates have been successfully pulled.", 50)
+                    safe_update_log("New remote updates have been successfully pulled.", 52)
                     # Log pulled files
                     for line in out.splitlines():
-                        safe_update_log(f"✓ Pulled: {line}", 50)
+                        if line.strip():
+                            safe_update_log(f"✓ Pulled: {line}", 52)
         else:
-            safe_update_log("No network detected. Skipping remote check and proceeding with local commit.", 50)
+            safe_update_log("No network detected. Skipping remote check and proceeding with local commit.", 52)
 
-        # Step 8: Commit changes after Obsidian closes
-        safe_update_log("Obsidian has been closed. Committing any local changes...", 50)
+        # Step 9: Commit changes after Obsidian closes
+        safe_update_log("Committing any local changes made during this session...", 60)
         run_command("git add -A", cwd=vault_path)
         out, err, rc = run_command('git commit -m "Auto sync commit"', cwd=vault_path)
         committed = True
         if rc != 0 and "nothing to commit" in (out + err).lower():
-            safe_update_log("No changes detected during this session. Nothing to commit.", 55)
+            safe_update_log("No changes detected during this session. Nothing to commit.", 65)
             committed = False
         elif rc != 0:
-            safe_update_log(f"❌ Commit operation failed: {err}", 55)
+            safe_update_log(f"❌ Commit operation failed: {err}", 65)
             return
         else:
-            safe_update_log("Local changes have been committed successfully.", 55)
+            safe_update_log("Local changes have been committed successfully.", 65)
             commit_details, err_details, rc_details = run_command("git diff-tree --no-commit-id --name-status -r HEAD", cwd=vault_path)
             if rc_details == 0 and commit_details.strip():
                 for line in commit_details.splitlines():
                     safe_update_log(f"✓ {line}", None)
 
-        # Step 9: Push changes if network is available
+        # Step 10: Push changes if network is available
         network_available = is_network_available()
         if network_available:
             unpushed = get_unpushed_commits(vault_path)
             if unpushed:
-                safe_update_log("Pushing all unpushed commits to GitHub...", 60)
+                safe_update_log("Pushing all unpushed commits to GitHub...", 70)
                 out, err, rc = run_command("git push origin main", cwd=vault_path)
                 if rc != 0:
                     if "Could not resolve hostname" in err or "network" in err.lower():
-                        safe_update_log("❌ Unable to push changes due to network issues. Your changes remain locally committed and will be pushed once connectivity is restored.", 70)
+                        safe_update_log("❌ Unable to push changes due to network issues. Your changes remain locally committed and will be pushed once connectivity is restored.", 80)
                     else:
-                        safe_update_log(f"❌ Push operation failed: {err}", 70)
+                        safe_update_log(f"❌ Push operation failed: {err}", 80)
                     return
-                safe_update_log("✅ All changes have been successfully pushed to GitHub.", 70)
+                safe_update_log("✅ All changes have been successfully pushed to GitHub.", 80)
             else:
-                safe_update_log("No new commits to push.", 70)
+                safe_update_log("No new commits to push.", 80)
         else:
-            safe_update_log("Offline mode: Changes have been committed locally. They will be automatically pushed when an internet connection is available.", 70)
+            safe_update_log("Offline mode: Changes have been committed locally. They will be automatically pushed when an internet connection is available.", 80)
 
-        # Step 9: Final message
-        safe_update_log("Synchronization complete. You may now close this window.", 100)
-
-    threading.Thread(target=sync_thread, daemon=True).start()
-
-
-# ------------------------------------------------
-# ONE-TIME SETUP WORKFLOW
-# ------------------------------------------------
-
-def run_setup_wizard():
-    """
-    Runs the new progressive setup wizard that guides users through all setup steps.
-    """
-    try:
-        success, wizard_state = setup_wizard.run_setup_wizard()
-        
-        if success:
-            # Setup completed successfully
-            return True
+        # Step 11: Final message  
+        if remote_changes_detected and committed:
+            safe_update_log("🎉 Synchronization complete! Remote changes were detected and resolved, your local changes have been committed and pushed.", 100)
+        elif committed:
+            safe_update_log("🎉 Synchronization complete! Your local changes have been committed and pushed to GitHub.", 100)
         else:
-            # Setup was cancelled or failed
-            return False
-            
-    except Exception as e:
-        if ui_elements:
-            ui_elements.show_error_message(
-                "Setup Error",
-                f"An error occurred during setup: {str(e)}"
-            )
-        else:
-            print(f"Setup Error: {str(e)}")
-        return False
+            safe_update_log("🎉 Synchronization complete! No changes were made during this session.", 100)
+        
+        safe_update_log("You may now close this window.", 100)
 
-def setup_new_vault_directory(vault_path):
-    """
-    Sets up a newly selected vault directory by:
-    1. Checking if it has existing files
-    2. Initializing git repository
-    3. Configuring remote URL (reuse or ask for new)
-    4. Handling conflicts between local and remote content
-    
-    Returns True if setup successful, False otherwise.
-    """
-    try:
-        # Check if directory has existing files (excluding common non-content files)
-        existing_files = []
-        if os.path.exists(vault_path):
-            for root_dir, dirs, files in os.walk(vault_path):
-                # Skip .git directory if it exists
-                if '.git' in root_dir:
-                    continue
-                for file in files:
-                    # Skip hidden files and common non-content files
-                    if not file.startswith('.') and file not in ['README.md', '.gitignore']:
-                        rel_path = os.path.relpath(os.path.join(root_dir, file), vault_path)
-                        existing_files.append(rel_path)
-        
-        has_existing_files = len(existing_files) > 0
-        
-        if has_existing_files:
-            safe_update_log(f"New vault directory contains {len(existing_files)} existing files.", None)
-        else:
-            safe_update_log("New vault directory is empty.", None)
-        
-        # Initialize git repository
-        initialize_git_repo(vault_path)
-        
-        # Ask user about remote repository configuration
-        saved_url = config_data.get("GITHUB_REMOTE_URL", "").strip()
-        
-        if saved_url:
-            # Offer to reuse existing remote URL
-            reuse_remote = ui_elements.ask_yes_no(
-                "Use Existing Repository",
-                f"A GitHub repository URL is already configured:\n\n{saved_url}\n\n"
-                "Would you like to use this repository for the new vault directory?"
-            )
-        else:
-            reuse_remote = False
-        
-        if reuse_remote:
-            # Use existing remote URL
-            repo_url = saved_url
-            safe_update_log(f"Using existing remote URL: {repo_url}", None)
-        else:
-            # Ask for new repository URL
-            prompt_msg = "Enter your GitHub repository URL (e.g., git@github.com:username/repo.git):"
-            if saved_url:
-                prompt_msg += f"\n\nCurrent URL: {saved_url}"
-            
-            repo_url = ui_elements.ask_string_dialog(
-                "GitHub Repository",
-                prompt_msg,
-                initial_value=saved_url if saved_url else "",
-                icon=ui_elements.Icons.LINK
-            )
-            
-            if not repo_url or not repo_url.strip():
-                safe_update_log("❌ No repository URL provided.", None)
-                ui_elements.show_error_message(
-                    "URL Required",
-                    "A GitHub repository URL is required to sync your vault."
-                )
-                return False
-            
-            repo_url = repo_url.strip()
-        
-        # Configure git remote
-        out, err, rc = run_command(f"git remote add origin {repo_url}", cwd=vault_path)
-        if rc != 0:
-            safe_update_log(f"❌ Failed to configure remote: {err}", None)
-            ui_elements.show_error_message(
-                "Git Remote Error",
-                f"Failed to configure GitHub remote:\n{err}\n\nPlease check the URL and try again."
-            )
-            return False
-        
-        # Update config with the repository URL
-        config_data["GITHUB_REMOTE_URL"] = repo_url
-        save_config()
-        safe_update_log("GitHub remote URL updated in configuration.", None)
-        
-        # Analyze repository state for potential conflicts
-        safe_update_log("Analyzing local and remote repository content...", None)
-        analysis = analyze_repository_state(vault_path)
-        
-        if has_existing_files:
-            # Commit existing local files first
-            safe_update_log("Committing existing local files...", None)
-            run_command("git add -A", cwd=vault_path)
-            commit_out, commit_err, commit_rc = run_command('git commit -m "Initial commit with existing local files"', cwd=vault_path)
-            
-            if commit_rc != 0:
-                safe_update_log(f"❌ Failed to commit local files: {commit_err}", None)
-                return False
-        
-        # Check if there are conflicts between local and remote
-        if analysis["conflict_detected"]:
-            safe_update_log("Content conflict detected between local and remote repositories.", None)
-            
-            # Use the new two-stage conflict resolution system
-            try:
-                # Create enhanced conflict analysis
-                enhanced_analysis = conflict_resolution.ConflictAnalysis()
-                enhanced_analysis.has_conflicts = True
-                enhanced_analysis.conflict_type = conflict_resolution.ConflictType.REPOSITORY_SETUP
-                enhanced_analysis.summary = f"Repository setup conflicts detected"
-                
-                # Convert analysis data to enhanced format
-                enhanced_analysis.local_only_files = analysis.get("local_files", [])
-                enhanced_analysis.remote_only_files = analysis.get("remote_files", [])
-                
-                # Create file conflict info for files that exist in both but are different
-                for local_file in analysis.get("local_files", []):
-                    if local_file in analysis.get("remote_files", []):
-                        conflict_info = conflict_resolution.FileConflictInfo(local_file, 'both_modified')
-                        conflict_info.has_content_conflict = True
-                        enhanced_analysis.conflicted_files.append(conflict_info)
-                
-                # Use the enhanced conflict resolver
-                resolver = conflict_resolution.ConflictResolver(vault_path, root, enhanced_analysis)    
-                resolution_result = resolver.resolve_conflicts(conflict_resolution.ConflictType.REPOSITORY_SETUP)
-                
-                if resolution_result['success']:
-                    strategy = resolution_result['strategy']
-                    
-                    if strategy == 'keep_local':
-                        # Use the new conflict resolution system for keep_local
-                        success = conflict_resolution.apply_conflict_resolution(vault_path, resolution_result)
-                    elif strategy == 'keep_remote':
-                        # Use the new conflict resolution system for keep_remote
-                        success = conflict_resolution.apply_conflict_resolution(vault_path, resolution_result)
-                    elif strategy == 'smart_merge':
-                        # Apply smart merge with file-by-file resolution
-                        success = conflict_resolution.apply_conflict_resolution(vault_path, resolution_result)
-                        if not success:
-                            # Fallback to simple merge strategy
-                            success = handle_merge_strategy(vault_path)
-                    elif strategy == 'no_conflicts':
-                        # No conflicts detected - this is a successful resolution
-                        safe_update_log("No conflicts detected - proceeding with setup", None)
-                        success = True
-                    elif strategy == 'cancelled':
-                        # User cancelled the dialog
-                        safe_update_log("Conflict resolution cancelled by user", None)
-                        success = False
-                    else:
-                        safe_update_log("Unknown resolution strategy selected.", None)
-                        success = False
-                else:
-                    safe_update_log("Conflict resolution was cancelled or failed.", None)
-                    success = False
-                    
-            except Exception as e:
-                safe_update_log(f"Error in enhanced conflict resolution: {e}", None)
-                # Fallback to original conflict resolution dialog
-                message = (
-                    "Both your new vault directory and the remote repository contain files. "
-                    "How would you like to resolve this conflict?"
-                )
-                choice = ui_elements.create_repository_conflict_dialog(root, message, analysis)
-                
-                if choice == "merge":
-                    success = handle_merge_strategy(vault_path)
-                elif choice == "local":
-                    success = handle_local_strategy(vault_path)
-                elif choice == "remote":
-                    success = handle_remote_strategy(vault_path, analysis)
-                else:
-                    safe_update_log("No conflict resolution strategy selected.", None)
-                    success = False
-            
-            if not success:
-                safe_update_log("❌ Failed to resolve repository conflict.", None)
-                return False
-                
-            safe_update_log("✅ Repository conflict resolved successfully.", None)
-        
-        elif analysis["has_remote_files"]:
-            # Remote has files, local is empty or no conflicts - just pull
-            safe_update_log("Downloading remote files...", None)
-            pull_out, pull_err, pull_rc = run_command("git pull origin main", cwd=vault_path)
-            if pull_rc == 0:
-                safe_update_log("✅ Remote files downloaded successfully.", None)
-            else:
-                if "couldn't find remote ref" in pull_err.lower():
-                    safe_update_log("Remote repository is empty. This is normal for new repositories.", None)
-                else:
-                    safe_update_log(f"Note: Could not pull remote files: {pull_err}", None)
-        
-        elif has_existing_files:
-            # Local has files, remote is empty - files will be pushed during regular sync
-            safe_update_log("Local files will be uploaded during the next sync.", None)
-        
-        else:
-            # Both local and remote are empty
-            safe_update_log("Both local and remote are empty. Ready for first use.", None)
-        
-        return True
-        
-    except Exception as e:
-        safe_update_log(f"❌ Error setting up new vault directory: {e}", None)
-        ui_elements.show_error_message(
-            "Setup Failed",
-            f"Failed to set up new vault directory:\n{e}\n\nPlease try again."
-        )
-        return False
-
-# ------------------------------------------------
-# UTILITY FUNCTIONS
-# ------------------------------------------------
-
-def restart_for_setup():
-    """
-    Restarts the application in setup mode by resetting configuration and restarting the main loop.
-    """
-    try:
-        # Don't reset SETUP_DONE here - only reset if specifically restarting for setup
-        # config_data["SETUP_DONE"] = "0"
-        # save_config()
-        
-        # Close current window
-        if root:
-            root.destroy()
-        
-        # Restart main function
-        main()
-    except Exception as e:
-        print(f"Error restarting for setup: {e}")
-        # Fallback: just show error and exit
-        sys.exit(1)
-
-def restart_to_sync_mode():
-    """
-    Transitions the application to sync mode after setup completion.
-    """
-    global root, log_text, progress_bar
-    
-    try:
-        print("DEBUG: Starting transition to sync mode")
-        
-        # Ensure we have the latest config before transitioning
-        load_config()
-        
-        # Verify the config is properly saved
-        if config_data.get("SETUP_DONE", "0") != "1":
-            config_data["SETUP_DONE"] = "1"
-            save_config()
-        
-        print("DEBUG: Config verified for sync mode")
-        
-        # Safer approach: directly restart the process instead of trying to transition UI
-        print("DEBUG: Restarting process in sync mode")
-        
-        # Close current window cleanly
-        if root and root.winfo_exists():
-            try:
-                root.quit()
-                root.destroy()
-            except Exception as e:
-                print(f"DEBUG: Error closing window: {e}")
-        
-        # Restart the process
-        import sys
-        import os
-        print("DEBUG: Restarting Python process")
-        
-        # Use os.execv to replace the current process completely
-        python_executable = sys.executable
-        script_path = os.path.abspath(__file__)
-        os.execv(python_executable, [python_executable, script_path])
-        
-    except Exception as e:
-        print(f"Error transitioning to sync mode: {e}")
-        # Fallback: try to create minimal UI directly
+    # Run sync_thread either in background thread or directly
+    if use_threading:
+        # Only use threading if we're not already in a background thread
         try:
-            root, log_text, progress_bar = ui_elements.create_minimal_ui(auto_run=True)
-            auto_sync()
-            root.mainloop()
-        except Exception as e2:
-            print(f"Fallback also failed: {e2}")
-            sys.exit(1)
+            current_thread = threading.current_thread()
+            is_main_thread = current_thread == threading.main_thread()
+            
+            if is_main_thread:
+                # We're in main thread, safe to create background thread
+                threading.Thread(target=sync_thread, daemon=True).start()
+            else:
+                # We're already in a background thread, run directly
+                sync_thread()
+        except Exception as e:
+            print(f"Threading error, running directly: {e}")
+            sync_thread()
+    else:
+        sync_thread()
+
+
+def check_remote_changes_during_session(vault_path, remote_head_before_obsidian):
+    """
+    Check if the remote repository has advanced during the Obsidian session.
+    
+    Args:
+        vault_path: Path to the vault directory
+        remote_head_before_obsidian: The remote HEAD commit hash before opening Obsidian
+    
+    Returns:
+        tuple: (has_remote_changes, new_remote_head, change_count)
+    """
+    try:
+        # Fetch latest remote information
+        fetch_out, fetch_err, fetch_rc = run_command("git fetch origin", cwd=vault_path)
+        if fetch_rc != 0:
+            safe_update_log(f"Warning: Could not fetch remote changes: {fetch_err}", None)
+            return False, remote_head_before_obsidian, 0
+        
+        # Get current remote HEAD
+        remote_head_out, remote_head_err, remote_head_rc = run_command("git rev-parse origin/main", cwd=vault_path)
+        if remote_head_rc != 0:
+            safe_update_log(f"Warning: Could not get remote HEAD: {remote_head_err}", None)
+            return False, remote_head_before_obsidian, 0
+        
+        current_remote_head = remote_head_out.strip()
+        
+        # Compare with the HEAD before Obsidian was opened
+        if current_remote_head != remote_head_before_obsidian:
+            # Remote has advanced - count the new commits
+            commit_count_out, commit_count_err, commit_count_rc = run_command(
+                f"git rev-list --count {remote_head_before_obsidian}..{current_remote_head}", 
+                cwd=vault_path
+            )
+            
+            if commit_count_rc == 0:
+                change_count = int(commit_count_out.strip()) if commit_count_out.strip().isdigit() else 0
+                safe_update_log(f"Remote repository has advanced by {change_count} commit(s) during Obsidian session", None)
+                return True, current_remote_head, change_count
+            else:
+                safe_update_log("Remote repository has advanced during Obsidian session (commit count unknown)", None)
+                return True, current_remote_head, 1
+        else:
+            # No remote changes
+            return False, current_remote_head, 0
+            
+    except Exception as e:
+        safe_update_log(f"Error checking remote changes: {e}", None)
+        return False, remote_head_before_obsidian, 0
+
+def get_current_remote_head(vault_path):
+    """
+    Get the current remote HEAD commit hash.
+    
+    Args:
+        vault_path: Path to the vault directory
+    
+    Returns:
+        str: Remote HEAD commit hash, or empty string if error
+    """
+    try:
+        # Fetch latest remote information first
+        run_command("git fetch origin", cwd=vault_path)
+        
+        # Get current remote HEAD
+
+        remote_head_out, remote_head_err, remote_head_rc = run_command("git rev-parse origin/main", cwd=vault_path)
+        if remote_head_rc == 0:
+            return remote_head_out.strip()
+        else:
+            return ""
+    except Exception:
+        return ""
 
 # ------------------------------------------------
 # MAIN ENTRY POINT
@@ -1916,7 +2142,7 @@ def main():
     else:
         # Not set up yet: run the progressive setup wizard
         print("DEBUG: Running setup wizard")
-        success = run_setup_wizard()
+        success, wizard_state = setup_wizard.run_setup_wizard()
         
         if success:
             print("DEBUG: Setup completed successfully")
