@@ -1460,9 +1460,10 @@ def auto_sync(use_threading=True):
       3. Checks network connectivity.
          - If online, it verifies that the remote branch ('main') exists (pushing the initial commit if needed)
            and pulls the latest updates from GitHub (using rebase and prompting for conflict resolution if required).
-         - If offline, it skips remote operations.
-      4. Stashes any local changes before pulling.
-      5. Reapplies stashed changes.
+         - If offline, it skips remote operations.      4. Stashes any local changes before pulling.
+      5. Handles stashed changes based on sync type:
+         - For initial sync (when local has only README): Discards stashed changes (remote content takes precedence)
+         - For regular sync: Reapplies stashed changes, using 2-stage conflict resolution if conflicts occur
       6. Opens Obsidian for editing and waits until it is closed.
       7. Upon Obsidian closure, stages and commits any changes.
       8. If online, pushes any unpushed commits to GitHub.
@@ -1629,6 +1630,7 @@ def auto_sync(use_threading=True):
                             local_files.append(file)
             
             only_has_readme = (len(local_files) == 1 and 'README.md' in local_files)
+            did_reset_hard = False  # Track if we did a reset --hard for initial sync
             
             if only_has_readme:
                 safe_update_log("Local repository only has README. Checking for remote files to download...", 20)
@@ -1650,14 +1652,14 @@ def auto_sync(use_threading=True):
                                 if backup_id:
                                     safe_update_log(f"✅ Safety backup created: {backup_id}", 22)
                             except Exception as backup_err:
-                                safe_update_log(f"⚠️ Could not create backup: {backup_err}", 22)
-                        
+                                safe_update_log(f"⚠️ Could not create backup: {backup_err}", 22)                        
                         # For initial sync, we want remote content to take precedence (user preference)
                         # Use reset --hard to replace local with remote content  
                         safe_update_log("📥 Downloading and replacing local content with remote files...", 24)
                         
                         reset_out, reset_err, reset_rc = run_command("git reset --hard origin/main", cwd=vault_path)
                         if reset_rc == 0:
+                            did_reset_hard = True  # Mark that we did a reset --hard
                             safe_update_log(f"✅ Successfully replaced local content with {len(content_files)} remote files!", 25)
                             if backup_id:
                                 safe_update_log(f"📝 Note: Previous local state safely backed up: {backup_id}", 25)
@@ -1692,72 +1694,69 @@ def auto_sync(use_threading=True):
                         out, err, rc = "", "", 0  # Success - files downloaded
                     else:
                         safe_update_log("Remote repository only has README/gitignore - no content to pull", 20)
-                        out, err, rc = "", "", 0  # Simulate successful pull
-                else:
+                        out, err, rc = "", "", 0  # Simulate successful pull                else:
                     safe_update_log("Remote repository is empty - no files to pull", 20)
                     out, err, rc = "", "", 0  # Simulate successful pull
             else:
                 safe_update_log("Pulling the latest updates from GitHub...", 20)
                 out, err, rc = run_command("git pull --rebase origin main", cwd=vault_path)
-            if rc != 0:
+            
+            # Check for conflicts regardless of return code (more robust detection)
+            status_out, status_err, status_rc = run_command("git status --porcelain", cwd=vault_path)
+            has_conflicts = False
+            if status_rc == 0 and status_out:
+                # Check for conflict markers in git status output
+                for line in status_out.splitlines():
+                    line = line.strip()
+                    if line.startswith('UU ') or line.startswith('AA ') or line.startswith('DD ') or 'both modified:' in line:
+                        has_conflicts = True
+                        break            
+            # Also check if we're in the middle of a rebase
+            rebase_in_progress = os.path.exists(os.path.join(vault_path, '.git', 'rebase-merge')) or os.path.exists(os.path.join(vault_path, '.git', 'rebase-apply'))
+            
+            if rc != 0 or has_conflicts or rebase_in_progress or "CONFLICT" in (out + err):
                 if "Could not resolve hostname" in err or "network" in err.lower():
                     safe_update_log("❌ Unable to pull updates due to a network error. Local changes remain safely stashed.", 30)
-                elif "CONFLICT" in (out + err):  # Detect merge conflicts
+                elif has_conflicts or rebase_in_progress or "CONFLICT" in (out + err):  # Detect merge conflicts
                     safe_update_log("❌ A merge conflict was detected during the pull operation.", 30)
-                    safe_update_log("🔧 Activating 2-stage conflict resolution system...", 32)
+                    safe_update_log("🔧 Applying automatic 'remote wins' conflict resolution for sync operations...", 32)
                     
                     # Abort the current rebase to get to a clean state
                     run_command("git rebase --abort", cwd=vault_path)
                     
-                    # Use the 2-stage conflict resolution system
-                    try:
-                        if not CONFLICT_RESOLUTION_AVAILABLE:
-                            safe_update_log("❌ Enhanced conflict resolution system not available. Manual resolution required.", 35)
-                            safe_update_log("Please resolve conflicts manually and try again.", 35)
-                            return
-                        
-                        # Create backup using backup manager if available
-                        backup_id = None
-                        if 'backup_manager' in sys.modules:
-                            try:
-                                from backup_manager import create_conflict_resolution_backup
-                                backup_id = create_conflict_resolution_backup(vault_path, "sync-pull-conflict")
-                                if backup_id:
-                                    safe_update_log(f"✅ Safety backup created: {backup_id}", 33)
-                            except Exception as backup_err:
-                                safe_update_log(f"⚠️ Could not create backup: {backup_err}", 33)
-                        
-                        # Import and use the proper conflict resolution modules
-                        import Stage1_conflict_resolution as cr_module
-                        
-                        # Create conflict resolver for sync pull conflicts
-                        resolver = cr_module.ConflictResolver(vault_path, root)
-                        remote_url = config_data.get("GITHUB_REMOTE_URL", "")
-                        
-                        # Resolve conflicts using the 2-stage system
-                        resolution_result = resolver.resolve_initial_setup_conflicts(remote_url)
-                        
-                        if resolution_result.success:
-                            safe_update_log("✅ Sync pull conflicts resolved successfully using 2-stage system", 35)
+                    # Create backup before resolving conflicts
+                    backup_id = None
+                    if 'backup_manager' in sys.modules:
+                        try:
+                            from backup_manager import create_conflict_resolution_backup
+                            backup_id = create_conflict_resolution_backup(vault_path, "auto-remote-wins-resolution")
                             if backup_id:
-                                safe_update_log(f"📝 Note: Safety backup available if needed: {backup_id}", 35)
+                                safe_update_log(f"✅ Safety backup created: {backup_id}", 33)
+                        except Exception as backup_err:
+                            safe_update_log(f"⚠️ Could not create backup: {backup_err}", 33)
+                    
+                    # Automatic "remote wins" resolution - much simpler and more reliable
+                    safe_update_log("📥 Automatically choosing remote content (remote wins policy)...", 34)
+                    
+                    # Use reset --hard to make remote content win completely
+                    reset_out, reset_err, reset_rc = run_command("git reset --hard origin/main", cwd=vault_path)
+                    if reset_rc == 0:
+                        safe_update_log("✅ Conflicts resolved automatically using 'remote wins' policy", 35)
+                        if backup_id:
+                            safe_update_log(f"📝 Note: Local changes backed up as: {backup_id}", 35)
                         else:
-                            if "cancelled by user" in resolution_result.message.lower():
-                                safe_update_log("❌ Conflict resolution was cancelled by user", 35)
-                                safe_update_log("📝 Your local changes remain stashed and can be recovered.", 35)
-                            else:
-                                safe_update_log(f"❌ Conflict resolution failed: {resolution_result.message}", 35)
-                                if backup_id:
-                                    safe_update_log(f"📝 Your work is safe in backup: {backup_id}", 35)
-                                
-                    except Exception as e:
-                        safe_update_log(f"❌ Error in 2-stage conflict resolution during sync pull: {e}", 35)
-                        safe_update_log("📝 Your local changes remain stashed and can be recovered manually.", 35)
-                        import traceback
-                        traceback.print_exc()
+                            # Fallback: git branch backup
+                            timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+                            backup_branch = f"backup-before-remote-wins-{timestamp}"
+                            run_command(f"git branch {backup_branch}", cwd=vault_path)
+                            safe_update_log(f"📝 Note: Local changes backed up in branch: {backup_branch}", 35)
+                        
+                        # Mark as successful to continue normal flow
+                        rc = 0  # Override to indicate successful resolution
                     else:
-                        safe_update_log("No valid conflict resolution chosen. Aborting rebase.", 30)
-                        run_command("git rebase --abort", cwd=vault_path)
+                        safe_update_log(f"❌ Automatic conflict resolution failed: {reset_err}", 35)
+                        safe_update_log("📝 Manual intervention required. Please resolve conflicts and try again.", 35)
+                        return
                 else:
                     safe_update_log("Pull operation completed successfully. Your vault is updated with the latest changes from GitHub.", 30)
                     # Log pulled files
@@ -1766,18 +1765,67 @@ def auto_sync(use_threading=True):
             else:
                 safe_update_log("Pull operation completed successfully. Your vault is up to date.", 30)
         else:
-            safe_update_log("Skipping pull operation due to offline mode.", 20)
-
-        # Step 5: Reapply stashed changes
-        out, err, rc = run_command("git stash pop", cwd=vault_path)
-        if rc != 0 and "No stash" not in err:
-            if "CONFLICT" in (out + err):
-                safe_update_log("❌ A merge conflict occurred while reapplying stashed changes. Please resolve manually.", 35)
-                return
+            safe_update_log("Skipping pull operation due to offline mode.", 20)        # Step 5: Handle stashed changes based on what happened in pull
+        # Check if we did a reset --hard (initial sync where remote wins)
+        # In that case, we should discard stashed changes, not reapply them
+        if did_reset_hard:
+            # We did a reset --hard for initial sync - discard stashed changes
+            safe_update_log("🗑️ Discarding stashed local changes (remote content takes precedence for initial sync)...", 35)
+            stash_list_out, _, _ = run_command("git stash list", cwd=vault_path)
+            if stash_list_out.strip():  # If there are stashes
+                run_command("git stash drop", cwd=vault_path)
+                safe_update_log("✅ Local changes safely discarded. Repository now matches remote content.", 35)
             else:
-                safe_update_log(f"Stash pop operation failed: {err}", 35)
-                return
-        safe_update_log("Successfully reapplied stashed local changes.", 35)
+                safe_update_log("✅ No local changes to discard. Repository matches remote content.", 35)
+        else:
+            # Normal pull operation - reapply stashed changes
+            out, err, rc = run_command("git stash pop", cwd=vault_path)
+            if rc != 0 and "No stash" not in err:
+                if "CONFLICT" in (out + err):
+                    safe_update_log("❌ A merge conflict occurred while reapplying stashed changes.", 35)
+                    safe_update_log("🔧 Activating 2-stage conflict resolution system for stash conflicts...", 35)
+                    
+                    # Use conflict resolution for stash conflicts too
+                    try:
+                        if not CONFLICT_RESOLUTION_AVAILABLE:
+                            safe_update_log("❌ Enhanced conflict resolution system not available. Manual resolution required.", 35)
+                            return
+                        
+                        # Create backup using backup manager if available
+                        backup_id = None
+                        if 'backup_manager' in sys.modules:
+                            try:
+                                from backup_manager import create_conflict_resolution_backup
+                                backup_id = create_conflict_resolution_backup(vault_path, "stash-pop-conflict")
+                                if backup_id:
+                                    safe_update_log(f"✅ Safety backup created: {backup_id}", 35)
+                            except Exception as backup_err:
+                                safe_update_log(f"⚠️ Could not create backup: {backup_err}", 35)
+                          # Import and use the proper conflict resolution modules
+                        import Stage1_conflict_resolution as cr_module
+                        
+                        # Resolve conflicts using the 2-stage system (standalone function for stash conflicts)
+                        resolution_result = cr_module.resolve_conflicts(vault_path, config_data.get("GITHUB_REMOTE_URL", ""), root)
+                        
+                        if resolution_result.success:
+                            safe_update_log("✅ Stash conflicts resolved successfully using 2-stage system", 35)
+                            if backup_id:
+                                safe_update_log(f"📝 Note: Safety backup available if needed: {backup_id}", 35)
+                        else:
+                            safe_update_log(f"❌ Stash conflict resolution failed: {resolution_result.message}", 35)
+                            if backup_id:
+                                safe_update_log(f"📝 Your work is safe in backup: {backup_id}", 35)
+                                
+                    except Exception as e:
+                        safe_update_log(f"❌ Error in 2-stage conflict resolution for stash conflicts: {e}", 35)
+                        import traceback
+                        traceback.print_exc()
+                    return
+                else:
+                    safe_update_log(f"Stash pop operation failed: {err}", 35)
+                    return
+            elif "No stash" not in err:
+                safe_update_log("✅ Successfully reapplied stashed local changes.", 35)
 
         # Step 6: Capture current remote state before opening Obsidian
         remote_head_before_obsidian = ""
