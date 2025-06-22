@@ -1219,4 +1219,143 @@ class Stage2ConflictResolutionDialog:
                     file_conflict.is_resolved = True
                     file_conflict.resolution_strategy = FileResolutionStrategy.KEEP_LOCAL
                     self.resolution_strategies[file_conflict.file_path] = FileResolutionStrategy.KEEP_LOCAL
-       
+        self.result = Stage2Result(
+            success=True,
+            resolved_files=[f.file_path for f in self.conflicted_files],
+            resolution_strategies=self.resolution_strategies,
+            message=f"Stage 2 resolution completed successfully for {len(self.conflicted_files)} files"
+        )
+        
+        if self.dialog:
+            self.dialog.destroy()
+
+    
+    def _cancel_resolution(self):
+        """Cancel the resolution process"""
+        self.result = Stage2Result(
+            success=False,
+            resolved_files=[],
+            resolution_strategies={},
+            message="User cancelled Stage 2 resolution"
+        )
+        if self.dialog:
+            self.dialog.destroy()
+    
+    def _activate_manual_merge(self):
+        """Activate manual merge tab and load current file content"""
+        if hasattr(self, 'content_notebook'):
+            # Switch to manual merge tab
+            self.content_notebook.select(1)  # Manual merge is tab index 1
+        
+        # Load current file to editor
+        self._load_current_file_to_editor()
+    
+    def _load_current_file_to_editor(self):
+        """Load current file content to the manual merge editor"""
+        if self.editor_text and self.conflicted_files and self.current_file_index < len(self.conflicted_files):
+            current_file = self.conflicted_files[self.current_file_index]
+            self.editor_text.delete(1.0, tk.END)
+            # Start with local content by default
+            self.editor_text.insert(1.0, current_file.local_content)
+    
+    def _create_external_editor_buttons(self):
+        """Create buttons for available external editors"""
+        if not hasattr(self, 'external_editor_frame') or not self.available_editors:
+            return
+        
+        # Clear existing buttons
+        for widget in self.external_editor_frame.winfo_children():
+            if isinstance(widget, tk.Button):
+                widget.destroy()
+        
+        # Create buttons for each available editor
+        for editor_name in self.available_editors.keys():
+            btn = tk.Button(
+                self.external_editor_frame,
+                text=f"📝 {editor_name}",
+                command=lambda name=editor_name: self._open_external_editor(name),
+                font=("Arial", 9),
+                bg="#E5E7EB",
+                fg="#374151",
+                relief=tk.FLAT,
+                cursor="hand2"
+            )
+            btn.pack(side=tk.LEFT, padx=(0, 5))
+
+
+# =============================================================================
+# CONVENIENCE FUNCTIONS
+# =============================================================================
+
+def create_file_conflict_details(file_path: str, local_content: str, remote_content: str) -> FileConflictDetails:
+    """Create FileConflictDetails object from file information"""
+    return FileConflictDetails(
+        file_path=file_path,
+        local_content=local_content,
+        remote_content=remote_content,
+        has_differences=(local_content.strip() != remote_content.strip()),
+        is_binary=b'\0' in local_content.encode('utf-8', errors='ignore'),
+        file_size_local=len(local_content.encode('utf-8')),
+        file_size_remote=len(remote_content.encode('utf-8'))
+    )
+
+
+def show_stage2_resolution(parent: Optional[tk.Tk], conflicted_files: List[FileConflictDetails]) -> Optional[Stage2Result]:
+    """
+    Convenience function to show Stage 2 conflict resolution dialog
+    
+    Args:
+        parent: Parent window
+        conflicted_files: List of files that need resolution
+        
+    Returns:
+        Stage2Result or None if cancelled
+    """
+    dialog = Stage2ConflictResolutionDialog(parent, conflicted_files)
+    return dialog.show()
+
+
+if __name__ == "__main__":
+    # Test Stage 2 resolution system
+    print("Testing Stage 2 Conflict Resolution System...")
+    
+    # Create sample conflicted files for testing
+    test_files = [
+        create_file_conflict_details(
+            "test1.txt",
+            "Line 1\nLine 2 Local\nLine 3",
+            "Line 1\nLine 2 Remote\nLine 3\nLine 4 Remote"
+        ),
+        create_file_conflict_details(
+            "test2.md",
+            "# Header\nLocal content\n## Section",
+            "# Header\nRemote content\n## Section\n### Subsection"
+        )
+    ]
+    
+    print(f"✅ Created {len(test_files)} test file conflict details")
+    print(f"   • {test_files[0].file_path} (differences: {test_files[0].has_differences})")
+    print(f"   • {test_files[1].file_path} (differences: {test_files[1].has_differences})")
+    
+    # Test external editor detection
+    editors = ExternalEditorManager.detect_available_editors()
+    print(f"✅ Detected {len(editors)} external editors: {list(editors.keys())}")
+    
+    # Test auto-merge functionality
+    print("✅ Testing auto-merge functionality...")
+    dialog = Stage2ConflictResolutionDialog(None, test_files)
+    merged_content = dialog._attempt_auto_merge(test_files[0])
+    if merged_content:
+        print(f"   Auto-merge successful: {len(merged_content)} characters")
+    else:
+        print("   Auto-merge failed (expected for test content)")
+    
+    # Test GUI if available
+    try:
+        import tkinter as tk
+        print("✅ Stage 2 Conflict Resolution System ready for use")
+        
+    except Exception as e:
+        print(f"⚠️ GUI testing failed: {e}")
+    
+    print("✅ Stage 2 system validation complete")

@@ -87,8 +87,7 @@ class OgresyncBackupManager:
         """Ensure backup directory and gitignore are set up"""
         # Create backup directory
         os.makedirs(self.backup_base_dir, exist_ok=True)
-        
-        # Ensure .gitignore excludes our backup directory
+          # Ensure .gitignore excludes our backup directory
         gitignore_path = os.path.join(self.vault_path, ".gitignore")
         gitignore_content = ""
         
@@ -98,12 +97,16 @@ class OgresyncBackupManager:
         
         backup_ignore_line = ".ogresync-backups/"
         recovery_ignore_line = "OGRESYNC_RECOVERY_INSTRUCTIONS_*.txt"
+        obsidian_ignore_line = ".obsidian/"
         
         if backup_ignore_line not in gitignore_content:
             gitignore_content += f"\n# Ogresync backups (local only)\n{backup_ignore_line}\n"
         
         if recovery_ignore_line not in gitignore_content:
             gitignore_content += f"{recovery_ignore_line}\n"
+        
+        if obsidian_ignore_line not in gitignore_content:
+            gitignore_content += f"\n# Obsidian app settings (personal/local only)\n{obsidian_ignore_line}\n"
         
         with open(gitignore_path, 'w', encoding='utf-8') as f:
             f.write(gitignore_content)
@@ -254,8 +257,7 @@ class OgresyncBackupManager:
     def _is_meaningful_file(self, file_path: str) -> bool:
         """Check if a file should be backed up"""
         file_name = os.path.basename(file_path)
-        
-        # System and temporary files to ignore
+          # System and temporary files to ignore
         ignored_files = {
             '.gitignore', '.DS_Store', 'Thumbs.db', 'desktop.ini',
             'config.txt', 'ogresync.exe'
@@ -268,7 +270,8 @@ class OgresyncBackupManager:
         
         ignored_patterns = {
             '.git/', '.ogresync-backups/', '__pycache__/', '.vscode/',
-            '.idea/', '.vs/', 'node_modules/', 'OGRESYNC_RECOVERY_INSTRUCTIONS'
+            '.idea/', '.vs/', 'node_modules/', 'OGRESYNC_RECOVERY_INSTRUCTIONS',
+            '.obsidian/'
         }
         
         if file_name in ignored_files:
