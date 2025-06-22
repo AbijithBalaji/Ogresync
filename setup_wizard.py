@@ -39,12 +39,10 @@ except ImportError:
     ui_elements = None
 
 try:
-    import conflict_resolution
     import Stage1_conflict_resolution
     import stage2_conflict_resolution
     CONFLICT_RESOLUTION_AVAILABLE = True
 except ImportError:
-    conflict_resolution = None
     Stage1_conflict_resolution = None
     stage2_conflict_resolution = None
     CONFLICT_RESOLUTION_AVAILABLE = False
@@ -1671,30 +1669,39 @@ Your configuration has been saved and Ogresync is ready to use!"""
             
             if not remote_url:
                 return False, "Remote repository URL not configured. Please complete Step 8 first."
-            
-            # Scenario Detection: Analyze local and remote repository states
+              # Scenario Detection: Analyze local and remote repository states
             local_files = self._get_content_files(vault_path)
             remote_exists, remote_files = self._check_remote_repository(vault_path)
+            
+            print(f"[DEBUG] Repository Analysis:")
+            print(f"[DEBUG] - Local content files: {len(local_files)} ({local_files[:5]}{'...' if len(local_files) > 5 else ''})")
+            print(f"[DEBUG] - Remote exists: {remote_exists}")
+            print(f"[DEBUG] - Remote content files: {len(remote_files) if remote_exists else 'N/A'} ({remote_files[:5] if remote_exists and remote_files else ''}{'...' if remote_exists and len(remote_files) > 5 else ''})")
             
             self._update_status(f"📊 Repository Analysis Complete:\n• Local files: {len(local_files)}\n• Remote files: {len(remote_files) if remote_exists else 'Unknown'}")
             
             # Determine scenario and handle accordingly
             scenario = self._determine_sync_scenario(local_files, remote_exists, remote_files)
+            print(f"[DEBUG] Determined scenario: {scenario}")
             
             if scenario == "both_empty":
                 # Scenario 1: Both repos are empty - create README and continue
+                print("[DEBUG] Handling scenario: both_empty")
                 return self._handle_empty_repositories(vault_path, current_step)
             
             elif scenario == "local_empty_remote_has_files":
                 # Scenario 2: Local is empty, remote has files - simple pull
+                print("[DEBUG] Handling scenario: local_empty_remote_has_files")
                 return self._handle_simple_pull(vault_path, remote_files, current_step)
             
             elif scenario == "local_has_files_remote_empty":
                 # Scenario 3: Local has files, remote is empty - ready for push in next step
+                print("[DEBUG] Handling scenario: local_has_files_remote_empty")
                 return self._handle_remote_empty(vault_path, local_files, current_step)
             
             elif scenario == "both_have_files":
                 # Scenario 4: Both have files - use enhanced two-stage conflict resolution
+                print("[DEBUG] Handling scenario: both_have_files - MUST trigger conflict resolution!")
                 return self._handle_conflict_resolution(vault_path, remote_url, local_files, remote_files, current_step)
             
             else:
@@ -1869,8 +1876,7 @@ Your configuration has been saved and Ogresync is ready to use!"""
                     return True, []  # Remote exists but is empty
             else:
                 # Remote doesn't exist or can't be accessed
-                return False, []
-                
+                return False, []                
         except Exception as e:
             print(f"[DEBUG] Error checking remote repository: {e}")
             return False, []
@@ -1880,15 +1886,24 @@ Your configuration has been saved and Ogresync is ready to use!"""
         has_local_content = len(local_files) > 0
         has_remote_content = remote_exists and len(remote_files) > 0
         
+        print(f"[DEBUG] Scenario determination:")
+        print(f"[DEBUG] - has_local_content: {has_local_content} (local_files count: {len(local_files)})")
+        print(f"[DEBUG] - has_remote_content: {has_remote_content} (remote_exists: {remote_exists}, remote_files count: {len(remote_files) if remote_exists else 'N/A'})")
+        
         if not has_local_content and not has_remote_content:
+            print("[DEBUG] -> Scenario: both_empty")
             return "both_empty"
         elif not has_local_content and has_remote_content:
+            print("[DEBUG] -> Scenario: local_empty_remote_has_files")
             return "local_empty_remote_has_files"
         elif has_local_content and not has_remote_content:
+            print("[DEBUG] -> Scenario: local_has_files_remote_empty")
             return "local_has_files_remote_empty"
         elif has_local_content and has_remote_content:
+            print("[DEBUG] -> Scenario: both_have_files - THIS MUST TRIGGER CONFLICT RESOLUTION!")
             return "both_have_files"
         else:
+            print("[DEBUG] -> Scenario: unknown - this should not happen")
             return "unknown"
     
     def _handle_empty_repositories(self, vault_path, current_step):
@@ -1936,8 +1951,7 @@ Created: {time.strftime('%Y-%m-%d %H:%M:%S')}
             if pull_result.returncode == 0:
                 current_step.set_status("success")
                 return True, f"Successfully pulled {len(remote_files)} files from remote repository"
-            else:
-                # Try reset approach as fallback
+            else:                # Try reset approach as fallback
                 self._update_status("Pull failed, trying reset approach...")
                 
                 remote_branch_ref = self._get_remote_branch_ref(vault_path, current_branch)
@@ -1966,9 +1980,21 @@ Created: {time.strftime('%Y-%m-%d %H:%M:%S')}
         """Handle Scenario 4: Both have files - use enhanced two-stage conflict resolution."""
         self._update_status("⚔️ Both repositories have files - launching enhanced conflict resolution system...")
         
+        print(f"[DEBUG] Conflict resolution triggered - Local files: {len(local_files)}, Remote files: {len(remote_files)}")
+        print(f"[DEBUG] CONFLICT_RESOLUTION_AVAILABLE: {CONFLICT_RESOLUTION_AVAILABLE}")
+        print(f"[DEBUG] Stage1_conflict_resolution module: {Stage1_conflict_resolution is not None}")
+        
+        # CRITICAL: Never bypass conflict resolution when both repos have files
+        # This is exactly what the user complained about - the system was falling back to simple merge
+        # instead of presenting conflict resolution options
+        
         if not CONFLICT_RESOLUTION_AVAILABLE:
-            # Fallback to simple merge if conflict resolution modules not available
-            return self._handle_simple_merge_fallback(vault_path, current_step)
+            print("[DEBUG] Conflict resolution modules not available - ERROR!")
+            return False, "Conflict resolution system is not available. Cannot safely merge repositories with conflicting content. Please ensure all conflict resolution modules are properly installed."
+        
+        if not Stage1_conflict_resolution:
+            print("[DEBUG] Stage1_conflict_resolution module not found - ERROR!")
+            return False, "Stage 1 conflict resolution module is not available. Cannot safely merge repositories with conflicting content."
         
         try:
             # Show user information about the conflict resolution process
@@ -1992,15 +2018,14 @@ Created: {time.strftime('%Y-%m-%d %H:%M:%S')}
                 )
                 ui_elements.show_premium_info("Repository Conflict Resolution", info_msg, self.dialog)
             
-            # Create conflict resolution engine - check if modules are available
-            if not Stage1_conflict_resolution:
-                return self._handle_simple_merge_fallback(vault_path, current_step)
-                
+            print("[DEBUG] Creating conflict resolution engine...")
             conflict_engine = Stage1_conflict_resolution.ConflictResolutionEngine(vault_path)
             
             # Analyze conflicts
             self._update_status("🔍 Analyzing repository conflicts...")
+            print("[DEBUG] Analyzing conflicts...")
             conflict_analysis = conflict_engine.analyze_conflicts(remote_url)
+            print(f"[DEBUG] Conflict analysis complete: {conflict_analysis}")
             
             # IMPORTANT: When both repositories have files, ALWAYS show conflict resolution dialog
             # regardless of whether Stage1 analysis detects conflicts. The user should choose the strategy.
@@ -2008,32 +2033,49 @@ Created: {time.strftime('%Y-%m-%d %H:%M:%S')}
             
             # Show Stage 1 dialog - handle parent type conversion
             self._update_status("🎯 Opening Stage 1 conflict resolution dialog...")
+            print("[DEBUG] Opening Stage 1 conflict resolution dialog...")
+            
             # Convert self.dialog to proper parent for conflict resolution
             dialog_parent = self.dialog if isinstance(self.dialog, tk.Tk) else None
             stage1_dialog = Stage1_conflict_resolution.ConflictResolutionDialog(dialog_parent, conflict_analysis)
             selected_strategy = stage1_dialog.show()
             
+            print(f"[DEBUG] User selected strategy: {selected_strategy}")
+            
             if selected_strategy:
                 # Apply the selected strategy
                 self._update_status(f"⚙️ Applying {selected_strategy.value} strategy...")
+                print(f"[DEBUG] Applying strategy: {selected_strategy.value}")
                 resolution_result = conflict_engine.apply_strategy(selected_strategy, conflict_analysis)
                 
                 if resolution_result.success:
+                    print(f"[DEBUG] Conflict resolution successful: {resolution_result.message}")
                     current_step.set_status("success")
                     return True, f"Repositories synchronized using {selected_strategy.value}: {resolution_result.message}"
                 else:
+                    print(f"[DEBUG] Conflict resolution failed: {resolution_result.message}")
                     return False, f"Repository synchronization failed: {resolution_result.message}"
             else:
                 # User cancelled
+                print("[DEBUG] User cancelled conflict resolution")
                 return False, "Repository synchronization cancelled by user"
                 
         except Exception as e:
             print(f"[DEBUG] Error in conflict resolution: {e}")
-            # Fallback to simple merge
-            return self._handle_simple_merge_fallback(vault_path, current_step)
+            import traceback
+            traceback.print_exc()            # CRITICAL: Do NOT fallback to simple merge - this is the exact problem the user reported
+            # Instead, return an error so the user knows what happened
+            return False, f"Error in conflict resolution system: {str(e)}. Cannot safely merge repositories without user input."
     
     def _handle_simple_merge_fallback(self, vault_path, current_step):
-        """Fallback method for simple merge when conflict resolution is not available."""
+        """
+        Fallback method for simple merge when conflict resolution is not available.
+        
+        WARNING: This method should NEVER be used when both repositories have files
+        that could conflict. It's only for extreme edge cases where the conflict
+        resolution system is completely unavailable.
+        """
+        print("[WARNING] Using simple merge fallback - this should only happen in extreme edge cases!")
         self._update_status("📦 Attempting simple merge with remote repository...")
         
         import subprocess
