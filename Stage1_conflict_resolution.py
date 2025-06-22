@@ -198,55 +198,10 @@ class ConflictResolutionEngine:
         stdout, stderr, rc = self._run_git_command("git config user.email")
         if rc != 0 or not stdout.strip():
             self._run_git_command('git config user.email "ogresync@local"')
-          # Set merge strategy to preserve history
+        
+        # Set merge strategy to preserve history
         self._run_git_command("git config pull.rebase false")
         self._run_git_command("git config merge.tool false")
-    
-    def _is_meaningful_file(self, file_path: str) -> bool:
-        """Check if a file should be considered meaningful user content (exclude system files)"""
-        file_name = os.path.basename(file_path)
-        
-        # System and temporary files to ignore
-        ignored_files = {
-            'README.md', '.gitignore', '.DS_Store', 'Thumbs.db', 
-            'desktop.ini', '.env', '.env.local', '.env.example',
-            'config.txt', 'ogresync.exe'  # Ogresync specific files
-        }
-        
-        # File extensions to ignore
-        ignored_extensions = {
-            '.pyc', '.pyo', '.pyd', '.so', '.dll', '.dylib',
-            '.tmp', '.temp', '.log', '.cache', '.ico', '.exe'
-        }
-        
-        # Directory patterns to ignore in file paths
-        ignored_dir_patterns = {
-            '.git/', '.obsidian/', '__pycache__/', '.vscode/', 
-            '.idea/', '.vs/', 'node_modules/', '.pytest_cache/',
-            '.mypy_cache/', '.coverage/', 'venv/', '.venv/',
-            'env/', '.env/', 'assets/'
-        }
-        
-        # Check if file name is in ignored list
-        if file_name in ignored_files:
-            return False
-        
-        # Check if file starts with dot (hidden files)
-        if file_name.startswith('.'):
-            return False
-        
-        # Check file extension
-        _, ext = os.path.splitext(file_name)
-        if ext.lower() in ignored_extensions:
-            return False
-        
-        # Check if file path contains ignored directory patterns
-        normalized_path = file_path.replace('\\', '/')
-        for pattern in ignored_dir_patterns:
-            if pattern in normalized_path:
-                return False
-        
-        return True
     
     def analyze_conflicts(self, remote_url: Optional[str] = None) -> ConflictAnalysis:
         """
@@ -306,23 +261,24 @@ class ConflictResolutionEngine:
             remote_only_files=remote_only,
             identical_files=identical_files,
             has_conflicts=has_conflicts,
-            summary=self._generate_conflict_summary(conflicted_files, local_only, remote_only)        )
+            summary=self._generate_conflict_summary(conflicted_files, local_only, remote_only)
+        )
         
         print(f"[DEBUG] Analysis complete. Has conflicts: {has_conflicts}")
         return analysis
     
     def _get_local_files(self) -> List[str]:
-        """Get list of meaningful content files in local repository (excluding system files)"""
+        """Get list of files in local repository"""
         files = []
         try:
             if os.path.exists(self.vault_path):
                 for root, dirs, filenames in os.walk(self.vault_path):
-                    # Skip certain directories entirely (modify dirs in-place to prevent walking into them)
-                    dirs[:] = [d for d in dirs if d not in {'.git', '.obsidian', '__pycache__', '.vscode', '.idea', 'node_modules', '.vs', '.pytest_cache', '.mypy_cache', '.coverage', 'venv', '.venv', 'env', '.env'}]
-                    
+                    # Skip .git directory and backup directories
+                    if '.git' in root or 'backup' in root.lower():
+                        continue
                     for filename in filenames:
-                        rel_path = os.path.relpath(os.path.join(root, filename), self.vault_path)
-                        if self._is_meaningful_file(rel_path):
+                        if not filename.startswith('.'):
+                            rel_path = os.path.relpath(os.path.join(root, filename), self.vault_path)
                             files.append(rel_path.replace(os.sep, '/'))  # Normalize path separators
         except Exception as e:
             print(f"[DEBUG] Error getting local files: {e}")
@@ -341,7 +297,8 @@ class ConflictResolutionEngine:
             # First, try to fetch remote information
             stdout, stderr, rc = self._run_git_command("git fetch origin")
             if rc == 0:
-                print("[DEBUG] Successfully fetched from remote")                
+                print("[DEBUG] Successfully fetched from remote")
+                
                 # Try to determine the default branch
                 branches_to_try = ["origin/main", "origin/master"]
                 remote_files_found = False
@@ -351,10 +308,10 @@ class ConflictResolutionEngine:
                     print(f"[DEBUG] Trying branch: {branch}")
                     stdout, stderr, rc = self._run_git_command(f"git ls-tree -r --name-only {branch}")
                     if rc == 0:
-                        all_remote_files = [f.strip() for f in stdout.splitlines() if f.strip()]
-                        # Filter to only meaningful files using the same filtering logic
-                        files = [f for f in all_remote_files if self._is_meaningful_file(f)]
-                        print(f"[DEBUG] Found {len(files)} meaningful files in {branch} (filtered from {len(all_remote_files)} total): {files}")
+                        files = [f.strip() for f in stdout.splitlines() if f.strip() and not f.startswith('.git')]
+                        # Filter out common non-content files
+                        files = [f for f in files if f not in ['.gitignore', 'README.md']]
+                        print(f"[DEBUG] Found {len(files)} files in {branch}: {files}")
                         default_branch = branch
                         remote_files_found = True
                         break
@@ -1052,7 +1009,6 @@ class ConflictResolutionDialog:
         self.analysis = analysis
         self.result = None
         self.dialog: Optional[Union[tk.Tk, tk.Toplevel]] = None
-        self.listboxes = []  # Initialize listboxes for per-list scrolling
         
     def show(self) -> Optional[ConflictStrategy]:
         """Show the dialog and return the selected strategy"""
@@ -1068,8 +1024,9 @@ class ConflictResolutionDialog:
         self.dialog.configure(bg="#FAFBFC")
         self.dialog.resizable(True, True)
         print("[DEBUG] Configured dialog")
-          # Set size and position - optimized for horizontal layout and better space utilization
-        width, height = 1200, 750  # Increased width for horizontal strategy layout
+        
+        # Set size and position - optimized for better layout without history guarantee section
+        width, height = 900, 700  # Reduced width to prevent excessive empty space
         
         # Get screen dimensions safely
         screen_width = self.dialog.winfo_screenwidth()
@@ -1082,43 +1039,25 @@ class ConflictResolutionDialog:
         
         self.dialog.geometry(f"{width}x{height}+{x}+{y}")
         print(f"[DEBUG] Set geometry: {width}x{height}+{x}+{y}")
-          # Set window size constraints for better fullscreen/maximize support
-        min_width = min(1000, int(screen_width * 0.6))  # At least 60% of screen width, max 1000
-        min_height = min(650, int(screen_height * 0.5))  # At least 50% of screen height, max 650
-        # No max constraints to allow full maximization/fullscreen
         
-        self.dialog.minsize(min_width, min_height)
-        # Remove maxsize constraint to allow fullscreen/maximize
-        print(f"[DEBUG] Set window size constraints: min={min_width}x{min_height}, no max size limit")
+        # Set minimum window size to ensure all content remains visible
+        self.dialog.minsize(900, 900)  # Ensure minimum size is enforced
+        #self.dialog.maxsize(1200, 900)  # Set maximum size to prevent excessive stretching
+        print("[DEBUG] Set window size constraints: min=900x750, max=1200x900")
         
         # Make dialog modal
         self.dialog.grab_set()
         self.dialog.focus_set()
-        print("[DEBUG] Set modal focus")        # Add window event handlers to enforce minimum size and handle resize events
+        print("[DEBUG] Set modal focus")
+        
+        # Add window event handlers to enforce minimum size
         def on_window_configure(event):
-            if event.widget == self.dialog and self.dialog:
-                try:
-                    # Enforce minimum size with cross-platform compatibility
-                    current_width = self.dialog.winfo_width()
-                    current_height = self.dialog.winfo_height()
-                    
-                    needs_resize = False
-                    new_width = current_width
-                    new_height = current_height
-                    
-                    if current_width < min_width:
-                        new_width = min_width
-                        needs_resize = True
-                    if current_height < min_height:
-                        new_height = min_height
-                        needs_resize = True
-                    
-                    if needs_resize:
-                        # Only resize if necessary to avoid infinite recursion
-                        self.dialog.geometry(f"{new_width}x{new_height}")
-                        
-                except Exception as e:
-                    print(f"[DEBUG] Window configure error: {e}")
+            if event.widget == self.dialog:
+                # Enforce minimum size
+                if self.dialog.winfo_width() < 900:
+                    self.dialog.geometry(f"900x{self.dialog.winfo_height()}")
+                if self.dialog.winfo_height() < 750:
+                    self.dialog.geometry(f"{self.dialog.winfo_width()}x750")
         
         self.dialog.bind('<Configure>', on_window_configure)
         
@@ -1128,13 +1067,13 @@ class ConflictResolutionDialog:
         except Exception as e:
             print(f"[ERROR] Failed to create UI: {e}")
             return None
-          # Center the dialog and bring to front - with null checks
+        
+        # Center the dialog and bring to front
         try:
-            if self.dialog:
-                self.dialog.lift()
-                self.dialog.attributes('-topmost', True)
-                self.dialog.after_idle(lambda: self.dialog.attributes('-topmost', False) if self.dialog else None)
-                print("[DEBUG] Dialog brought to front")
+            self.dialog.lift()
+            self.dialog.attributes('-topmost', True)
+            self.dialog.after_idle(lambda: self.dialog.attributes('-topmost', False))
+            print("[DEBUG] Dialog brought to front")
         except Exception as e:
             print(f"[DEBUG] Could not bring dialog to front: {e}")
         
@@ -1169,38 +1108,10 @@ class ConflictResolutionDialog:
         
         canvas_frame = main_canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         main_canvas.configure(yscrollcommand=main_scrollbar.set)
-          # Store references to listboxes for per-list scrolling
-        self.listboxes = []
         
-        # Mouse wheel scrolling handler with per-widget detection
+        # Enable mouse wheel scrolling throughout the entire dialog
         def _on_mousewheel(event):
-            # Find which widget the mouse is over
-            widget_under_mouse = event.widget.winfo_containing(event.x_root, event.y_root)
-            
-            # Check if mouse is over a listbox
-            for listbox in self.listboxes:
-                if widget_under_mouse == listbox or self._is_child_of(widget_under_mouse, listbox):
-                    # Scroll only this listbox
-                    listbox.yview_scroll(int(-1*(event.delta/120)), "units")
-                    return "break"  # Prevent event propagation
-            
-            # If not over a listbox, scroll the main canvas
             main_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-        
-        # Helper function to check if a widget is a child of another
-        def _is_child_of(child, parent):
-            current = child
-            while current:
-                if current == parent:
-                    return True
-                try:
-                    current = current.master
-                except AttributeError:
-                    break
-            return False
-        
-        # Store helper function in instance for use in other methods
-        self._is_child_of = _is_child_of
         
         # Bind mouse wheel to the entire dialog window for better UX
         if self.dialog:
@@ -1208,19 +1119,9 @@ class ConflictResolutionDialog:
             
             # Also handle Linux/Unix scroll events
             def _on_button_4(event):
-                widget_under_mouse = event.widget.winfo_containing(event.x_root, event.y_root)
-                for listbox in self.listboxes:
-                    if widget_under_mouse == listbox or self._is_child_of(widget_under_mouse, listbox):
-                        listbox.yview_scroll(-1, "units")
-                        return "break"
                 main_canvas.yview_scroll(-1, "units")
             
             def _on_button_5(event):
-                widget_under_mouse = event.widget.winfo_containing(event.x_root, event.y_root)
-                for listbox in self.listboxes:
-                    if widget_under_mouse == listbox or self._is_child_of(widget_under_mouse, listbox):
-                        listbox.yview_scroll(1, "units")
-                        return "break"
                 main_canvas.yview_scroll(1, "units")
             
             self.dialog.bind_all("<Button-4>", _on_button_4)
@@ -1235,11 +1136,13 @@ class ConflictResolutionDialog:
         
         # Pack canvas and scrollbar
         main_canvas.pack(side="left", fill="both", expand=True)
-        main_scrollbar.pack(side="right", fill="y")        # Create content sections in proper order with better space allocation
+        main_scrollbar.pack(side="right", fill="y")
+        
+        # Create content sections
         self._create_header(scrollable_frame)
-        self._create_conflict_analysis_section(scrollable_frame)  # This will take most space
-        self._create_strategy_selection_section(scrollable_frame)  # Compact horizontal layout
-        self._create_controls(scrollable_frame)  # Move back to scrollable area for proper flow
+        self._create_conflict_analysis_section(scrollable_frame)
+        self._create_strategy_selection_section(scrollable_frame)
+        self._create_controls(scrollable_frame)
     
     def _create_header(self, parent):
         """Create the dialog header with improved messaging"""
@@ -1251,11 +1154,14 @@ class ConflictResolutionDialog:
             text="🔒 Repository Conflict Resolution",
             font=("Arial", 18, "bold"),
             bg="#FAFBFC",
-            fg="#1E293B"        )
+            fg="#1E293B"
+        )
         title_label.pack()
     
+    # This section has been removed to free up space for better UI layout
+    
     def _create_conflict_analysis_section(self, parent):
-        """Create the enhanced conflict analysis section with improved layout and scrollbars"""
+        """Create the enhanced conflict analysis section with improved layout"""
         analysis_frame = tk.LabelFrame(
             parent,
             text="📊 Conflict Analysis",
@@ -1265,138 +1171,119 @@ class ConflictResolutionDialog:
             padx=15,
             pady=15
         )
-        analysis_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 20))  # Fill both X and Y, expand to take more space
+        analysis_frame.pack(fill=tk.X, pady=(0, 20))  # Changed to fill X only, not BOTH
         
-        # Create main container with expanded layout
+        # Create main container with compact layout
         main_container = tk.Frame(analysis_frame, bg="#FEF3C7")
-        main_container.pack(fill=tk.BOTH, expand=True)  # Fill both X and Y
+        main_container.pack(fill=tk.X)  # Changed to fill X only
         
-        # Three column layout for the three file categories - expanded
+        # Three column layout for the three file categories - more compact
         columns_frame = tk.Frame(main_container, bg="#FEF3C7")
-        columns_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        columns_frame.pack(fill=tk.X)
         
         # Column 1: Local Repository Files
         local_col = tk.Frame(columns_frame, bg="#FEF3C7")
-        local_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
+        local_col.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 3))
         
         local_label = tk.Label(
             local_col,
             text=f"🏠 Local ({len(self.analysis.local_files)})",
-            font=("Arial", 10, "bold"),
+            font=("Arial", 9, "bold"),
             bg="#FEF3C7",
             fg="#92400E"
         )
-        local_label.pack(anchor=tk.W, pady=(0, 5))
+        local_label.pack(anchor=tk.W, pady=(0, 3))
         
-        # Expanded listbox frame with scrollbar for local files
+        # Compact listbox for local files
         local_frame = tk.Frame(local_col, bg="#FEF3C7", relief=tk.SUNKEN, borderwidth=1)
-        local_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
+        local_frame.pack(fill=tk.X, pady=(0, 5))
         
-        # Create listbox with scrollbar
-        local_scrollbar = tk.Scrollbar(local_frame, orient=tk.VERTICAL)
         local_listbox = tk.Listbox(
             local_frame,
-            font=("Courier", 9),
+            height=4,  # Reduced height for compact layout
+            font=("Courier", 8),
             bg="#FFFBEB",
             fg="#92400E",
-            selectmode=tk.SINGLE,
-            yscrollcommand=local_scrollbar.set
+            selectmode=tk.SINGLE
         )
-        local_scrollbar.config(command=local_listbox.yview)
+        local_listbox.pack(fill=tk.X)
         
-        local_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        local_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        # Register listbox for per-list scrolling
-        self.listboxes.append(local_listbox)
-        
-        # Add all local files (no limit)
-        for file in self.analysis.local_files:
+        for file in self.analysis.local_files[:10]:  # Show only first 10 files to save space
             local_listbox.insert(tk.END, f"📄 {file}")
+        if len(self.analysis.local_files) > 10:
+            local_listbox.insert(tk.END, f"... and {len(self.analysis.local_files) - 10} more")
         
         # Column 2: Remote Repository Files  
         remote_col = tk.Frame(columns_frame, bg="#FEF3C7")
-        remote_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 5))
+        remote_col.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(3, 3))
         
         remote_label = tk.Label(
             remote_col,
             text=f"🌐 Remote ({len(self.analysis.remote_files)})",
-            font=("Arial", 10, "bold"),
+            font=("Arial", 9, "bold"),
             bg="#FEF3C7",
             fg="#92400E"
         )
-        remote_label.pack(anchor=tk.W, pady=(0, 5))
+        remote_label.pack(anchor=tk.W, pady=(0, 3))
         
-        # Expanded listbox frame with scrollbar for remote files
+        # Compact listbox for remote files
         remote_frame = tk.Frame(remote_col, bg="#FEF3C7", relief=tk.SUNKEN, borderwidth=1)
-        remote_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
+        remote_frame.pack(fill=tk.X, pady=(0, 5))
         
-        # Create listbox with scrollbar
-        remote_scrollbar = tk.Scrollbar(remote_frame, orient=tk.VERTICAL)
         remote_listbox = tk.Listbox(
             remote_frame,
-            font=("Courier", 9),
+            height=4,  # Reduced height for compact layout
+            font=("Courier", 8),
             bg="#FFFBEB",
             fg="#92400E",
-            selectmode=tk.SINGLE,
-            yscrollcommand=remote_scrollbar.set
+            selectmode=tk.SINGLE
         )
-        remote_scrollbar.config(command=remote_listbox.yview)
+        remote_listbox.pack(fill=tk.X)
         
-        remote_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        remote_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        # Register listbox for per-list scrolling
-        self.listboxes.append(remote_listbox)
-        
-        # Add all remote files (no limit)
-        for file in self.analysis.remote_files:
+        for file in self.analysis.remote_files[:10]:  # Show only first 10 files to save space
             remote_listbox.insert(tk.END, f"📄 {file}")
+        if len(self.analysis.remote_files) > 10:
+            remote_listbox.insert(tk.END, f"... and {len(self.analysis.remote_files) - 10} more")
         
         # Column 3: Common Files with conflict status
         common_col = tk.Frame(columns_frame, bg="#FEF3C7")
-        common_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 0))
+        common_col.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(3, 0))
         
         common_label = tk.Label(
             common_col,
             text=f"🤝 Common ({len(self.analysis.common_files)})",
-            font=("Arial", 10, "bold"),
+            font=("Arial", 9, "bold"),
             bg="#FEF3C7",
             fg="#92400E"
         )
-        common_label.pack(anchor=tk.W, pady=(0, 5))
+        common_label.pack(anchor=tk.W, pady=(0, 3))
         
-        # Expanded listbox frame with scrollbar for common files
+        # Compact listbox for common files with status
         common_frame = tk.Frame(common_col, bg="#FEF3C7", relief=tk.SUNKEN, borderwidth=1)
-        common_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
+        common_frame.pack(fill=tk.X, pady=(0, 5))
         
-        # Create listbox with scrollbar
-        common_scrollbar = tk.Scrollbar(common_frame, orient=tk.VERTICAL)
         common_listbox = tk.Listbox(
             common_frame,
-            font=("Courier", 9),
+            height=4,  # Reduced height for compact layout
+            font=("Courier", 8),
             bg="#FFFBEB",
             fg="#92400E",
-            selectmode=tk.SINGLE,
-            yscrollcommand=common_scrollbar.set
+            selectmode=tk.SINGLE
         )
-        common_scrollbar.config(command=common_listbox.yview)
+        common_listbox.pack(fill=tk.X)
         
-        common_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        common_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        # Register listbox for per-list scrolling
-        self.listboxes.append(common_listbox)
-        
-        # Add all common files with status indicators (no limit)
+        # Add common files with status indicators - compact format
         conflicted_file_paths = {f.path for f in self.analysis.conflicted_files}
-        for file in self.analysis.common_files:
+        for file in self.analysis.common_files[:10]:  # Show only first 10 files
             if file in conflicted_file_paths:
                 common_listbox.insert(tk.END, f"⚠️ {file}")
             else:
                 common_listbox.insert(tk.END, f"✅ {file}")
+        if len(self.analysis.common_files) > 10:
+            common_listbox.insert(tk.END, f"... and {len(self.analysis.common_files) - 10} more")
+    
     def _create_strategy_selection_section(self, parent):
-        """Create the enhanced strategy selection section with horizontal layout and simplified options"""
+        """Create the enhanced strategy selection section with proper radio button grouping"""
         strategy_frame = tk.LabelFrame(
             parent,
             text="🎯 Choose Resolution Strategy",
@@ -1406,7 +1293,7 @@ class ConflictResolutionDialog:
             padx=20,
             pady=20
         )
-        strategy_frame.pack(fill=tk.X, pady=(0, 15))  # Reduced bottom padding for more compact layout
+        strategy_frame.pack(fill=tk.X, pady=(0, 20))
         
         # Important: Use a single StringVar to ensure mutual exclusivity
         self.strategy_var = tk.StringVar(value="smart_merge")
@@ -1421,113 +1308,110 @@ class ConflictResolutionDialog:
         )
         instruction_label.pack(anchor=tk.W, pady=(0, 15))
         
-        # Horizontal container for the three strategy options
-        strategies_container = tk.Frame(strategy_frame, bg="#F0FDF4")
-        strategies_container.pack(fill=tk.X, pady=(0, 15))
-        
-        # Strategy 1: Smart Merge (Recommended) - Left column
-        smart_frame = tk.Frame(strategies_container, bg="#DCFCE7", relief=tk.RAISED, borderwidth=2)
-        smart_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+        # Smart Merge option with highlighted background
+        smart_frame = tk.Frame(strategy_frame, bg="#DCFCE7", relief=tk.RAISED, borderwidth=2)
+        smart_frame.pack(fill=tk.X, pady=8, padx=5)
         
         self.smart_radio = tk.Radiobutton(
             smart_frame,
-            text="🧠 Smart Merge\n(Recommended)",
+            text="🧠 Smart Merge (Recommended)",
             variable=self.strategy_var,
             value="smart_merge",
-            font=("Arial", 11, "bold"),
+            font=("Arial", 12, "bold"),
             bg="#DCFCE7",
             fg="#166534",
             activebackground="#DCFCE7",
             activeforeground="#166534",
-            selectcolor="#FFFFFF",
+            selectcolor="#FFFFFF",  # White background for selected radio button
             highlightbackground="#DCFCE7",
             relief=tk.FLAT,
-            indicatoron=True,
-            command=self._update_selection_indicator,
-            wraplength=150,
-            justify=tk.CENTER
+            indicatoron=True,  # Ensure radio button indicator is shown
+            command=self._update_selection_indicator
         )
-        self.smart_radio.pack(pady=(10, 5))
+        self.smart_radio.pack(anchor=tk.W, padx=10, pady=(10, 5))
         
         smart_desc = tk.Label(
             smart_frame,
-            text="Intelligently combines both repositories. Best choice for preserving all work.",
-            font=("Arial", 9, "normal"),
+            text="✅ Intelligently combines both repositories\n"
+                 "✅ Files with conflicts will be resolved interactively\n"
+                 "✅ Best choice for preserving all work from both sides",
+            font=("Arial", 10, "normal"),
             bg="#DCFCE7",
             fg="#166534",
-            justify=tk.CENTER,
-            wraplength=150
+            justify=tk.LEFT,
+            wraplength=600
         )
-        smart_desc.pack(padx=5, pady=(0, 10))
-          # Strategy 2: Keep Local Files Only - Center column
-        local_frame = tk.Frame(strategies_container, bg="#E0F2FE", relief=tk.RAISED, borderwidth=1)
-        local_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 5))
+        smart_desc.pack(anchor=tk.W, padx=(30, 10), pady=(0, 10))
+        
+        # Keep Local option
+        local_frame = tk.Frame(strategy_frame, bg="#F9FAFB", relief=tk.RAISED, borderwidth=1)
+        local_frame.pack(fill=tk.X, pady=5, padx=5)
         
         self.local_radio = tk.Radiobutton(
             local_frame,
-            text="🏠 Keep Local\nFiles Only",
+            text="🏠 Keep Local Only",
             variable=self.strategy_var,
             value="keep_local_only",
-            font=("Arial", 11, "bold"),
-            bg="#E0F2FE",
-            fg="#0369A1",
-            activebackground="#E0F2FE",
-            activeforeground="#0369A1",
-            selectcolor="#FFFFFF",
-            highlightbackground="#E0F2FE",
+            font=("Arial", 12, "bold"),
+            bg="#F9FAFB",
+            fg="#374151",
+            activebackground="#F9FAFB",
+            activeforeground="#374151",
+            selectcolor="#FFFFFF",  # White background for selected radio button
+            highlightbackground="#F9FAFB",
             relief=tk.FLAT,
-            indicatoron=True,
-            command=self._update_selection_indicator,
-            wraplength=150,
-            justify=tk.CENTER
+            indicatoron=True,  # Ensure radio button indicator is shown
+            command=self._update_selection_indicator
         )
-        self.local_radio.pack(pady=(10, 5))
+        self.local_radio.pack(anchor=tk.W, padx=10, pady=(10, 5))
         
         local_desc = tk.Label(
             local_frame,
-            text="Keep only your local files. Remote changes will be backed up.",
-            font=("Arial", 9, "normal"),
-            bg="#E0F2FE",
-            fg="#0369A1",
-            justify=tk.CENTER,
-            wraplength=150
+            text="📁 Preserve local files while merging remote history\n"
+                 "💾 Remote changes will be backed up in separate branches\n"
+                 "⚠️ Remote-only files will be ignored",
+            font=("Arial", 10, "normal"),
+            bg="#F9FAFB",
+            fg="#374151",
+            justify=tk.LEFT,
+            wraplength=600
         )
-        local_desc.pack(padx=5, pady=(0, 10))
+        local_desc.pack(anchor=tk.W, padx=(30, 10), pady=(0, 10))
         
-        # Strategy 3: Keep Remote Files Only - Right column
-        remote_frame = tk.Frame(strategies_container, bg="#F3E8FF", relief=tk.RAISED, borderwidth=1)
-        remote_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(10, 0))
+        # Keep Remote option
+        remote_frame = tk.Frame(strategy_frame, bg="#F9FAFB", relief=tk.RAISED, borderwidth=1)
+        remote_frame.pack(fill=tk.X, pady=5, padx=5)
         
         self.remote_radio = tk.Radiobutton(
             remote_frame,
-            text="🌐 Keep Remote\nFiles Only",
+            text="🌐 Keep Remote Only",
             variable=self.strategy_var,
             value="keep_remote_only",
-            font=("Arial", 11, "bold"),
-            bg="#F3E8FF",
-            fg="#7C3AED",
-            activebackground="#F3E8FF",
-            activeforeground="#7C3AED",
-            selectcolor="#FFFFFF",
-            highlightbackground="#F3E8FF",
+            font=("Arial", 12, "bold"),
+            bg="#F9FAFB",
+            fg="#374151",
+            activebackground="#F9FAFB",
+            activeforeground="#374151",
+            selectcolor="#FFFFFF",  # White background for selected radio button
+            highlightbackground="#F9FAFB",
             relief=tk.FLAT,
-            indicatoron=True,
-            command=self._update_selection_indicator,
-            wraplength=150,
-            justify=tk.CENTER
+            indicatoron=True,  # Ensure radio button indicator is shown
+            command=self._update_selection_indicator
         )
-        self.remote_radio.pack(pady=(10, 5))
+        self.remote_radio.pack(anchor=tk.W, padx=10, pady=(10, 5))
         
         remote_desc = tk.Label(
             remote_frame,
-            text="Adopt remote files only. Local files will be backed up.",
-            font=("Arial", 9, "normal"),
-            bg="#F3E8FF",
-            fg="#7C3AED",
-            justify=tk.CENTER,
-            wraplength=150
+            text="🌐 Adopt remote files while preserving local history\n"
+                 "💾 Local files will be backed up in separate branches\n"
+                 "⚠️ Local-only files will be replaced by remote versions",
+            font=("Arial", 10, "normal"),
+            bg="#F9FAFB",
+            fg="#374151",
+            justify=tk.LEFT,
+            wraplength=600
         )
-        remote_desc.pack(padx=5, pady=(0, 10))
+        remote_desc.pack(anchor=tk.W, padx=(30, 10), pady=(0, 10))
         
         # Add visual indicator for current selection
         selection_frame = tk.Frame(strategy_frame, bg="#F0FDF4")
@@ -1544,12 +1428,13 @@ class ConflictResolutionDialog:
         
         # Ensure the initial selection is properly set
         self._update_selection_indicator()
+    
     def _update_selection_indicator(self):
         """Update the selection indicator when strategy changes"""
         strategy_names = {
             "smart_merge": "💡 Currently selected: Smart Merge (Recommended)",
-            "keep_local_only": "💡 Currently selected: Keep Local Files Only",
-            "keep_remote_only": "💡 Currently selected: Keep Remote Files Only"
+            "keep_local_only": "💡 Currently selected: Keep Local Only",
+            "keep_remote_only": "💡 Currently selected: Keep Remote Only"
         }
         
         selected = self.strategy_var.get()
@@ -1558,42 +1443,54 @@ class ConflictResolutionDialog:
         if hasattr(self, 'selection_label') and self.selection_label:
             self.selection_label.configure(text=strategy_names.get(selected, ""))
             
-            # Change color based on selection - use neutral colors
+            # Change color based on selection
             if selected == "smart_merge":
                 self.selection_label.configure(fg="#15803D")  # Green for recommended
             elif selected == "keep_local_only":
-                self.selection_label.configure(fg="#0369A1")  # Blue for local
+                self.selection_label.configure(fg="#2563EB")  # Blue for local
             else:  # keep_remote_only
-                self.selection_label.configure(fg="#7C3AED")  # Purple for remote (neutral)
+                self.selection_label.configure(fg="#DC2626")  # Red for remote (more destructive)
             
             # Force update the display
-            self.selection_label.update_idletasks()        
+            self.selection_label.update_idletasks()
+        
         print(f"[DEBUG] Selection indicator updated for: {selected}")  # Debug output
+    
     def _create_controls(self, parent):
-        """Create the control buttons directly below the strategy selection section"""
-        # Control panel positioned in normal flow below strategy selection
+        """Create the control buttons directly below the strategy selection"""
+        # Control panel below strategy selection
         controls_frame = tk.Frame(parent, bg="#F8F9FA", relief=tk.RAISED, borderwidth=2)
-        controls_frame.pack(fill=tk.X, pady=(10, 20), padx=5)  # Normal flow positioning
+        controls_frame.pack(fill=tk.X, pady=(10, 20), padx=5)
         
-        # Inner frame for proper spacing and centering
+        # Inner frame for proper spacing
         inner_frame = tk.Frame(controls_frame, bg="#F8F9FA")
-        inner_frame.pack(pady=15)  # Center the inner frame
+        inner_frame.pack(fill=tk.X, padx=20, pady=15)
         
-        # Instruction text - centered
+        # Add a clear separator line above buttons
+        separator_label = tk.Label(
+            inner_frame,
+            text="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+            font=("Arial", 8, "normal"),
+            bg="#F8F9FA",
+            fg="#9CA3AF"
+        )
+        separator_label.pack(fill=tk.X, pady=(0, 10))
+        
+        # Instruction text
         instruction_label = tk.Label(
             inner_frame,
             text="⚡ Ready to proceed? Click the button below to apply your selected strategy:",
-            font=("Arial", 11, "bold"),
+            font=("Arial", 10, "bold"),
             bg="#F8F9FA",
             fg="#374151"
         )
-        instruction_label.pack(pady=(0, 15))
+        instruction_label.pack(pady=(0, 10))
         
-        # Button container for proper centering
+        # Button container for centering
         button_frame = tk.Frame(inner_frame, bg="#F8F9FA")
         button_frame.pack()
         
-        # Cancel button - improved styling
+        # Cancel button
         cancel_btn = tk.Button(
             button_frame,
             text="❌ Cancel",
@@ -1604,12 +1501,11 @@ class ConflictResolutionDialog:
             relief=tk.FLAT,
             cursor="hand2",
             padx=25,
-            pady=10,
-            bd=1
+            pady=10
         )
-        cancel_btn.pack(side=tk.LEFT, padx=(0, 20))
+        cancel_btn.pack(side=tk.LEFT, padx=(0, 15))
         
-        # Proceed button - improved styling
+        # Proceed button
         proceed_btn = tk.Button(
             button_frame,
             text="✅ Proceed with Selected Strategy",
@@ -1620,8 +1516,7 @@ class ConflictResolutionDialog:
             relief=tk.FLAT,
             cursor="hand2",
             padx=25,
-            pady=10,
-            bd=1
+            pady=10
         )
         proceed_btn.pack(side=tk.LEFT)
     
