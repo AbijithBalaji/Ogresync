@@ -292,8 +292,7 @@ class OgresyncBackupManager:
         """Register backup in metadata registry"""
         registry = self._load_backup_registry()
         backup_dict = asdict(backup_info)
-        
-        # Convert datetime and enums to strings for JSON serialization
+          # Convert datetime and enums to strings for JSON serialization
         backup_dict['created_at'] = backup_info.created_at.isoformat()
         backup_dict['backup_type'] = backup_info.backup_type.value
         backup_dict['reason'] = backup_info.reason.value
@@ -323,7 +322,10 @@ class OgresyncBackupManager:
     def _create_recovery_instructions(self, backup_info: BackupInfo):
         """Create user-friendly recovery instructions"""
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        instructions_file = os.path.join(self.vault_path, f"OGRESYNC_RECOVERY_INSTRUCTIONS_{timestamp}.txt")
+        # Create recovery instructions in backup directory, not in the main vault
+        backup_dir = os.path.join(self.vault_path, '.ogresync-backups')
+        os.makedirs(backup_dir, exist_ok=True)
+        instructions_file = os.path.join(backup_dir, f"OGRESYNC_RECOVERY_INSTRUCTIONS_{timestamp}.txt")
         
         instructions = f"""
 OGRESYNC RECOVERY INSTRUCTIONS

@@ -2230,16 +2230,12 @@ Created: {time.strftime('%Y-%m-%d %H:%M:%S')}
             return True, f"Local files prepared for push - final sync will complete the upload: {str(e)}"
     
     def _handle_conflict_resolution(self, vault_path, remote_url, local_files, remote_files, current_step):
-        """Handle Scenario 4: Both have files - use enhanced two-stage conflict resolution."""
-        self._update_status("⚔️ Both repositories have files - launching enhanced conflict resolution system...")
+        """Handle Scenario 4: Both have files - check for conflicts first, then resolve if needed."""
+        self._update_status("🔍 Analyzing repositories for conflicts...")
         
         print(f"[DEBUG] Conflict resolution triggered - Local files: {len(local_files)}, Remote files: {len(remote_files)}")
         print(f"[DEBUG] CONFLICT_RESOLUTION_AVAILABLE: {CONFLICT_RESOLUTION_AVAILABLE}")
         print(f"[DEBUG] Stage1_conflict_resolution module: {Stage1_conflict_resolution is not None}")
-        
-        # CRITICAL: Never bypass conflict resolution when both repos have files
-        # This is exactly what the user complained about - the system was falling back to simple merge
-        # instead of presenting conflict resolution options
         
         if not CONFLICT_RESOLUTION_AVAILABLE:
             print("[DEBUG] Conflict resolution modules not available - ERROR!")
@@ -2250,64 +2246,109 @@ Created: {time.strftime('%Y-%m-%d %H:%M:%S')}
             return False, "Stage 1 conflict resolution module is not available. Cannot safely merge repositories with conflicting content."
         
         try:
-            # Show user information about the conflict resolution process
-            if ui_elements:
-                info_msg = (
-                    "🤝 Repository Synchronization Required!\n\n"
-                    f"📁 Local files: {len(local_files)} content files\n"
-                    f"🌐 Remote files: {len(remote_files)} content files\n\n"
-                    "Both your local vault and the remote repository contain files. "
-                    "Ogresync will guide you through safely combining them using our "
-                    "enhanced two-stage resolution system:\n\n"
-                    "🔄 Stage 1: Choose overall strategy\n"
-                    "• Smart Merge: Intelligently combine files (recommended)\n"
-                    "• Keep Local Only: Preserve local files with history\n"
-                    "• Keep Remote Only: Adopt remote files with backup\n\n"
-                    "🎯 Stage 2: File-by-file resolution (if needed)\n"
-                    "• Review conflicting files individually\n"
-                    "• Choose auto-merge, manual merge, or keep specific versions\n\n"
-                    "✅ All git history is preserved - no data loss guaranteed!\n\n"
-                    "Click OK to begin conflict resolution."                )
-                ui_elements.show_premium_info("Repository Conflict Resolution", info_msg, self.dialog)
-            
             print("[DEBUG] Creating conflict resolution engine...")
             conflict_engine = Stage1_conflict_resolution.ConflictResolutionEngine(vault_path)
             
-            # Analyze conflicts
+            # Analyze conflicts first to determine if conflict resolution is actually needed
             self._update_status("🔍 Analyzing repository conflicts...")
             print("[DEBUG] Analyzing conflicts...")
             conflict_analysis = conflict_engine.analyze_conflicts(remote_url)
             print(f"[DEBUG] Conflict analysis complete: {conflict_analysis}")
-              # Check if there are actually any conflicts that need resolution
+            
+            # Check if there are actual conflicts
             if not conflict_analysis.has_conflicts:
-                print("[DEBUG] No real conflicts detected - repositories are compatible!")
-                self._update_status("✅ No conflicts detected - repositories are already synchronized!")
+                print("✅ No conflicts detected - repositories are compatible! Proceeding with simple sync...")
+                self._update_status("✅ No conflicts detected - repositories are compatible! Syncing...")
                 
-                # Since there are no conflicts, we can just do a simple merge to combine histories
-                print("[DEBUG] Performing simple merge to combine compatible repositories...")
-                
-                # Get current branch for merge
-                current_branch = self._get_current_branch(vault_path)
-                remote_branch_ref = self._get_remote_branch_ref(vault_path, current_branch)
-                
-                # Simple merge since repositories are compatible
+                # If there are no conflicts, we can do a simple pull/merge
                 try:
-                    merge_result = subprocess.run(['git', 'merge', remote_branch_ref, '--allow-unrelated-histories', '--no-edit'], 
-                                               cwd=vault_path, capture_output=True, text=True, timeout=60)
+                    # Update the current step to show success
+                    current_step.set_status("success", "No conflicts - repositories are compatible")
                     
-                    if merge_result.returncode == 0:
-                        print("[DEBUG] Compatible repositories merged successfully")
-                        current_step.set_status("success")
+                    # Perform a simple git pull to sync everything
+                    result = subprocess.run(['git', 'pull', 'origin'], 
+                                          cwd=vault_path, capture_output=True, text=True, timeout=30)
+                    
+                    if result.returncode == 0:
+                        print("✅ Simple sync completed successfully")
+                        self._update_status("✅ Repositories synchronized successfully!")
+                        return True, "Repositories synchronized successfully - no conflicts detected"
+                    else:
+                        print(f"⚠️ Simple pull failed: {result.stderr}")
+                        # If simple pull fails, fall back to conflict resolution
+                        print("Falling back to conflict resolution...")
+                        self._update_status("⚠️ Simple sync failed - using conflict resolution...")
+                
+                except Exception as e:
+                    print(f"⚠️ Simple sync failed: {e}")
+                    print("Falling back to conflict resolution...")
+                    self._update_status("⚠️ Simple sync failed - using conflict resolution...")
+            
+            # If we reach here, either there are conflicts OR simple sync failed
+            if conflict_analysis.has_conflicts:
+                print(f"⚠️ Conflicts detected - showing conflict resolution dialog...")
+                self._update_status("⚔️ Conflicts detected - launching enhanced conflict resolution system...")
+                
+                # Show user information about the conflict resolution process
+                if ui_elements:
+                    info_msg = (
+                        "🤝 Repository Synchronization Required!\n\n"
+                        f"📁 Local files: {len(local_files)} content files\n"
+                        f"🌐 Remote files: {len(remote_files)} content files\n\n"
+                        "Conflicts detected between your local vault and the remote repository. "
+                        "Ogresync will guide you through safely combining them using our "
+                        "enhanced two-stage resolution system:\n\n"
+                        "🔄 Stage 1: Choose overall strategy\n"
+                        "• Smart Merge: Intelligently combine files (recommended)\n"
+                        "• Keep Local Only: Preserve local files with history\n"
+                        "• Keep Remote Only: Adopt remote files with backup\n\n"
+                        "🎯 Stage 2: File-by-file resolution (if needed)\n"
+                        "• Review conflicting files individually\n"
+                        "• Choose auto-merge, manual merge, or keep specific versions\n\n"
+                        "✅ All git history is preserved - no data loss guaranteed!\n\n"
+                        "Click OK to begin conflict resolution."
+                    )            
+            # Check if there are actually any conflicts that need resolution
+            if not conflict_analysis.has_conflicts:
+                print("✅ No conflicts detected - repositories are compatible!")
+                self._update_status("✅ No conflicts detected - repositories are compatible! Syncing...")
+                
+                # Since there are no conflicts, we can just do a simple pull/merge
+                print("[DEBUG] Performing simple sync to combine compatible repositories...")
+                
+                try:
+                    # Try a simple pull first
+                    pull_result = subprocess.run(['git', 'pull', 'origin'], 
+                                              cwd=vault_path, capture_output=True, text=True, timeout=30)
+                    
+                    if pull_result.returncode == 0:
+                        print("✅ Simple sync completed successfully")
+                        current_step.set_status("success", "No conflicts - repositories are compatible")
+                        self._update_status("✅ Repositories synchronized successfully!")
                         return True, f"Repositories synchronized successfully - no conflicts detected ({len(local_files)} files are identical)"
                     else:
-                        print(f"[DEBUG] Merge failed despite no conflicts detected: {merge_result.stderr}")
-                        # Fall through to conflict resolution as backup
+                        print(f"⚠️ Simple pull failed: {pull_result.stderr}")
+                        # Try merge as fallback
+                        current_branch = self._get_current_branch(vault_path)
+                        remote_branch_ref = self._get_remote_branch_ref(vault_path, current_branch)
+                        
+                        merge_result = subprocess.run(['git', 'merge', remote_branch_ref, '--allow-unrelated-histories', '--no-edit'], 
+                                                   cwd=vault_path, capture_output=True, text=True, timeout=60)
+                        
+                        if merge_result.returncode == 0:
+                            print("✅ Simple merge completed successfully")
+                            current_step.set_status("success", "No conflicts - repositories are compatible")
+                            return True, f"Repositories synchronized successfully - no conflicts detected ({len(local_files)} files are identical)"
+                        else:
+                            print(f"⚠️ Both pull and merge failed, falling back to conflict resolution: {merge_result.stderr}")
+                
                 except Exception as e:
-                    print(f"[DEBUG] Error during simple merge: {e}")
-                    # Fall through to conflict resolution as backup
+                    print(f"⚠️ Simple sync failed: {e}")
+                    print("Falling back to conflict resolution...")
             
-            # IMPORTANT: Only show conflict resolution when there are actual conflicts
-            print("[DEBUG] Conflicts detected - showing conflict resolution dialog...")
+            # If we reach here, either there are conflicts OR simple sync failed
+            print("⚠️ Conflicts detected or simple sync failed - showing conflict resolution dialog...")
+            self._update_status("⚔️ Launching enhanced conflict resolution system...")
             
             # Show Stage 1 dialog - handle parent type conversion
             self._update_status("🎯 Opening Stage 1 conflict resolution dialog...")

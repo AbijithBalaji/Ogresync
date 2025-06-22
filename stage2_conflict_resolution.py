@@ -124,24 +124,49 @@ class ExternalEditorManager:
             if ExternalEditorManager._test_editor_availability(commands):
                 editors[name] = commands
         
-        return editors
-    
+        return editors    
     @staticmethod
     def _test_editor_availability(commands: List[str]) -> bool:
         """Test if an editor command is available"""
         try:
-            # Test if the command exists
+            # Special handling for known editors that don't support --version
             if len(commands) == 1:
-                result = subprocess.run([commands[0], "--version"], 
-                                      capture_output=True, timeout=5)
-                return result.returncode == 0
+                command = commands[0].lower()
+                
+                # For Windows notepad, just check if the executable exists
+                if "notepad" in command and platform.system() == "Windows":
+                    if command == "notepad":
+                        # Notepad is always available on Windows
+                        return True
+                    else:
+                        # Check if notepad.exe exists at the specified path
+                        return os.path.exists(commands[0])
+                
+                # For other single commands, test with --version (but skip if it's a path)
+                if os.path.exists(commands[0]):
+                    # If it's a direct path to an executable, assume it works
+                    return True
+                else:
+                    # Test if command is available in PATH
+                    try:
+                        result = subprocess.run([commands[0], "--version"], 
+                                              capture_output=True, timeout=3, 
+                                              stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+                        return result.returncode == 0
+                    except:
+                        # If --version fails, try "which" or "where" command
+                        test_cmd = ["where" if platform.system() == "Windows" else "which", commands[0]]
+                        result = subprocess.run(test_cmd, capture_output=True, timeout=3)
+                        return result.returncode == 0
             else:
                 # For multi-part commands, just test if first part exists
-                result = subprocess.run(["which", commands[0]] if platform.system() != "Windows" 
-                                      else ["where", commands[0]], 
-                                      capture_output=True, timeout=5)
+                first_command = commands[0]
+                test_cmd = ["where" if platform.system() == "Windows" else "which", first_command]
+                result = subprocess.run(test_cmd, capture_output=True, timeout=3)
                 return result.returncode == 0
-        except:
+                
+        except Exception as e:
+            print(f"[DEBUG] Editor availability test failed for {commands}: {e}")
             return False
     
     @staticmethod
@@ -206,18 +231,24 @@ class Stage2ConflictResolutionDialog:
         self._create_ui()
         self._update_file_list()
         self._load_current_file()
-        
-        # Show dialog and wait for completion
+          # Show dialog and wait for completion
         try:
             if self.dialog:
-                # Make sure dialog is visible
+                # Ensure dialog is visible and on top
                 self.dialog.deiconify()
                 self.dialog.lift()
                 self.dialog.focus_force()
+                  # Bring to front again after a brief delay to ensure visibility
+                def bring_to_front():
+                    if self.dialog and hasattr(self.dialog, 'lift'):
+                        self.dialog.lift()
                 
-                # Set up modal behavior only if we have a visible parent
-                if self.parent and self.parent.winfo_viewable() and isinstance(self.dialog, tk.Toplevel):
-                    self.dialog.grab_set()
+                def force_focus():
+                    if self.dialog and hasattr(self.dialog, 'focus_force'):
+                        self.dialog.focus_force()
+                
+                self.dialog.after(100, bring_to_front)
+                self.dialog.after(200, force_focus)
                 
                 # Start the mainloop
                 self.dialog.mainloop()
@@ -230,19 +261,13 @@ class Stage2ConflictResolutionDialog:
     
     def _create_dialog(self):
         """Create the main dialog window"""
-        # Check if parent is withdrawn and create appropriate dialog
-        if self.parent and self.parent.winfo_viewable():
-            # Parent is visible, create as Toplevel
-            self.dialog = tk.Toplevel(self.parent)
-            self.dialog.transient(self.parent)
-        elif self.parent:
-            # Parent exists but is withdrawn, create as independent Tk window
-            self.dialog = tk.Tk()
-            # Store reference to parent for later cleanup
+        # Always create as a new independent window to ensure it's on top
+        self.dialog = tk.Tk()
+        
+        # If we have a parent, store reference but don't make it transient
+        # This ensures the Stage 2 dialog is always on top and visible
+        if self.parent:
             self._hidden_parent = self.parent
-        else:
-            # No parent provided, create new root window
-            self.dialog = tk.Tk()
         
         self.dialog.title("Stage 2: File-by-File Conflict Resolution")
         self.dialog.configure(bg="#FAFBFC")
@@ -251,12 +276,34 @@ class Stage2ConflictResolutionDialog:
         # Initialize Tkinter variables after dialog window is created
         self.file_list_var = tk.StringVar()
         
-        # Set larger size for better usability and proper minimum sizes
-        width, height = 1500, 900  # Increased width for better layout
-        x = (self.dialog.winfo_screenwidth() // 2) - (width // 2)
-        y = (self.dialog.winfo_screenheight() // 2) - (height // 2)
+        # Set positioning to top-right of screen for better visibility
+        width, height = 1500, 900
+        screen_width = self.dialog.winfo_screenwidth()
+        screen_height = self.dialog.winfo_screenheight()
+        
+        # Position in top-right area, with some margin from edges
+        x = screen_width - width - 100  # 100px margin from right edge
+        y = 50  # 50px margin from top edge
+        
+        # Ensure dialog fits on screen
+        if x < 0:
+            x = 50
+        if y + height > screen_height:
+            y = screen_height - height - 50
+        
         self.dialog.geometry(f"{width}x{height}+{x}+{y}")
-        self.dialog.minsize(1350, 700)  # Increased minimum width to prevent cramping
+        self.dialog.minsize(1350, 700)
+          # Ensure dialog is always on top and gets focus
+        self.dialog.attributes('-topmost', True)  # Always on top
+        self.dialog.lift()  # Bring to front
+        self.dialog.focus_force()  # Force focus
+        
+        # After a short delay, remove topmost to allow normal window interaction
+        def remove_topmost():
+            if self.dialog and hasattr(self.dialog, 'attributes'):
+                self.dialog.attributes('-topmost', False)
+        
+        self.dialog.after(2000, remove_topmost)
         
         # Handle window close event properly
         self.dialog.protocol("WM_DELETE_WINDOW", self._on_window_close)

@@ -343,14 +343,19 @@ class ConflictResolutionEngine:
                 conflicted_files.append(file_info)
             else:
                 identical_files.append(file_path)
+          # Determine if user choice is needed
+        # We need user input only when there are actual conflicts:
+        # 1. Files with content differences (conflicted_files)
+        # 2. Files that exist only locally (local_only)
+        # 3. Files that exist only remotely (remote_only)
+        # If all files are identical, no user intervention is needed.
         
-        # Determine if user choice is needed
-        # We need user input whenever both local and remote have meaningful files,
-        # regardless of whether they overlap or not. This ensures the user can choose
-        # their preferred strategy (Smart Merge, Keep Local Only, Keep Remote Only)
-        # when both repositories contain content.
+        has_actual_conflicts = bool(conflicted_files) or bool(local_only) or bool(remote_only)
         both_have_files = bool(local_files) and bool(remote_files)
-        has_conflicts = both_have_files
+        
+        # Only trigger conflict resolution if there are actual differences
+        has_conflicts = has_actual_conflicts
+        
         conflict_type = ConflictType.INITIAL_SETUP  # For now, focusing on initial setup
         
         analysis = ConflictAnalysis(
@@ -383,6 +388,24 @@ class ConflictResolutionEngine:
                             files.append(rel_path.replace(os.sep, '/'))  # Normalize path separators
         except Exception as e:
             print(f"[DEBUG] Error getting local files: {e}")
+        
+        return files
+    
+    def _get_current_working_files(self) -> List[str]:
+        """Get list of meaningful files currently in the working directory"""
+        files = []
+        try:
+            if os.path.exists(self.vault_path):
+                for root, dirs, filenames in os.walk(self.vault_path):
+                    # Skip certain directories entirely
+                    dirs[:] = [d for d in dirs if d not in {'.git', '.obsidian', '__pycache__', '.vscode', '.idea', 'node_modules', '.vs', '.pytest_cache', '.mypy_cache', '.coverage', 'venv', '.venv', 'env', '.env'}]
+                    
+                    for filename in filenames:
+                        rel_path = os.path.relpath(os.path.join(root, filename), self.vault_path)
+                        if self._is_meaningful_file(rel_path):
+                            files.append(rel_path.replace(os.sep, '/'))  # Normalize path separators
+        except Exception as e:
+            print(f"[DEBUG] Error getting current working files: {e}")
         
         return files
     
@@ -534,8 +557,7 @@ class ConflictResolutionEngine:
                 return self._apply_keep_local_only(analysis, backup_branch)
             elif strategy == ConflictStrategy.KEEP_REMOTE_ONLY:
                 return self._apply_keep_remote_only(analysis, backup_branch)
-            else:
-                return ResolutionResult(
+            else:                return ResolutionResult(
                     success=False,
                     strategy=None,
                     message=f"Unknown strategy: {strategy}",
@@ -551,23 +573,72 @@ class ConflictResolutionEngine:
                 files_processed=[],
                 backup_created=backup_branch
             )
-    
+
     def _apply_smart_merge(self, analysis: ConflictAnalysis, backup_branch: str) -> ResolutionResult:
-        """Apply smart merge strategy - combines files intelligently using git merge"""
-        print("[DEBUG] Applying smart merge strategy with history preservation")
+        """Apply smart merge strategy - combines all files from both repositories intelligently"""
+        print("[DEBUG] Applying smart merge strategy with comprehensive file combination")
         
         files_processed = []
+        stage2_resolved_files = []
         
         try:
-            # Ensure we have clean working directory
+            # STEP 1: Handle files with content conflicts using Stage 2 resolution
+            if analysis.conflicted_files:
+                print(f"⚠️ Found {len(analysis.conflicted_files)} files with content conflicts - initiating Stage 2 resolution")
+                
+                # Check if Stage 2 is available
+                if not STAGE2_AVAILABLE or not stage2:
+                    return ResolutionResult(
+                        success=False,
+                        strategy=ConflictStrategy.SMART_MERGE,
+                        message=f"Found {len(analysis.conflicted_files)} files with content conflicts but Stage 2 resolution not available. Please resolve conflicts manually.",
+                        files_processed=files_processed,
+                        backup_created=backup_branch
+                    )
+                
+                # Initiate Stage 2 resolution for conflicted files
+                stage2_result = self._initiate_stage2_resolution(analysis)
+                
+                if not stage2_result or not stage2_result.success:
+                    return ResolutionResult(
+                        success=False,
+                        strategy=ConflictStrategy.SMART_MERGE,
+                        message="Stage 2 conflict resolution failed or was cancelled",
+                        files_processed=files_processed,
+                        backup_created=backup_branch
+                    )
+                
+                # Apply Stage 2 resolutions
+                apply_result = self._apply_stage2_resolutions(stage2_result)
+                if not apply_result:
+                    return ResolutionResult(
+                        success=False,
+                        strategy=ConflictStrategy.SMART_MERGE,
+                        message="Failed to apply Stage 2 resolutions",
+                        files_processed=files_processed,
+                        backup_created=backup_branch
+                    )
+                
+                print(f"✅ Stage 2 resolution completed for {len(stage2_result.resolved_files)} files")
+                stage2_resolved_files = stage2_result.resolved_files
+                files_processed.extend(stage2_resolved_files)
+            
+            # STEP 2: Ensure all local changes (including Stage 2 resolutions) are committed
             stdout, stderr, rc = self._run_git_command("git status --porcelain")
             if rc == 0 and stdout.strip():
                 # Stage any unstaged changes
                 self._run_git_command("git add -A")
-                self._run_git_command('git commit -m "Auto-commit before smart merge"')
-                print("✅ Staged and committed local changes before merge")
+                commit_message = "Auto-commit local changes and Stage 2 resolutions before smart merge"
+                if stage2_resolved_files:
+                    commit_message += f"\n\nStage 2 resolutions applied to {len(stage2_resolved_files)} files:\n" + "\n".join([f"- {f}" for f in stage2_resolved_files])
+                
+                if platform.system() == "Windows":
+                    self._run_git_command(f'git commit -m "{commit_message}"')
+                else:
+                    self._run_git_command(f"git commit -m '{commit_message}'")
+                print("✅ Committed local changes and Stage 2 resolutions")
             
-            # Fetch latest remote state
+            # STEP 3: Fetch latest remote state
             stdout, stderr, rc = self._run_git_command("git fetch origin")
             if rc != 0:
                 return ResolutionResult(
@@ -578,20 +649,14 @@ class ConflictResolutionEngine:
                     backup_created=backup_branch
                 )
             
-            # Perform smart merge using git merge (preserves history)
-            print("Performing intelligent merge with history preservation...")
-              # Use the detected default remote branch
+            # STEP 4: Get the correct remote branch
             remote_branch = getattr(self, 'default_remote_branch', 'origin/main')
-            
-            # Validate and fix remote branch reference
             if not remote_branch.startswith('origin/'):
                 print(f"[DEBUG] Invalid remote branch reference '{remote_branch}', fixing...")
-                # Try to detect the correct remote branch
                 stdout, stderr, rc = self._run_git_command("git branch -r")
                 if rc == 0 and stdout.strip():
                     remote_branches = [b.strip() for b in stdout.splitlines() if b.strip() and not b.strip().startswith('origin/HEAD')]
                     if remote_branches:
-                        # Use the first available remote branch, preferring main/master
                         preferred_branches = ['origin/main', 'origin/master']
                         for preferred in preferred_branches:
                             if preferred in remote_branches:
@@ -601,86 +666,112 @@ class ConflictResolutionEngine:
                             remote_branch = remote_branches[0]
                         print(f"[DEBUG] Corrected remote branch to: {remote_branch}")
                     else:
-                        remote_branch = 'origin/main'  # Fallback
-                        print(f"[DEBUG] No remote branches found, using fallback: {remote_branch}")
+                        remote_branch = 'origin/main'
                 else:
-                    remote_branch = 'origin/main'  # Fallback
-                    print(f"[DEBUG] Could not list remote branches, using fallback: {remote_branch}")
+                    remote_branch = 'origin/main'
             
-            print(f"[DEBUG] Using remote branch for smart merge: {remote_branch}")
+            print(f"[DEBUG] Using remote branch: {remote_branch}")
             
-            # Construct merge command with proper Windows quote handling
-            merge_message = "Smart merge - combining local and remote changes"
+            # STEP 5: Perform intelligent merge
+            print("Performing intelligent merge to combine all files...")
+            
+            # Try merge with allow-unrelated-histories
+            merge_message = "Smart merge - combining all files from local and remote"
             if platform.system() == "Windows":
-                smart_merge_command = f'git merge {remote_branch} --no-ff --allow-unrelated-histories -m "{merge_message}"'
+                merge_command = f'git merge {remote_branch} --no-ff --allow-unrelated-histories -m "{merge_message}"'
             else:
-                smart_merge_command = f"git merge {remote_branch} --no-ff --allow-unrelated-histories -m '{merge_message}'"
+                merge_command = f"git merge {remote_branch} --no-ff --allow-unrelated-histories -m '{merge_message}'"
             
-            print(f"[DEBUG] Smart merge command: {smart_merge_command}")
-            stdout, stderr, rc = self._run_git_command(smart_merge_command)
+            print(f"[DEBUG] Executing merge command: {merge_command}")
+            stdout, stderr, rc = self._run_git_command(merge_command)
             
-            if rc == 0:
-                # Merge successful - no conflicts
-                print("✅ Smart merge completed successfully without conflicts")
-                files_processed = analysis.local_files + analysis.remote_files
-                
+            if rc != 0:
+                print(f"[DEBUG] Merge failed with error: {stderr}")
+                # If merge fails, we'll need to handle it manually
                 return ResolutionResult(
-                    success=True,
+                    success=False,
                     strategy=ConflictStrategy.SMART_MERGE,
-                    message="Smart merge completed successfully - all changes combined with full history preservation",
+                    message=f"Automatic merge failed: {stderr}. This may require manual conflict resolution.",
                     files_processed=files_processed,
                     backup_created=backup_branch
                 )
+            
+            print("✅ Git merge completed")
+            
+            # STEP 6: Ensure ALL files from both repositories are present
+            print("Ensuring all files from both repositories are present...")
+            
+            # Get current files in working directory
+            current_files = self._get_current_working_files()
+            expected_files = set(analysis.local_files + analysis.remote_files)
+            missing_files = expected_files - set(current_files)
+            
+            if missing_files:
+                print(f"⚠️ Found {len(missing_files)} missing files after merge, checking them out from remote: {missing_files}")
+                
+                # Checkout missing files from remote
+                for missing_file in missing_files:
+                    print(f"[DEBUG] Checking out missing file: {missing_file}")
+                    checkout_stdout, checkout_stderr, checkout_rc = self._run_git_command(f"git checkout {remote_branch} -- \"{missing_file}\"")
+                    if checkout_rc == 0:
+                        print(f"✅ Successfully checked out: {missing_file}")
+                    else:
+                        print(f"⚠️ Could not checkout {missing_file}: {checkout_stderr}")
+                
+                # Stage the newly checked out files
+                self._run_git_command("git add -A")
+                
+                # Check if there are any changes to commit
+                stdout, stderr, rc = self._run_git_command("git status --porcelain")
+                if rc == 0 and stdout.strip():
+                    # Commit the missing files
+                    if platform.system() == "Windows":
+                        commit_cmd = f'git commit -m "Complete smart merge - add missing remote files"'
+                    else:
+                        commit_cmd = f"git commit -m 'Complete smart merge - add missing remote files'"
+                    
+                    commit_stdout, commit_stderr, commit_rc = self._run_git_command(commit_cmd)
+                    if commit_rc == 0:
+                        print("✅ Committed missing remote files")
+                    else:
+                        print(f"⚠️ Could not commit missing files: {commit_stderr}")
+            
+            # STEP 7: Verify all expected files are present
+            final_files = self._get_current_working_files()
+            final_files_set = set(final_files)
+            still_missing = expected_files - final_files_set
+            
+            if still_missing:
+                print(f"⚠️ Warning: {len(still_missing)} files are still missing after smart merge: {still_missing}")
             else:
-                # Merge conflicts occurred - need Stage 2 resolution
-                if "CONFLICT" in stderr or "CONFLICT" in stdout:
-                    print("⚠️ Merge conflicts detected - initiating Stage 2 resolution for files with different content only")
-                    
-                    # Check if Stage 2 is available
-                    if not stage2:
-                        return ResolutionResult(
-                            success=False,
-                            strategy=ConflictStrategy.SMART_MERGE,
-                            message="Merge conflicts detected but Stage 2 resolution not available. Please resolve conflicts manually.",
-                            files_processed=files_processed,
-                            backup_created=backup_branch
-                        )
-                    
-                    # Identify conflicted files and prepare for Stage 2
-                    stage2_result = self._initiate_stage2_resolution(analysis)
-                    
-                    if stage2_result and stage2_result.success:
-                        # Apply Stage 2 resolutions
-                        apply_result = self._apply_stage2_resolutions(stage2_result)
-                        if apply_result:
-                            return ResolutionResult(
-                                success=True,
-                                strategy=ConflictStrategy.SMART_MERGE,
-                                message=f"Smart merge completed with Stage 2 resolution - {len(stage2_result.resolved_files)} files resolved",
-                                files_processed=stage2_result.resolved_files,
-                                backup_created=backup_branch
-                            )
-                    
-                    # Stage 2 failed or was cancelled
-                    return ResolutionResult(
-                        success=False,
-                        strategy=ConflictStrategy.SMART_MERGE,
-                        message="Stage 2 conflict resolution failed or was cancelled",
-                        files_processed=files_processed,
-                        backup_created=backup_branch
-                    )
-                else:
-                    # Other merge error
-                    return ResolutionResult(
-                        success=False,
-                        strategy=ConflictStrategy.SMART_MERGE,
-                        message=f"Merge failed: {stderr}",
-                        files_processed=files_processed,
-                        backup_created=backup_branch
-                    )
+                print(f"✅ All {len(expected_files)} expected files are present after smart merge")
+            
+            # Update files_processed to include all files that should be present
+            all_files = list(expected_files)
+            files_processed = all_files
+            
+            # STEP 8: Push the merged result to remote
+            print("Pushing smart merge result to remote...")
+            current_branch = self._get_current_branch()
+            push_stdout, push_stderr, push_rc = self._run_git_command(f"git push origin {current_branch}")
+            
+            if push_rc == 0:
+                print("✅ Successfully pushed smart merge result to remote")
+            else:
+                print(f"⚠️ Could not push to remote: {push_stderr}")
+                # Don't fail the operation for push issues
+            
+            return ResolutionResult(
+                success=True,
+                strategy=ConflictStrategy.SMART_MERGE,
+                message=f"Smart merge completed successfully - {len(all_files)} files combined from both repositories",
+                files_processed=files_processed,
+                backup_created=backup_branch
+            )
             
         except Exception as e:
-            return ResolutionResult(                success=False,
+            return ResolutionResult(
+                success=False,
                 strategy=ConflictStrategy.SMART_MERGE,
                 message=f"Error during smart merge: {e}",
                 files_processed=files_processed,
@@ -1262,15 +1353,17 @@ class ConflictResolutionEngine:
                 return stdout
             else:
                 print(f"[DEBUG] Could not get {version} version of {file_path}: {stderr}")
-                return None
-                
+                return None                
         except Exception as e:
             print(f"[ERROR] Failed to get {version} version of {file_path}: {e}")
             return None
     
     def _create_recovery_instructions(self, backup_branch: str):
         """Create recovery instructions for the user"""
-        recovery_file = os.path.join(self.vault_path, "RECOVERY_INSTRUCTIONS.txt")
+        # Create recovery instructions in backup directory, not in the main vault
+        backup_dir = os.path.join(self.vault_path, '.ogresync-backups')
+        os.makedirs(backup_dir, exist_ok=True)
+        recovery_file = os.path.join(backup_dir, "RECOVERY_INSTRUCTIONS.txt")
         instructions = f"""
 OGRESYNC RECOVERY INSTRUCTIONS
 ==============================
@@ -2021,11 +2114,13 @@ def create_recovery_instructions(vault_path: str, backup_branches: List[str]) ->
         vault_path: Path to the vault
         backup_branches: List of backup branch names
         
-    Returns:
-        Path to the recovery instructions file
+    Returns:        Path to the recovery instructions file
     """
     timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-    instructions_file = os.path.join(vault_path, f"OGRESYNC_RECOVERY_INSTRUCTIONS_{timestamp}.txt")
+    # Create recovery instructions in a backup directory, not in the main vault
+    backup_dir = os.path.join(vault_path, '.ogresync-backups')
+    os.makedirs(backup_dir, exist_ok=True)
+    instructions_file = os.path.join(backup_dir, f"OGRESYNC_RECOVERY_INSTRUCTIONS_{timestamp}.txt")
     
     try:
         with open(instructions_file, 'w', encoding='utf-8') as f:
