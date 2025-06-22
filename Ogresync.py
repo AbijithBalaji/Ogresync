@@ -2096,8 +2096,7 @@ def auto_sync(use_threading=True):
                             safe_update_log(f"❌ Failed to fetch remote changes: {fetch_err}", 75)
                             safe_update_log(f"❌ Push operation failed: {err}", 80)
                             return
-                        
-                        # Check if we need to merge or if we can force push safely
+                          # Check if we need to merge or if we can force push safely
                         # First, check what the difference is between local and remote
                         local_ahead_out, local_ahead_err, local_ahead_rc = run_command("git rev-list --count HEAD ^origin/main", cwd=vault_path)
                         remote_ahead_out, remote_ahead_err, remote_ahead_rc = run_command("git rev-list --count origin/main ^HEAD", cwd=vault_path)
@@ -2114,7 +2113,27 @@ def auto_sync(use_threading=True):
                         
                         safe_update_log(f"📊 Repository status: Local is {local_ahead} commits ahead, remote is {remote_ahead} commits ahead", 76)
                         
-                        if remote_ahead == 0 and local_ahead > 0:
+                        # Check if the latest local commit is a conflict resolution
+                        latest_commit_msg_out, latest_commit_msg_err, latest_commit_msg_rc = run_command("git log -1 --pretty=%s", cwd=vault_path)
+                        is_conflict_resolution = False
+                        if latest_commit_msg_rc == 0:
+                            commit_msg = latest_commit_msg_out.strip().lower()
+                            conflict_indicators = ["resolve conflicts", "stage 2 resolution", "conflict resolution", "smart merge", "merge remote-tracking branch"]
+                            is_conflict_resolution = any(indicator in commit_msg for indicator in conflict_indicators)
+                            safe_update_log(f"📝 Latest commit: {latest_commit_msg_out.strip()}", 76)
+                            safe_update_log(f"🔍 Conflict resolution detected: {is_conflict_resolution}", 76)
+                        
+                        if is_conflict_resolution and local_ahead > 0:
+                            # This is post-conflict-resolution - the local commits contain the user's final choices
+                            safe_update_log("✅ Conflict resolution completed - local commits contain final resolved content", 77)
+                            safe_update_log("📤 Force-pushing resolved changes (conflict resolution is final)...", 77)
+                            force_push_out, force_push_err, force_push_rc = run_command("git push --force-with-lease origin main", cwd=vault_path)
+                            if force_push_rc == 0:
+                                safe_update_log("✅ Successfully pushed conflict resolution to remote", 80)
+                            else:
+                                safe_update_log(f"❌ Force push failed: {force_push_err}", 80)
+                                safe_update_log("📝 Your conflict resolution is committed locally and can be pushed manually", 80)
+                        elif remote_ahead == 0 and local_ahead > 0:
                             # Local is ahead, remote hasn't changed - safe to force push
                             safe_update_log("✅ Local repository is ahead of remote. Force pushing resolved conflicts...", 77)
                             force_push_out, force_push_err, force_push_rc = run_command("git push --force-with-lease origin main", cwd=vault_path)
@@ -2125,11 +2144,11 @@ def auto_sync(use_threading=True):
                                 safe_update_log("📝 Your resolved conflicts are committed locally. Manual intervention may be required.", 80)
                         else:
                             # Both local and remote have changes - need to merge
-                            safe_update_log("🔄 Both local and remote have changes. Integrating remote changes with resolved conflicts...", 76)
+                            safe_update_log("🔄 Both local and remote have changes. Attempting to integrate remote changes...", 76)
                             merge_out, merge_err, merge_rc = run_command("git merge origin/main --no-edit", cwd=vault_path)
                             
                             if merge_rc == 0:
-                                safe_update_log("✅ Successfully integrated remote changes with conflict resolution.", 78)
+                                safe_update_log("✅ Successfully integrated remote changes without conflicts.", 78)
                                 # Try push again
                                 safe_update_log("📤 Attempting push again...", 79)
                                 push2_out, push2_err, push2_rc = run_command("git push origin main", cwd=vault_path)
@@ -2137,11 +2156,52 @@ def auto_sync(use_threading=True):
                                     safe_update_log("✅ All changes have been successfully pushed to GitHub after integration.", 80)
                                 else:
                                     safe_update_log(f"❌ Push failed again after integration: {push2_err}", 80)
-                                    safe_update_log("📝 Your resolved conflicts are committed locally. Manual intervention may be required.", 80)
+                                    safe_update_log("📝 Your changes are committed locally. Manual intervention may be required.", 80)
                             else:
-                                safe_update_log("❌ Failed to integrate remote changes - there may be new conflicts.", 78)
-                                safe_update_log("📝 Your conflict resolutions are safely committed locally.", 78)
-                                safe_update_log("🔧 You may need to resolve additional conflicts manually.", 78)
+                                # Merge failed - likely due to conflicts. Trigger 2-stage conflict resolution
+                                safe_update_log("⚠️ Merge conflicts detected during push integration.", 78)
+                                safe_update_log("🔧 Activating 2-stage conflict resolution system for push conflicts...", 79)
+                                
+                                # Reset to clean state before conflict resolution
+                                reset_out, reset_err, reset_rc = run_command("git merge --abort", cwd=vault_path)
+                                if reset_rc == 0:
+                                    safe_update_log("✅ Merge aborted successfully. Preparing for conflict resolution...", 79)
+                                
+                                try:
+                                    if not CONFLICT_RESOLUTION_AVAILABLE:
+                                        safe_update_log("❌ Conflict resolution system not available. Manual resolution required.", 79)
+                                        safe_update_log("📝 Please manually resolve conflicts and push your changes.", 79)
+                                        return
+                                    
+                                    # Import and use the proper conflict resolution modules
+                                    import Stage1_conflict_resolution as cr_module
+                                    
+                                    # Create conflict resolver for push-time conflicts
+                                    resolver = cr_module.ConflictResolver(vault_path, root)
+                                    remote_url = config_data.get("GITHUB_REMOTE_URL", "")
+                                    
+                                    # Resolve conflicts using the 2-stage system
+                                    safe_update_log("� Presenting conflict resolution options for push-time conflicts...", 80)
+                                    resolution_result = resolver.resolve_initial_setup_conflicts(remote_url)
+                                    
+                                    if resolution_result.success:
+                                        safe_update_log(f"✅ Push-time conflicts resolved successfully using: {resolution_result.strategy.value if resolution_result.strategy else 'unknown'}", 82)
+                                        safe_update_log("📤 Attempting to push resolved changes...", 83)
+                                        
+                                        # Try to push the resolved changes
+                                        final_push_out, final_push_err, final_push_rc = run_command("git push --force-with-lease origin main", cwd=vault_path)
+                                        if final_push_rc == 0:
+                                            safe_update_log("✅ Successfully pushed conflict resolution to remote repository.", 85)
+                                        else:
+                                            safe_update_log(f"⚠️ Push after conflict resolution failed: {final_push_err}", 85)
+                                            safe_update_log("� Your conflict resolution is committed locally and can be pushed manually.", 85)
+                                    else:
+                                        safe_update_log("❌ Conflict resolution was cancelled or failed.", 82)
+                                        safe_update_log("📝 Your local changes remain committed. Manual resolution may be required.", 82)
+                                        
+                                except Exception as e:
+                                    safe_update_log(f"❌ Error during conflict resolution: {e}", 80)
+                                    safe_update_log("📝 Your local changes are safely committed. Manual resolution required.", 80)
                     else:
                         safe_update_log(f"❌ Push operation failed: {err}", 80)
                     return
