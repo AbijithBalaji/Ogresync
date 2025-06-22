@@ -22,6 +22,7 @@ import subprocess
 import platform
 import tempfile
 import tkinter as tk
+import traceback
 from tkinter import ttk, messagebox, scrolledtext, filedialog
 from typing import Dict, List, Tuple, Optional, Any, Set, Union
 from dataclasses import dataclass
@@ -280,16 +281,16 @@ class Stage2ConflictResolutionDialog:
         width, height = 1500, 900
         screen_width = self.dialog.winfo_screenwidth()
         screen_height = self.dialog.winfo_screenheight()
-        
-        # Position in top-right area, with some margin from edges
+          # Position in top-right area, with proper margin from edges
         x = screen_width - width - 100  # 100px margin from right edge
-        y = 50  # 50px margin from top edge
-        
-        # Ensure dialog fits on screen
-        if x < 0:
+        y = 100  # 100px margin from top edge to ensure title bar is visible
+          # Ensure dialog fits on screen with proper margins
+        if x < 50:  # Minimum 50px from left edge
             x = 50
-        if y + height > screen_height:
+        if y + height > screen_height - 50:  # Minimum 50px from bottom edge
             y = screen_height - height - 50
+        if y < 100:  # Ensure title bar is always visible with 100px minimum from top
+            y = 100
         
         self.dialog.geometry(f"{width}x{height}+{x}+{y}")
         self.dialog.minsize(1350, 700)

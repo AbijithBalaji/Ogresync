@@ -1419,9 +1419,8 @@ class ConflictResolutionDialog:
         # Configure dialog
         self.dialog.configure(bg="#FAFBFC")
         self.dialog.resizable(True, True)
-        print("[DEBUG] Configured dialog")
-          # Set size and position - optimized for horizontal layout and better space utilization
-        width, height = 1200, 750  # Increased width for horizontal strategy layout
+        print("[DEBUG] Configured dialog")        # Set size and position - increased height for better visibility of bottom section
+        width, height = 1200, 850  # Increased height from 750 to 850 for better bottom section visibility
         
         # Get screen dimensions safely
         screen_width = self.dialog.winfo_screenwidth()
@@ -1738,16 +1737,20 @@ class ConflictResolutionDialog:
         common_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
         # Register listbox for per-list scrolling
-        self.listboxes.append(common_listbox)
-          # Add all common files with content status indicators (same content / different content)
+        self.listboxes.append(common_listbox)        # Add all common files with content status indicators (same content / different content)
         conflicted_file_paths = {f.path for f in self.analysis.conflicted_files}
         for file in self.analysis.common_files:
             if file in conflicted_file_paths:
-                # File has different content
+                # File has different content - insert and highlight in red/orange
+                index = common_listbox.size()
                 common_listbox.insert(tk.END, f"⚠️ {file} (different content)")
+                # Configure this specific item with red/orange colors for emphasis
+                common_listbox.itemconfig(index, {'fg': '#DC2626', 'bg': '#FEE2E2'})  # Red text on light red background
             else:
-                # File has same content
+                # File has same content - normal green styling
+                index = common_listbox.size()
                 common_listbox.insert(tk.END, f"✅ {file} (same content)")
+                # Keep default colors for same content files
     def _create_strategy_selection_section(self, parent):
         """Create the enhanced strategy selection section with horizontal layout and simplified options"""
         strategy_frame = tk.LabelFrame(
@@ -1875,10 +1878,9 @@ class ConflictResolutionDialog:
             wraplength=150
         )
         remote_desc.pack(padx=5, pady=(0, 10))
-        
-        # Add visual indicator for current selection
+          # Add visual indicator for current selection
         selection_frame = tk.Frame(strategy_frame, bg="#F0FDF4")
-        selection_frame.pack(fill=tk.X, pady=(15, 0))
+        selection_frame.pack(fill=tk.X, pady=(10, 5))  # Reduced bottom padding from 0 to 5
         
         self.selection_label = tk.Label(
             selection_frame,
@@ -1917,14 +1919,12 @@ class ConflictResolutionDialog:
             self.selection_label.update_idletasks()        
         print(f"[DEBUG] Selection indicator updated for: {selected}")  # Debug output
     def _create_controls(self, parent):
-        """Create the control buttons directly below the strategy selection section"""
-        # Control panel positioned in normal flow below strategy selection
+        """Create the control buttons directly below the strategy selection section"""        # Control panel positioned in normal flow below strategy selection
         controls_frame = tk.Frame(parent, bg="#F8F9FA", relief=tk.RAISED, borderwidth=2)
-        controls_frame.pack(fill=tk.X, pady=(10, 20), padx=5)  # Normal flow positioning
-        
-        # Inner frame for proper spacing and centering
+        controls_frame.pack(fill=tk.X, pady=(5, 15), padx=5)  # Reduced top padding from 10 to 5
+          # Inner frame for proper spacing and centering
         inner_frame = tk.Frame(controls_frame, bg="#F8F9FA")
-        inner_frame.pack(pady=15)  # Center the inner frame
+        inner_frame.pack(pady=10)  # Reduced padding from 15 to 10
         
         # Instruction text - centered
         instruction_label = tk.Label(
