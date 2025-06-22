@@ -1572,15 +1572,15 @@ def auto_sync(use_threading=True):
                         if pull_rc == 0:
                             safe_update_log("Successfully pulled remote commits.", 15)
                         elif "CONFLICT" in (pull_out + pull_err):
-                            # Conflict during sync initialization - use enhanced conflict resolution
+                            # Conflict during sync initialization - use 2-stage conflict resolution
                             safe_update_log("❌ Merge conflict detected during sync initialization.", 16)
-                            safe_update_log("Using enhanced conflict resolution system...", 17)
+                            safe_update_log("🔧 Activating 2-stage conflict resolution system...", 17)
                             
-                            try:                                # Create backup branch before any operation for safety
+                            try:                                # Create backup branch before conflict resolution
                                 timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
                                 backup_branch = f"backup-local-before-sync-init-{timestamp}"
                                 run_command(f"git branch {backup_branch}", cwd=vault_path)
-                                safe_update_log(f"Local state backed up to: {backup_branch}", 17)
+                                safe_update_log(f"State backed up to: {backup_branch}", 17)
                                 
                                 # For sync initialization, we want remote content to take precedence
                                 # Use reset --hard to replace local with remote content (your preference)
@@ -1597,7 +1597,7 @@ def auto_sync(use_threading=True):
                                     
                             except Exception as e:
                                 safe_update_log(f"❌ Error in enhanced conflict resolution during sync init: {e}", 18)
-                                safe_update_log("Sync initialization may be incomplete. Manual resolution required.", 18)
+                                safe_update_log("Sync initialization may be incomplete. Please resolve conflicts manually.", 18)
                                 network_available = False
                         else:
                             safe_update_log(f"Error pulling remote commits: {pull_err}", 15)
@@ -1694,7 +1694,8 @@ def auto_sync(use_threading=True):
                         out, err, rc = "", "", 0  # Success - files downloaded
                     else:
                         safe_update_log("Remote repository only has README/gitignore - no content to pull", 20)
-                        out, err, rc = "", "", 0  # Simulate successful pull                else:
+                        out, err, rc = "", "", 0  # Simulate successful pull
+                else:
                     safe_update_log("Remote repository is empty - no files to pull", 20)
                     out, err, rc = "", "", 0  # Simulate successful pull
             else:
@@ -1721,35 +1722,16 @@ def auto_sync(use_threading=True):
                     safe_update_log("❌ A merge conflict was detected during the pull operation.", 30)
                     safe_update_log("🔧 Applying automatic 'remote wins' conflict resolution for sync operations...", 32)
                     
-                    # Abort the current rebase to get to a clean state
-                    run_command("git rebase --abort", cwd=vault_path)
-                    
-                    # Create backup before resolving conflicts
-                    backup_id = None
-                    if 'backup_manager' in sys.modules:
-                        try:
-                            from backup_manager import create_conflict_resolution_backup
-                            backup_id = create_conflict_resolution_backup(vault_path, "auto-remote-wins-resolution")
-                            if backup_id:
-                                safe_update_log(f"✅ Safety backup created: {backup_id}", 33)
-                        except Exception as backup_err:
-                            safe_update_log(f"⚠️ Could not create backup: {backup_err}", 33)
+                    # Abort the current rebase to get to a clean state                    run_command("git rebase --abort", cwd=vault_path)
                     
                     # Automatic "remote wins" resolution - much simpler and more reliable
+                    # No backup needed since this is routine sync behavior (local expects to be overwritten)
                     safe_update_log("📥 Automatically choosing remote content (remote wins policy)...", 34)
-                    
-                    # Use reset --hard to make remote content win completely
+                      # Use reset --hard to make remote content win completely
                     reset_out, reset_err, reset_rc = run_command("git reset --hard origin/main", cwd=vault_path)
                     if reset_rc == 0:
                         safe_update_log("✅ Conflicts resolved automatically using 'remote wins' policy", 35)
-                        if backup_id:
-                            safe_update_log(f"📝 Note: Local changes backed up as: {backup_id}", 35)
-                        else:
-                            # Fallback: git branch backup
-                            timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-                            backup_branch = f"backup-before-remote-wins-{timestamp}"
-                            run_command(f"git branch {backup_branch}", cwd=vault_path)
-                            safe_update_log(f"📝 Note: Local changes backed up in branch: {backup_branch}", 35)
+                        # No backup needed - this is expected routine sync behavior
                         
                         # Mark as successful to continue normal flow
                         rc = 0  # Override to indicate successful resolution
@@ -1765,7 +1747,143 @@ def auto_sync(use_threading=True):
             else:
                 safe_update_log("Pull operation completed successfully. Your vault is up to date.", 30)
         else:
-            safe_update_log("Skipping pull operation due to offline mode.", 20)        # Step 5: Handle stashed changes - Always discard during initial sync (before Obsidian)
+            safe_update_log("Skipping pull operation due to offline mode.", 20)          # Step 4.5: Check for local commits ahead of remote and push them (ONLY for edge-case recovery)
+        if network_available:
+            safe_update_log("Checking if local repository has unpushed commits from recovery operations...", 32)
+            
+            # CRITICAL: This step should ONLY trigger for true recovery scenarios
+            # In normal sync flows, local should already be up-to-date with remote after Step 4
+              # First, check if we're actually ahead after the pull operation
+            # ROBUST FIX: Ensure origin/main reference is fresh before checking ahead count
+            safe_update_log("Ensuring remote references are up to date...", 31)
+            fetch_out, fetch_err, fetch_rc = run_command("git fetch origin", cwd=vault_path)
+            print(f"[DEBUG] git fetch origin: out='{fetch_out}', err='{fetch_err}', rc={fetch_rc}")
+            
+            if fetch_rc != 0:
+                safe_update_log("⚠️ Could not fetch latest remote references. Skipping ahead check.", 32)
+                safe_update_log("✅ Proceeding with sync (assuming repositories are in sync).", 32)
+            else:
+                # Now check ahead count with fresh remote references
+                rev_list_out, rev_list_err, rev_list_rc = run_command("git rev-list --count HEAD ^origin/main", cwd=vault_path)
+                print(f"[DEBUG] git rev-list --count HEAD ^origin/main: out='{rev_list_out}', err='{rev_list_err}', rc={rev_list_rc}")
+                
+                # Additional safety check: verify origin/main exists
+                origin_check_out, origin_check_err, origin_check_rc = run_command("git rev-parse origin/main", cwd=vault_path)
+                print(f"[DEBUG] git rev-parse origin/main: out='{origin_check_out}', err='{origin_check_err}', rc={origin_check_rc}")
+                
+                if origin_check_rc != 0:
+                    safe_update_log("⚠️ Remote reference origin/main not found. This may be normal for new repositories.", 32)
+                    safe_update_log("✅ Proceeding with sync (assuming repositories are in sync).", 32)
+                elif rev_list_rc == 0 and rev_list_out.strip():
+                    try:
+                        ahead_count = int(rev_list_out.strip())
+                        print(f"[DEBUG] Parsed ahead_count: {ahead_count}")
+                        
+                        # ADDITIONAL SAFETY: Double-check by comparing commit hashes directly
+                        head_hash_out, _, head_hash_rc = run_command("git rev-parse HEAD", cwd=vault_path)
+                        origin_hash_out, _, origin_hash_rc = run_command("git rev-parse origin/main", cwd=vault_path)
+                        
+                        if head_hash_rc == 0 and origin_hash_rc == 0:
+                            head_hash = head_hash_out.strip()
+                            origin_hash = origin_hash_out.strip()
+                            print(f"[DEBUG] HEAD hash: {head_hash}")
+                            print(f"[DEBUG] origin/main hash: {origin_hash}")
+                            
+                            if head_hash == origin_hash:
+                                print(f"[DEBUG] Commit hashes match - repositories are actually in sync!")
+                                safe_update_log("✅ Local repository is in sync with remote (verified by commit hash)", 33)
+                                ahead_count = 0  # Override the incorrect count
+                        
+                        if ahead_count > 0:
+                            # We're ahead after pull - this should only happen in recovery scenarios
+                            # Be VERY strict about recovery detection to avoid false positives
+                            
+                            # 1. Check if the most recent commit message indicates recovery (within last 3 commits)
+                            is_recovery_commit = False
+                            recent_commits_out, recent_commits_err, recent_commits_rc = run_command("git log --oneline -3", cwd=vault_path)
+                            if recent_commits_rc == 0:
+                                commit_msgs = recent_commits_out.strip().lower()
+                                # Very specific recovery indicators
+                                recovery_indicators = ["ogresync recovery", "fix rebase", "fix merge", "restore after", "emergency fix", "manual git recovery"]
+                                is_recovery_commit = any(indicator in commit_msgs for indicator in recovery_indicators)
+                                print(f"[DEBUG] Recent commits check: is_recovery_commit={is_recovery_commit}")
+                            
+                            # 2. Check if we JUST resolved incomplete git operations (marker file must be recent)
+                            git_dir = os.path.join(vault_path, '.git')
+                            recovery_marker_file = os.path.join(git_dir, 'ogresync_recovery_flag')
+                            has_recent_recovery_marker = False
+                            if os.path.exists(recovery_marker_file):
+                                try:
+                                    # Check if marker is recent (created within last 5 minutes)
+                                    marker_age = time.time() - os.path.getmtime(recovery_marker_file)
+                                    has_recent_recovery_marker = marker_age < 300  # 5 minutes
+                                    print(f"[DEBUG] Recovery marker age: {marker_age:.1f}s, recent: {has_recent_recovery_marker}")
+                                    if not has_recent_recovery_marker:
+                                        # Remove stale marker
+                                        os.remove(recovery_marker_file)
+                                        print(f"[DEBUG] Removed stale recovery marker")
+                                except Exception as e:
+                                    print(f"[DEBUG] Error checking recovery marker: {e}")
+                                    has_recent_recovery_marker = False
+                            else:
+                                print(f"[DEBUG] No recovery marker file found")
+                            
+                            # 3. REMOVED: Don't check for backup branches as they can be old/stale
+                            # Old backup branches don't indicate current recovery scenarios
+                            
+                            # Only push if we have STRONG recent recovery indicators
+                            # Normal sync should never be ahead after successful pull
+                            if is_recovery_commit or has_recent_recovery_marker:
+                                safe_update_log(f"🔄 Local repository has {ahead_count} unpushed commit(s) from recovery operations", 33)
+                                safe_update_log("📤 Pushing recovery commits to remote before opening Obsidian...", 34)
+                                # Push the recovery commits
+                                push_out, push_err, push_rc = run_command("git push origin main", cwd=vault_path)
+                                
+                                if push_rc == 0:
+                                    safe_update_log("✅ Successfully pushed recovery commits to remote", 35)
+                                    # Clean up recovery marker if it exists
+                                    if has_recent_recovery_marker:
+                                        try:
+                                            os.remove(recovery_marker_file)
+                                        except:
+                                            pass
+                                else:
+                                    # Try force push if regular push fails
+                                    if "non-fast-forward" in push_err.lower() or "rejected" in push_err.lower():
+                                        safe_update_log("🔄 Attempting force push for recovery commits...", 34)
+                                        force_push_out, force_push_err, force_push_rc = run_command("git push --force-with-lease origin main", cwd=vault_path)
+                                        if force_push_rc == 0:
+                                            safe_update_log("✅ Successfully force-pushed recovery commits to remote", 35)
+                                            # Clean up recovery marker if it exists
+                                            if has_recent_recovery_marker:
+                                                try:
+                                                    os.remove(recovery_marker_file)
+                                                except:
+                                                    pass
+                                        else:
+                                            safe_update_log(f"❌ Force push failed: {force_push_err}", 35)
+                                            safe_update_log("📝 Recovery commits remain local. Continuing with sync...", 35)
+                                    else:
+                                        safe_update_log(f"❌ Push failed: {push_err}", 35)
+                                        safe_update_log("📝 Recovery commits remain local. Continuing with sync...", 35)
+                            else:
+                                # Local is ahead but this is NOT a recovery scenario
+                                # This is normal workflow - let Step 9 handle the push after Obsidian
+                                safe_update_log(f"📝 Local repository has {ahead_count} unpushed commit(s) from normal workflow", 33)
+                                safe_update_log("✅ This appears to be normal workflow, not recovery. Will push after Obsidian session.", 33)
+                                print(f"[DEBUG] Normal workflow detected: {ahead_count} commits ahead, but no recovery indicators")
+                        else:
+                            safe_update_log("✅ Local repository is in sync with remote", 33)
+                            print(f"[DEBUG] Repository in sync: ahead_count = {ahead_count}")
+                    except ValueError as ve:
+                        safe_update_log("⚠️ Could not determine local/remote status", 33)
+                        print(f"[DEBUG] ValueError parsing ahead_count from '{rev_list_out}': {ve}")
+                else:
+                    safe_update_log("✅ Local repository is in sync with remote", 33)
+                    print(f"[DEBUG] No output from rev-list command or command failed: rc={rev_list_rc}, out='{rev_list_out}'")
+                    print(f"[DEBUG] This is the expected case when local and remote are in sync")
+                
+        # Step 5: Handle stashed changes - Always discard during initial sync (before Obsidian)
         # For initial sync phase, remote content always takes precedence to ensure clean state
         safe_update_log("🗑️ Discarding any local changes (remote content takes precedence for initial sync)...", 35)
         stash_list_out, _, _ = run_command("git stash list", cwd=vault_path)
@@ -1948,11 +2066,17 @@ def auto_sync(use_threading=True):
                         if line.strip():
                             safe_update_log(f"✓ Pulled: {line}", 52)
         else:
-            safe_update_log("No network detected. Skipping remote check and proceeding to push.", 58)
-
-        # Step 9: Push changes if network is available (local changes already committed in Step 8A)
+            safe_update_log("No network detected. Skipping remote check and proceeding to push.", 58)        # Step 9: Push changes if network is available (local changes already committed in Step 8A)
         network_available = is_network_available()
         if network_available:
+            # First, check for and resolve any incomplete git operations
+            operation_detected, operation_type, resolution_success = detect_and_resolve_incomplete_git_operations(vault_path)
+            
+            if operation_detected and not resolution_success:
+                safe_update_log("❌ Could not resolve incomplete git operation. Manual intervention required.", 70)
+                safe_update_log("💡 Please check your repository state and resolve any pending operations manually.", 70)
+                return
+            
             unpushed = get_unpushed_commits(vault_path)
             if unpushed:
                 safe_update_log("Pushing all unpushed commits to GitHub...", 70)
@@ -1960,6 +2084,64 @@ def auto_sync(use_threading=True):
                 if rc != 0:
                     if "Could not resolve hostname" in err or "network" in err.lower():
                         safe_update_log("❌ Unable to push changes due to network issues. Your changes remain locally committed and will be pushed once connectivity is restored.", 80)
+                        return
+                    elif "non-fast-forward" in err.lower() or "rejected" in err.lower() or "non-fast-forward" in out.lower() or "rejected" in out.lower():
+                        # Handle non-fast-forward push rejection (check both stderr and stdout)
+                        safe_update_log("⚠️ Push rejected: Remote repository has diverged from local repository.", 72)
+                        safe_update_log("📥 Fetching and integrating latest remote changes before push...", 74)
+                        
+                        # Fetch latest remote changes
+                        fetch_out, fetch_err, fetch_rc = run_command("git fetch origin", cwd=vault_path)
+                        if fetch_rc != 0:
+                            safe_update_log(f"❌ Failed to fetch remote changes: {fetch_err}", 75)
+                            safe_update_log(f"❌ Push operation failed: {err}", 80)
+                            return
+                        
+                        # Check if we need to merge or if we can force push safely
+                        # First, check what the difference is between local and remote
+                        local_ahead_out, local_ahead_err, local_ahead_rc = run_command("git rev-list --count HEAD ^origin/main", cwd=vault_path)
+                        remote_ahead_out, remote_ahead_err, remote_ahead_rc = run_command("git rev-list --count origin/main ^HEAD", cwd=vault_path)
+                        
+                        local_ahead = 0
+                        remote_ahead = 0
+                        try:
+                            if local_ahead_rc == 0 and local_ahead_out.strip().isdigit():
+                                local_ahead = int(local_ahead_out.strip())
+                            if remote_ahead_rc == 0 and remote_ahead_out.strip().isdigit():
+                                remote_ahead = int(remote_ahead_out.strip())
+                        except ValueError:
+                            pass
+                        
+                        safe_update_log(f"📊 Repository status: Local is {local_ahead} commits ahead, remote is {remote_ahead} commits ahead", 76)
+                        
+                        if remote_ahead == 0 and local_ahead > 0:
+                            # Local is ahead, remote hasn't changed - safe to force push
+                            safe_update_log("✅ Local repository is ahead of remote. Force pushing resolved conflicts...", 77)
+                            force_push_out, force_push_err, force_push_rc = run_command("git push --force-with-lease origin main", cwd=vault_path)
+                            if force_push_rc == 0:
+                                safe_update_log("✅ All changes have been successfully pushed to GitHub using force-with-lease.", 80)
+                            else:
+                                safe_update_log(f"❌ Force push failed: {force_push_err}", 80)
+                                safe_update_log("📝 Your resolved conflicts are committed locally. Manual intervention may be required.", 80)
+                        else:
+                            # Both local and remote have changes - need to merge
+                            safe_update_log("🔄 Both local and remote have changes. Integrating remote changes with resolved conflicts...", 76)
+                            merge_out, merge_err, merge_rc = run_command("git merge origin/main --no-edit", cwd=vault_path)
+                            
+                            if merge_rc == 0:
+                                safe_update_log("✅ Successfully integrated remote changes with conflict resolution.", 78)
+                                # Try push again
+                                safe_update_log("📤 Attempting push again...", 79)
+                                push2_out, push2_err, push2_rc = run_command("git push origin main", cwd=vault_path)
+                                if push2_rc == 0:
+                                    safe_update_log("✅ All changes have been successfully pushed to GitHub after integration.", 80)
+                                else:
+                                    safe_update_log(f"❌ Push failed again after integration: {push2_err}", 80)
+                                    safe_update_log("📝 Your resolved conflicts are committed locally. Manual intervention may be required.", 80)
+                            else:
+                                safe_update_log("❌ Failed to integrate remote changes - there may be new conflicts.", 78)
+                                safe_update_log("📝 Your conflict resolutions are safely committed locally.", 78)
+                                safe_update_log("🔧 You may need to resolve additional conflicts manually.", 78)
                     else:
                         safe_update_log(f"❌ Push operation failed: {err}", 80)
                     return
@@ -1967,7 +2149,9 @@ def auto_sync(use_threading=True):
             else:
                 safe_update_log("No new commits to push.", 80)
         else:
-            safe_update_log("Offline mode: Changes have been committed locally. They will be automatically pushed when an internet connection is available.", 80)        # Step 10: Final message  
+            safe_update_log("Offline mode: Changes have been committed locally. They will be automatically pushed when an internet connection is available.", 80)
+
+        # Step 10: Final message
         if remote_changes_detected and local_changes_committed:
             safe_update_log("🎉 Synchronization complete! Remote changes were detected and resolved, your local changes have been committed and pushed.", 100)
         elif local_changes_committed:
@@ -2052,8 +2236,7 @@ def get_current_remote_head(vault_path):
     
     Args:
         vault_path: Path to the vault directory
-    
-    Returns:
+      Returns:
         str: Remote HEAD commit hash, or empty string if error
     """
     try:
@@ -2061,7 +2244,6 @@ def get_current_remote_head(vault_path):
         run_command("git fetch origin", cwd=vault_path)
         
         # Get current remote HEAD
-
         remote_head_out, remote_head_err, remote_head_rc = run_command("git rev-parse origin/main", cwd=vault_path)
         if remote_head_rc == 0:
             return remote_head_out.strip()
@@ -2069,6 +2251,278 @@ def get_current_remote_head(vault_path):
             return ""
     except Exception:
         return ""
+
+def detect_and_resolve_incomplete_git_operations(vault_path):
+    """
+    Detect and resolve incomplete git operations (rebase, merge, cherry-pick, etc.)
+    that could prevent successful push operations.
+    
+    Args:
+        vault_path: Path to the vault directory
+        
+    Returns:
+        tuple: (operation_detected, operation_type, resolution_success)
+    """
+    try:
+        git_dir = os.path.join(vault_path, '.git')
+        
+        # Check for various incomplete operations
+        operations_to_check = {
+            'rebase-merge': 'interactive rebase',
+            'rebase-apply': 'rebase',
+            'MERGE_HEAD': 'merge',
+            'CHERRY_PICK_HEAD': 'cherry-pick',
+            'REVERT_HEAD': 'revert',
+            'BISECT_LOG': 'bisect'
+        }
+        
+        detected_operation = None
+        operation_type = None
+        
+        for marker, op_type in operations_to_check.items():
+            marker_path = os.path.join(git_dir, marker)
+            if os.path.exists(marker_path):
+                detected_operation = marker
+                operation_type = op_type
+                break
+        
+        if not detected_operation:
+            return False, None, True  # No incomplete operations
+        
+        safe_update_log(f"🔧 Detected incomplete {operation_type} operation. Attempting to resolve...", None)
+        
+        # Attempt to resolve the operation
+        resolution_success = False
+        
+        if operation_type in ['interactive rebase', 'rebase']:
+            safe_update_log("📝 Completing rebase operation...", None)
+            
+            # First try to continue the rebase
+            continue_out, continue_err, continue_rc = run_command("git rebase --continue", cwd=vault_path)
+            
+            if continue_rc == 0:
+                safe_update_log("✅ Rebase completed successfully", None)
+                resolution_success = True
+            else:
+                # If continue fails, check if we can skip or abort
+                if "nothing to commit" in (continue_out + continue_err).lower():
+                    # Try to skip the current commit
+                    skip_out, skip_err, skip_rc = run_command("git rebase --skip", cwd=vault_path)
+                    if skip_rc == 0:
+                        safe_update_log("✅ Rebase completed by skipping current commit", None)
+                        resolution_success = True
+                    else:
+                        # Last resort: abort the rebase
+                        safe_update_log("⚠️ Aborting rebase to restore repository to clean state...", None)
+                        abort_out, abort_err, abort_rc = run_command("git rebase --abort", cwd=vault_path)
+                        if abort_rc == 0:
+                            safe_update_log("✅ Rebase aborted successfully. Repository restored to previous state.", None)
+                            resolution_success = True
+                        else:
+                            safe_update_log(f"❌ Failed to abort rebase: {abort_err}", None)
+                            resolution_success = False
+        elif operation_type == 'merge':
+            safe_update_log("📝 Completing merge operation...", None)
+            
+            # Check for conflicts
+            status_out, status_err, status_rc = run_command("git status --porcelain", cwd=vault_path)
+            if status_rc == 0:
+                conflicts = [line for line in status_out.splitlines() if line.startswith('UU ')]
+                if conflicts:
+                    safe_update_log("⚠️ Merge has unresolved conflicts. Aborting merge...", None)
+                    abort_out, abort_err, abort_rc = run_command("git merge --abort", cwd=vault_path)
+                    resolution_success = (abort_rc == 0)
+                else:
+                    # Try to commit the merge
+                    commit_out, commit_err, commit_rc = run_command("git commit --no-edit", cwd=vault_path)
+                    if commit_rc == 0:
+                        safe_update_log("✅ Merge completed successfully", None)
+                        resolution_success = True
+                    else:
+                        # Abort if commit fails
+                        abort_out, abort_err, abort_rc = run_command("git merge --abort", cwd=vault_path)
+                        resolution_success = (abort_rc == 0)
+        
+        elif operation_type in ['cherry-pick', 'revert']:
+            safe_update_log(f"📝 Completing {operation_type} operation...", None)
+            
+            # Try to continue the operation
+            continue_cmd = f"git {operation_type.replace('-', ' ')} --continue"
+            continue_out, continue_err, continue_rc = run_command(continue_cmd, cwd=vault_path)
+            
+            if continue_rc == 0:
+                safe_update_log(f"✅ {operation_type.title()} completed successfully", None)
+                resolution_success = True
+            else:
+                # Abort the operation
+                abort_cmd = f"git {operation_type.replace('-', ' ')} --abort"
+                abort_out, abort_err, abort_rc = run_command(abort_cmd, cwd=vault_path)
+                if abort_rc == 0:
+                    safe_update_log(f"⚠️ {operation_type.title()} aborted. Repository returned to previous state.", None)
+                    resolution_success = True
+                else:
+                    safe_update_log(f"❌ Failed to resolve {operation_type}: {abort_err}", None)
+        
+        elif operation_type == 'bisect':
+            safe_update_log("📝 Completing bisect operation...", None)
+            reset_out, reset_err, reset_rc = run_command("git bisect reset", cwd=vault_path)
+            if reset_rc == 0:
+                safe_update_log("✅ Bisect completed successfully", None)
+                resolution_success = True
+            else:                safe_update_log(f"❌ Failed to reset bisect: {reset_err}", None)
+        
+        if resolution_success:
+            safe_update_log(f"✅ Successfully resolved incomplete {operation_type} operation", None)
+            # Create a recovery marker to indicate that git recovery operations were performed
+            # This helps Step 4.5 identify when commits should be pushed before opening Obsidian
+            try:
+                git_dir = os.path.join(vault_path, '.git')
+                recovery_marker_file = os.path.join(git_dir, 'ogresync_recovery_flag')
+                with open(recovery_marker_file, 'w') as f:
+                    f.write(f"Recovery completed: {operation_type}\n")
+                safe_update_log("📝 Recovery marker created for push detection", None)
+            except Exception as marker_err:
+                safe_update_log(f"⚠️ Could not create recovery marker: {marker_err}", None)
+        else:
+            safe_update_log(f"❌ Could not automatically resolve {operation_type} operation. Manual intervention required.", None)
+        
+        return True, operation_type, resolution_success
+        
+    except Exception as e:
+        safe_update_log(f"❌ Error detecting git operations: {e}", None)
+        return False, None, False
+
+def manual_git_recovery(vault_path):
+    """
+    Manual recovery function that users can call when git operations are stuck.
+    Provides step-by-step guidance for resolving common git issues.
+    
+    Args:
+        vault_path: Path to the vault directory
+        
+    Returns:
+        bool: True if recovery was successful, False otherwise
+    """
+    try:
+        safe_update_log("🔧 Starting manual git recovery process...", None)
+        
+        # Check current git status
+        status_out, status_err, status_rc = run_command("git status", cwd=vault_path)
+        if status_rc != 0:
+            safe_update_log(f"❌ Cannot check git status: {status_err}", None)
+            return False
+        
+        safe_update_log("📊 Current git status:", None)
+        for line in status_out.splitlines()[:10]:  # Show first 10 lines
+            safe_update_log(f"   {line}", None)
+        
+        # Detect specific issues and provide solutions
+        if "interactive rebase in progress" in status_out:
+            safe_update_log("🔍 Detected: Interactive rebase in progress", None)
+            safe_update_log("💡 Solution: Completing rebase operation...", None)
+            
+            # First, try to continue the rebase
+            continue_out, continue_err, continue_rc = run_command("git rebase --continue", cwd=vault_path)
+            
+            if continue_rc == 0:
+                safe_update_log("✅ Rebase completed successfully!", None)
+                return True
+            
+            # If continue fails, try to skip
+            if "nothing to commit" in (continue_out + continue_err).lower():
+                safe_update_log("📝 Attempting to skip current commit...", None)
+                skip_out, skip_err, skip_rc = run_command("git rebase --skip", cwd=vault_path)
+                if skip_rc == 0:
+                    safe_update_log("✅ Rebase completed by skipping current commit!", None)
+                    return True
+            
+            # Last resort: abort rebase
+            safe_update_log("⚠️ Aborting rebase to restore repository to clean state...", None)
+            abort_out, abort_err, abort_rc = run_command("git rebase --abort", cwd=vault_path)
+            if abort_rc == 0:
+                safe_update_log("✅ Rebase aborted successfully. Repository restored to previous state.", None)
+                return True
+            else:
+                safe_update_log(f"❌ Failed to abort rebase: {abort_err}", None)
+                return False
+        
+        elif "rebase in progress" in status_out:
+            safe_update_log("🔍 Detected: Rebase in progress", None)
+            safe_update_log("💡 Solution: Completing or aborting rebase...", None)
+            
+            # Try to continue first
+            continue_out, continue_err, continue_rc = run_command("git rebase --continue", cwd=vault_path)
+            if continue_rc == 0:
+                safe_update_log("✅ Rebase completed successfully!", None)
+                return True
+            
+            # If that fails, abort
+            abort_out, abort_err, abort_rc = run_command("git rebase --abort", cwd=vault_path)
+            if abort_rc == 0:
+                safe_update_log("✅ Rebase aborted successfully. Repository restored.", None)
+                return True
+            else:
+                safe_update_log(f"❌ Failed to abort rebase: {abort_err}", None)
+                return False
+        
+        elif "merge in progress" in status_out:
+            safe_update_log("🔍 Detected: Merge in progress", None)
+            safe_update_log("💡 Solution: Completing or aborting merge...", None)
+            
+            # Check for conflicts
+            if "unmerged paths" in status_out.lower():
+                safe_update_log("⚠️ Merge has conflicts. Aborting merge...", None)
+                abort_out, abort_err, abort_rc = run_command("git merge --abort", cwd=vault_path)
+                if abort_rc == 0:
+                    safe_update_log("✅ Merge aborted successfully.", None)
+                    return True
+            else:
+                # Try to complete the merge
+                commit_out, commit_err, commit_rc = run_command("git commit --no-edit", cwd=vault_path)
+                if commit_rc == 0:
+                    safe_update_log("✅ Merge completed successfully!", None)
+                    return True
+                else:
+                    # Abort if commit fails
+                    abort_out, abort_err, abort_rc = run_command("git merge --abort", cwd=vault_path)
+                    if abort_rc == 0:
+                        safe_update_log("✅ Merge aborted successfully.", None)
+                        return True
+        
+        elif "detached HEAD" in status_out:
+            safe_update_log("🔍 Detected: Detached HEAD state", None)
+            safe_update_log("💡 Solution: Returning to main branch...", None)
+            
+            checkout_out, checkout_err, checkout_rc = run_command("git checkout main", cwd=vault_path)
+            if checkout_rc == 0:
+                safe_update_log("✅ Successfully returned to main branch!", None)
+                return True
+            else:
+                safe_update_log(f"❌ Failed to checkout main: {checkout_err}", None)
+                return False
+        
+        else:
+            safe_update_log("🔍 No specific git operation detected. Performing general cleanup...", None)
+            
+            # General cleanup steps
+            cleanup_steps = [
+                ("git reset --mixed HEAD", "Reset any staged changes"),
+                ("git clean -fd", "Remove untracked files and directories"),
+                ("git checkout main", "Ensure we're on main branch")            ]
+            
+            for cmd, description in cleanup_steps:
+                safe_update_log(f"📝 {description}...", None)
+                out, err, rc = run_command(cmd, cwd=vault_path)
+                if rc == 0:
+                    safe_update_log(f"✅ {description} completed", None)
+                else:
+                    safe_update_log(f"⚠️ {description} failed: {err}", None)
+            
+            return True
+        
+    except Exception as e:
+        safe_update_log(f"❌ Error during manual recovery: {e}", None)
+        return False
 
 # ------------------------------------------------
 # MAIN ENTRY POINT

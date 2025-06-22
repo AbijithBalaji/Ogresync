@@ -671,95 +671,92 @@ class ConflictResolutionEngine:
                     remote_branch = 'origin/main'
             
             print(f"[DEBUG] Using remote branch: {remote_branch}")
-            
-            # STEP 5: Perform intelligent merge
-            print("Performing intelligent merge to combine all files...")
-            
-            # Try merge with allow-unrelated-histories
-            merge_message = "Smart merge - combining all files from local and remote"
-            if platform.system() == "Windows":
-                merge_command = f'git merge {remote_branch} --no-ff --allow-unrelated-histories -m "{merge_message}"'
+              # STEP 5: Check if additional merge is needed or if Stage 2 already completed the merge
+            if stage2_resolved_files:
+                print("✅ Stage 2 resolution already completed the merge process - skipping redundant git merge")
+                # Stage 2 has already resolved conflicts and merged content, no additional merge needed
             else:
-                merge_command = f"git merge {remote_branch} --no-ff --allow-unrelated-histories -m '{merge_message}'"
-            
-            print(f"[DEBUG] Executing merge command: {merge_command}")
-            stdout, stderr, rc = self._run_git_command(merge_command)
-            
-            if rc != 0:
-                print(f"[DEBUG] Merge failed with error: {stderr}")
-                # If merge fails, we'll need to handle it manually
-                return ResolutionResult(
-                    success=False,
-                    strategy=ConflictStrategy.SMART_MERGE,
-                    message=f"Automatic merge failed: {stderr}. This may require manual conflict resolution.",
-                    files_processed=files_processed,
-                    backup_created=backup_branch
-                )
-            
-            print("✅ Git merge completed")
-            
-            # STEP 6: Ensure ALL files from both repositories are present
-            print("Ensuring all files from both repositories are present...")
-            
-            # Get current files in working directory
-            current_files = self._get_current_working_files()
-            expected_files = set(analysis.local_files + analysis.remote_files)
-            missing_files = expected_files - set(current_files)
-            
-            if missing_files:
-                print(f"⚠️ Found {len(missing_files)} missing files after merge, checking them out from remote: {missing_files}")
+                # Only perform git merge if no Stage 2 resolution occurred
+                print("Performing intelligent merge to combine all files...")
                 
-                # Checkout missing files from remote
-                for missing_file in missing_files:
-                    print(f"[DEBUG] Checking out missing file: {missing_file}")
-                    checkout_stdout, checkout_stderr, checkout_rc = self._run_git_command(f"git checkout {remote_branch} -- \"{missing_file}\"")
-                    if checkout_rc == 0:
-                        print(f"✅ Successfully checked out: {missing_file}")
-                    else:
-                        print(f"⚠️ Could not checkout {missing_file}: {checkout_stderr}")
+                # Try merge with allow-unrelated-histories
+                merge_message = "Smart merge - combining all files from local and remote"
+                if platform.system() == "Windows":
+                    merge_command = f'git merge {remote_branch} --no-ff --allow-unrelated-histories -m "{merge_message}"'
+                else:
+                    merge_command = f"git merge {remote_branch} --no-ff --allow-unrelated-histories -m '{merge_message}'"
                 
-                # Stage the newly checked out files
-                self._run_git_command("git add -A")
+                print(f"[DEBUG] Executing merge command: {merge_command}")
+                stdout, stderr, rc = self._run_git_command(merge_command)
                 
-                # Check if there are any changes to commit
-                stdout, stderr, rc = self._run_git_command("git status --porcelain")
-                if rc == 0 and stdout.strip():
-                    # Commit the missing files
-                    if platform.system() == "Windows":
-                        commit_cmd = f'git commit -m "Complete smart merge - add missing remote files"'
-                    else:
-                        commit_cmd = f"git commit -m 'Complete smart merge - add missing remote files'"
+                if rc != 0:
+                    print(f"[DEBUG] Merge failed with error: {stderr}")
+                    # If merge fails, we'll need to handle it manually
+                    return ResolutionResult(
+                        success=False,
+                        strategy=ConflictStrategy.SMART_MERGE,
+                        message=f"Automatic merge failed: {stderr}. This may require manual conflict resolution.",
+                        files_processed=files_processed,
+                        backup_created=backup_branch
+                    )
+                
+                print("✅ Git merge completed")
+              # STEP 6: Ensure ALL files from both repositories are present (but be cautious if Stage 2 already ran)
+            if stage2_resolved_files:
+                print("✅ Stage 2 resolution handled file merging - skipping additional file checkout to avoid conflicts")
+            else:
+                print("Ensuring all files from both repositories are present...")
+                
+                # Get current files in working directory
+                current_files = self._get_current_working_files()
+                expected_files = set(analysis.local_files + analysis.remote_files)
+                missing_files = expected_files - set(current_files)
+                
+                if missing_files:
+                    print(f"⚠️ Found {len(missing_files)} missing files after merge, checking them out from remote: {missing_files}")
                     
-                    commit_stdout, commit_stderr, commit_rc = self._run_git_command(commit_cmd)
-                    if commit_rc == 0:
-                        print("✅ Committed missing remote files")
-                    else:
-                        print(f"⚠️ Could not commit missing files: {commit_stderr}")
-            
-            # STEP 7: Verify all expected files are present
+                    # Checkout missing files from remote
+                    for missing_file in missing_files:
+                        print(f"[DEBUG] Checking out missing file: {missing_file}")
+                        checkout_stdout, checkout_stderr, checkout_rc = self._run_git_command(f"git checkout {remote_branch} -- \"{missing_file}\"")
+                        if checkout_rc == 0:
+                            print(f"✅ Successfully checked out: {missing_file}")
+                        else:
+                            print(f"⚠️ Could not checkout {missing_file}: {checkout_stderr}")
+                    
+                    # Stage the newly checked out files
+                    self._run_git_command("git add -A")
+                    
+                    # Check if there are any changes to commit
+                    stdout, stderr, rc = self._run_git_command("git status --porcelain")
+                    if rc == 0 and stdout.strip():
+                        # Commit the missing files
+                        if platform.system() == "Windows":
+                            commit_cmd = f'git commit -m "Complete smart merge - add missing remote files"'
+                        else:
+                            commit_cmd = f"git commit -m 'Complete smart merge - add missing remote files'"
+                        
+                        commit_stdout, commit_stderr, commit_rc = self._run_git_command(commit_cmd)
+                        if commit_rc == 0:
+                            print("✅ Committed missing remote files")
+                        else:
+                            print(f"⚠️ Could not commit missing files: {commit_stderr}")
+              # STEP 7: Verify all expected files are present
             final_files = self._get_current_working_files()
             final_files_set = set(final_files)
+            expected_files = set(analysis.local_files + analysis.remote_files)  # Define expected_files here
             still_missing = expected_files - final_files_set
             
             if still_missing:
                 print(f"⚠️ Warning: {len(still_missing)} files are still missing after smart merge: {still_missing}")
             else:
                 print(f"✅ All {len(expected_files)} expected files are present after smart merge")
-            
-            # Update files_processed to include all files that should be present
+              # Update files_processed to include all files that should be present
             all_files = list(expected_files)
             files_processed = all_files
             
-            # STEP 8: Push the merged result to remote
-            print("Pushing smart merge result to remote...")
-            current_branch = self._get_current_branch()
-            push_stdout, push_stderr, push_rc = self._run_git_command(f"git push origin {current_branch}")
-            
-            if push_rc == 0:
-                print("✅ Successfully pushed smart merge result to remote")
-            else:
-                print(f"⚠️ Could not push to remote: {push_stderr}")
-                # Don't fail the operation for push issues
+            # Note: Push operation is handled by the main sync function in Ogresync.py
+            print("✅ Smart merge resolution completed - ready for push by main sync process")
             
             return ResolutionResult(
                 success=True,
