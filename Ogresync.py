@@ -1765,67 +1765,15 @@ def auto_sync(use_threading=True):
             else:
                 safe_update_log("Pull operation completed successfully. Your vault is up to date.", 30)
         else:
-            safe_update_log("Skipping pull operation due to offline mode.", 20)        # Step 5: Handle stashed changes based on what happened in pull
-        # Check if we did a reset --hard (initial sync where remote wins)
-        # In that case, we should discard stashed changes, not reapply them
-        if did_reset_hard:
-            # We did a reset --hard for initial sync - discard stashed changes
-            safe_update_log("🗑️ Discarding stashed local changes (remote content takes precedence for initial sync)...", 35)
-            stash_list_out, _, _ = run_command("git stash list", cwd=vault_path)
-            if stash_list_out.strip():  # If there are stashes
-                run_command("git stash drop", cwd=vault_path)
-                safe_update_log("✅ Local changes safely discarded. Repository now matches remote content.", 35)
-            else:
-                safe_update_log("✅ No local changes to discard. Repository matches remote content.", 35)
+            safe_update_log("Skipping pull operation due to offline mode.", 20)        # Step 5: Handle stashed changes - Always discard during initial sync (before Obsidian)
+        # For initial sync phase, remote content always takes precedence to ensure clean state
+        safe_update_log("🗑️ Discarding any local changes (remote content takes precedence for initial sync)...", 35)
+        stash_list_out, _, _ = run_command("git stash list", cwd=vault_path)
+        if stash_list_out.strip():  # If there are stashes
+            run_command("git stash drop", cwd=vault_path)
+            safe_update_log("✅ Local changes safely discarded. Repository now matches remote content.", 35)
         else:
-            # Normal pull operation - reapply stashed changes
-            out, err, rc = run_command("git stash pop", cwd=vault_path)
-            if rc != 0 and "No stash" not in err:
-                if "CONFLICT" in (out + err):
-                    safe_update_log("❌ A merge conflict occurred while reapplying stashed changes.", 35)
-                    safe_update_log("🔧 Activating 2-stage conflict resolution system for stash conflicts...", 35)
-                    
-                    # Use conflict resolution for stash conflicts too
-                    try:
-                        if not CONFLICT_RESOLUTION_AVAILABLE:
-                            safe_update_log("❌ Enhanced conflict resolution system not available. Manual resolution required.", 35)
-                            return
-                        
-                        # Create backup using backup manager if available
-                        backup_id = None
-                        if 'backup_manager' in sys.modules:
-                            try:
-                                from backup_manager import create_conflict_resolution_backup
-                                backup_id = create_conflict_resolution_backup(vault_path, "stash-pop-conflict")
-                                if backup_id:
-                                    safe_update_log(f"✅ Safety backup created: {backup_id}", 35)
-                            except Exception as backup_err:
-                                safe_update_log(f"⚠️ Could not create backup: {backup_err}", 35)
-                          # Import and use the proper conflict resolution modules
-                        import Stage1_conflict_resolution as cr_module
-                        
-                        # Resolve conflicts using the 2-stage system (standalone function for stash conflicts)
-                        resolution_result = cr_module.resolve_conflicts(vault_path, config_data.get("GITHUB_REMOTE_URL", ""), root)
-                        
-                        if resolution_result.success:
-                            safe_update_log("✅ Stash conflicts resolved successfully using 2-stage system", 35)
-                            if backup_id:
-                                safe_update_log(f"📝 Note: Safety backup available if needed: {backup_id}", 35)
-                        else:
-                            safe_update_log(f"❌ Stash conflict resolution failed: {resolution_result.message}", 35)
-                            if backup_id:
-                                safe_update_log(f"📝 Your work is safe in backup: {backup_id}", 35)
-                                
-                    except Exception as e:
-                        safe_update_log(f"❌ Error in 2-stage conflict resolution for stash conflicts: {e}", 35)
-                        import traceback
-                        traceback.print_exc()
-                    return
-                else:
-                    safe_update_log(f"Stash pop operation failed: {err}", 35)
-                    return
-            elif "No stash" not in err:
-                safe_update_log("✅ Successfully reapplied stashed local changes.", 35)
+            safe_update_log("✅ No local changes to discard. Repository matches remote content.", 35)
 
         # Step 6: Capture current remote state before opening Obsidian
         remote_head_before_obsidian = ""
@@ -1853,13 +1801,27 @@ def auto_sync(use_threading=True):
             check_count += 1
             # Update UI every 10 seconds to show we're still waiting
             if check_count % 20 == 0:  # Every 10 seconds (20 * 0.5s)
-                safe_update_log("Still waiting for Obsidian to close...", 45)
+                safe_update_log("Still waiting for Obsidian to close...", 45)        # Step 8A: First commit any local changes made during the Obsidian session
+        safe_update_log("Obsidian has been closed. Committing local changes from this session...", 50)
+        run_command("git add -A", cwd=vault_path)
+        out, err, rc = run_command('git commit -m "Auto sync commit (before remote check)"', cwd=vault_path)
+        local_changes_committed = False
+        if rc != 0 and "nothing to commit" in (out + err).lower():
+            safe_update_log("No changes detected during this session.", 52)
+        elif rc != 0:
+            safe_update_log(f"❌ Commit operation failed: {err}", 52)
+            return
+        else:
+            safe_update_log("✅ Local changes from current session have been committed.", 52)
+            local_changes_committed = True
+            commit_details, err_details, rc_details = run_command("git diff-tree --no-commit-id --name-status -r HEAD", cwd=vault_path)
+            if rc_details == 0 and commit_details.strip():
+                for line in commit_details.splitlines():
+                    safe_update_log(f"✓ {line}", None)
 
-        # Step 8: Check if remote has advanced during Obsidian session
-        safe_update_log("Obsidian has been closed. Checking for new remote changes before committing...", 50)
-        remote_changes_detected = False
-        
-        # Re-check network connectivity before checking remote changes  
+        # Step 8B: Now check if remote has advanced during Obsidian session
+        safe_update_log("Checking for remote changes that occurred during your Obsidian session...", 55)
+        remote_changes_detected = False          # Re-check network connectivity before checking remote changes  
         network_available = is_network_available()
         if network_available and remote_head_before_obsidian:
             has_remote_changes, new_remote_head, change_count = check_remote_changes_during_session(
@@ -1868,79 +1830,59 @@ def auto_sync(use_threading=True):
             
             if has_remote_changes:
                 remote_changes_detected = True
-                safe_update_log(f"⚠️ Remote repository has advanced by {change_count} commit(s) during your Obsidian session!", 52)
-                safe_update_log("Pulling new remote changes before committing your local changes...", 53)
-                
-                # Pull the new remote changes with enhanced conflict resolution
-                out, err, rc = run_command("git pull --rebase origin main", cwd=vault_path)
-                if rc != 0:
-                    if "Could not resolve hostname" in err or "network" in err.lower():
-                        safe_update_log("❌ Unable to pull updates due to network error. Continuing with local commit.", 54)
-                        remote_changes_detected = False
-                    elif "CONFLICT" in (out + err):  # Detect merge conflicts
-                        safe_update_log("❌ Merge conflict detected with new remote changes during sync.", 54)
-                        safe_update_log("🔧 Activating 2-stage conflict resolution system...", 55)
-                        
-                        # Abort the current rebase to get to a clean state
-                        run_command("git rebase --abort", cwd=vault_path)
-                        
-                        # Use the enhanced 2-stage conflict resolution system
+                safe_update_log(f"⚠️ Remote repository has advanced by {change_count} commit(s) during your Obsidian session!", 58)
+                safe_update_log("🔧 Activating 2-stage conflict resolution system for session changes...", 59)
+                  # ALWAYS activate conflict resolution when remote changes are detected
+                # This gives users visibility and control over what happened during their session
+                try:
+                    if not CONFLICT_RESOLUTION_AVAILABLE:
+                        safe_update_log("❌ Enhanced conflict resolution system not available. Manual resolution required.", 62)
+                        return
+                    
+                    # Create backup using backup manager if available
+                    backup_id = None
+                    if 'backup_manager' in sys.modules:
                         try:
-                            if not CONFLICT_RESOLUTION_AVAILABLE:
-                                safe_update_log("❌ Enhanced conflict resolution system not available. Manual resolution required.", 58)
-                                return
-                            
-                            # Create backup using backup manager if available
-                            backup_id = None
-                            if 'backup_manager' in sys.modules:
-                                try:
-                                    from backup_manager import create_conflict_resolution_backup
-                                    backup_id = create_conflict_resolution_backup(vault_path, "post-obsidian-session-conflict")
-                                    if backup_id:
-                                        safe_update_log(f"✅ Safety backup created: {backup_id}", 56)
-                                except Exception as backup_err:
-                                    safe_update_log(f"⚠️ Could not create backup: {backup_err}", 56)
-                              # Import and use the proper conflict resolution modules
-                            import Stage1_conflict_resolution as cr_module
-                            
-                            # Create conflict resolver for post-Obsidian session conflicts
-                            resolver = cr_module.ConflictResolver(vault_path, root)
-                            remote_url = config_data.get("GITHUB_REMOTE_URL", "")
-                            
-                            # Resolve conflicts using the 2-stage system
-                            resolution_result = resolver.resolve_initial_setup_conflicts(remote_url)
-                            
-                            if resolution_result.success:
-                                safe_update_log("✅ Post-Obsidian session conflicts resolved successfully using 2-stage system", 58)
-                                if backup_id:
-                                    safe_update_log(f"📝 Note: Safety backup available if needed: {backup_id}", 58)
-                            else:
-                                if "cancelled by user" in resolution_result.message.lower():
-                                    safe_update_log("❌ Conflict resolution was cancelled by user", 58)
-                                    safe_update_log("📝 Your local changes remain uncommitted. You can resolve conflicts manually later.", 58)
-                                else:
-                                    safe_update_log(f"❌ Conflict resolution failed: {resolution_result.message}", 58)
-                                    if backup_id:
-                                        safe_update_log(f"📝 Your work is safe in backup: {backup_id}", 58)
-                                # Set flag to skip pushing since conflicts weren't resolved
-                                remote_changes_detected = False
-                                
-                        except Exception as e:
-                            safe_update_log(f"❌ Error in 2-stage conflict resolution during session sync: {e}", 58)
-                            safe_update_log("📝 Your local changes remain uncommitted. Please resolve conflicts manually.", 58)
-                            import traceback
-                            traceback.print_exc()
-                            remote_changes_detected = False
+                            from backup_manager import create_conflict_resolution_backup
+                            backup_id = create_conflict_resolution_backup(vault_path, "post-obsidian-session-conflict")
+                            if backup_id:
+                                safe_update_log(f"✅ Safety backup created: {backup_id}", 62)
+                        except Exception as backup_err:
+                            safe_update_log(f"⚠️ Could not create backup: {backup_err}", 62)
+                    
+                    # Import and use the proper conflict resolution modules
+                    import Stage1_conflict_resolution as cr_module
+                    
+                    # Create conflict resolver for post-Obsidian session conflicts
+                    resolver = cr_module.ConflictResolver(vault_path, root)
+                    remote_url = config_data.get("GITHUB_REMOTE_URL", "")
+                      # Resolve conflicts using the 2-stage system
+                    safe_update_log("📋 Presenting options for handling remote changes that occurred during your session...", 63)
+                    resolution_result = resolver.resolve_initial_setup_conflicts(remote_url)
+                    
+                    if resolution_result.success:
+                        safe_update_log("✅ Post-Obsidian session changes resolved successfully using 2-stage system", 65)
+                        if backup_id:
+                            safe_update_log(f"📝 Note: Safety backup available if needed: {backup_id}", 65)
                     else:
-                        safe_update_log("❌ Error pulling new remote changes during session sync.", 54)
-                else:
-                    safe_update_log("✅ New remote changes have been successfully pulled and integrated.", 55)
-                    # Log pulled changes
-                    for line in out.splitlines():
-                        if line.strip():
-                            safe_update_log(f"✓ Integrated: {line}", 55)
+                        if "cancelled by user" in resolution_result.message.lower():
+                            safe_update_log("❌ Conflict resolution was cancelled by user", 65)
+                            safe_update_log("📝 Your local changes are committed but not pushed. You can resolve conflicts manually later.", 65)
+                        else:
+                            safe_update_log(f"❌ Conflict resolution failed: {resolution_result.message}", 65)
+                            if backup_id:
+                                safe_update_log(f"📝 Your work is safe in backup: {backup_id}", 65)
+                        # Set flag to skip pushing since conflicts weren't resolved
+                        remote_changes_detected = False
+                        
+                except Exception as e:
+                    safe_update_log(f"❌ Error in 2-stage conflict resolution during session sync: {e}", 65)
+                    safe_update_log("📝 Your local changes are committed but not pushed. Please resolve conflicts manually.", 65)
+                    import traceback
+                    traceback.print_exc()
+                    remote_changes_detected = False
             else:
-                safe_update_log("✅ No remote changes detected during Obsidian session.", 52)
+                safe_update_log("✅ No remote changes detected during Obsidian session.", 58)
         elif network_available:
             safe_update_log("Checking for any new remote changes...", 52)
             # Fallback: do a simple fetch and check
@@ -2006,27 +1948,9 @@ def auto_sync(use_threading=True):
                         if line.strip():
                             safe_update_log(f"✓ Pulled: {line}", 52)
         else:
-            safe_update_log("No network detected. Skipping remote check and proceeding with local commit.", 52)
+            safe_update_log("No network detected. Skipping remote check and proceeding to push.", 58)
 
-        # Step 9: Commit changes after Obsidian closes
-        safe_update_log("Committing any local changes made during this session...", 60)
-        run_command("git add -A", cwd=vault_path)
-        out, err, rc = run_command('git commit -m "Auto sync commit"', cwd=vault_path)
-        committed = True
-        if rc != 0 and "nothing to commit" in (out + err).lower():
-            safe_update_log("No changes detected during this session. Nothing to commit.", 65)
-            committed = False
-        elif rc != 0:
-            safe_update_log(f"❌ Commit operation failed: {err}", 65)
-            return
-        else:
-            safe_update_log("Local changes have been committed successfully.", 65)
-            commit_details, err_details, rc_details = run_command("git diff-tree --no-commit-id --name-status -r HEAD", cwd=vault_path)
-            if rc_details == 0 and commit_details.strip():
-                for line in commit_details.splitlines():
-                    safe_update_log(f"✓ {line}", None)
-
-        # Step 10: Push changes if network is available
+        # Step 9: Push changes if network is available (local changes already committed in Step 8A)
         network_available = is_network_available()
         if network_available:
             unpushed = get_unpushed_commits(vault_path)
@@ -2043,12 +1967,10 @@ def auto_sync(use_threading=True):
             else:
                 safe_update_log("No new commits to push.", 80)
         else:
-            safe_update_log("Offline mode: Changes have been committed locally. They will be automatically pushed when an internet connection is available.", 80)
-
-        # Step 11: Final message  
-        if remote_changes_detected and committed:
+            safe_update_log("Offline mode: Changes have been committed locally. They will be automatically pushed when an internet connection is available.", 80)        # Step 10: Final message  
+        if remote_changes_detected and local_changes_committed:
             safe_update_log("🎉 Synchronization complete! Remote changes were detected and resolved, your local changes have been committed and pushed.", 100)
-        elif committed:
+        elif local_changes_committed:
             safe_update_log("🎉 Synchronization complete! Your local changes have been committed and pushed to GitHub.", 100)
         else:
             safe_update_log("🎉 Synchronization complete! No changes were made during this session.", 100)

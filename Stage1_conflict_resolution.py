@@ -1478,10 +1478,12 @@ class ConflictResolutionDialog:
             print("[DEBUG] UI created successfully")
         except Exception as e:
             print(f"[ERROR] Failed to create UI: {e}")
-            return None
-          # Center the dialog and bring to front - with null checks
+            return None        # Center the dialog and bring to front - with null checks
         try:
             if self.dialog:
+                # Add window close protocol handler for cleanup
+                self.dialog.protocol("WM_DELETE_WINDOW", self._on_window_close)
+                
                 self.dialog.lift()
                 self.dialog.attributes('-topmost', True)
                 self.dialog.after_idle(lambda: self.dialog.attributes('-topmost', False) if self.dialog else None)
@@ -1968,8 +1970,7 @@ class ConflictResolutionDialog:
             cursor="hand2",
             padx=25,
             pady=10,
-            bd=1
-        )
+            bd=1        )
         proceed_btn.pack(side=tk.LEFT)
     
     def _proceed(self):
@@ -1977,15 +1978,39 @@ class ConflictResolutionDialog:
         strategy_value = self.strategy_var.get()
         self.result = ConflictStrategy(strategy_value)
         print(f"[DEBUG] User selected strategy: {self.result}")
-        if self.dialog:
-            self.dialog.destroy()
+        self._cleanup_and_destroy()
     
     def _cancel(self):
         """Handle cancel button click"""
         self.result = None
         print("[DEBUG] User cancelled dialog")
+        self._cleanup_and_destroy()
+    
+    def _cleanup_and_destroy(self):
+        """Clean up event bindings and destroy the dialog"""
         if self.dialog:
-            self.dialog.destroy()
+            try:
+                # Unbind all mouse wheel events that were bound globally
+                self.dialog.unbind_all("<MouseWheel>")
+                self.dialog.unbind_all("<Button-4>")
+                self.dialog.unbind_all("<Button-5>")
+                print("[DEBUG] Unbound mouse wheel events")
+            except Exception as e:
+                print(f"[DEBUG] Error unbinding events (safe to ignore): {e}")
+            
+            try:
+                self.dialog.destroy()
+                print("[DEBUG] Dialog destroyed successfully")
+            except Exception as e:
+                print(f"[DEBUG] Error destroying dialog: {e}")
+            
+            self.dialog = None
+    
+    def _on_window_close(self):
+        """Handle window close event (X button)"""
+        print("[DEBUG] Window close event triggered")
+        self.result = None
+        self._cleanup_and_destroy()
 
 
 # =============================================================================

@@ -200,6 +200,7 @@ class Stage2ConflictResolutionDialog:
         self.result: Optional[Stage2Result] = None
         self.dialog: Optional[Union[tk.Tk, tk.Toplevel]] = None
         self._hidden_parent: Optional[tk.Tk] = None  # Track hidden parent for cleanup
+        self.scheduled_callbacks = []  # Track scheduled callbacks for cleanup
         
         # UI components - will be initialized when dialog is created
         self.file_list_var: Optional[tk.StringVar] = None
@@ -228,6 +229,15 @@ class Stage2ConflictResolutionDialog:
                 # Window might have been destroyed
                 pass
     
+    def _safe_maintain_focus(self):
+        """Safely maintain dialog focus without causing TclError"""
+        try:
+            if self.dialog and hasattr(self.dialog, 'lift'):
+                self.dialog.lift()
+                self.dialog.focus_force()
+        except tk.TclError:
+            pass  # Dialog might have been destroyed
+    
     def show(self) -> Optional[Stage2Result]:
         """Show the Stage 2 dialog and return resolution result"""
         if not self.conflicted_files:
@@ -245,22 +255,29 @@ class Stage2ConflictResolutionDialog:
         self._load_current_file()
           # Show dialog and wait for completion
         try:
-            if self.dialog:
-                # Ensure dialog is visible and on top
+            if self.dialog:                # Ensure dialog is visible and on top
                 self.dialog.deiconify()
                 self.dialog.lift()
                 self.dialog.focus_force()
                   # Bring to front again after a brief delay to ensure visibility
                 def bring_to_front():
-                    if self.dialog and hasattr(self.dialog, 'lift'):
-                        self.dialog.lift()
+                    try:
+                        if self.dialog and hasattr(self.dialog, 'lift'):
+                            self.dialog.lift()
+                    except tk.TclError:
+                        pass  # Dialog might be destroyed
                 
                 def force_focus():
-                    if self.dialog and hasattr(self.dialog, 'focus_force'):
-                        self.dialog.focus_force()
+                    try:
+                        if self.dialog and hasattr(self.dialog, 'focus_force'):
+                            self.dialog.focus_force()
+                    except tk.TclError:
+                        pass  # Dialog might be destroyed
                 
-                self.dialog.after(100, bring_to_front)
-                self.dialog.after(200, force_focus)
+                # Schedule callbacks and track them for cleanup
+                callback1 = self.dialog.after(100, bring_to_front)
+                callback2 = self.dialog.after(200, force_focus)
+                self.scheduled_callbacks.extend([callback1, callback2])
                 
                 # Start the mainloop
                 self.dialog.mainloop()
@@ -309,29 +326,56 @@ class Stage2ConflictResolutionDialog:
         self.dialog.attributes('-topmost', True)  # Always on top
         self.dialog.lift()  # Bring to front
         self.dialog.focus_force()  # Force focus
-        
-        # After a short delay, remove topmost to allow normal window interaction
+          # After a short delay, remove topmost to allow normal window interaction
         def remove_topmost():
-            if self.dialog and hasattr(self.dialog, 'attributes'):
-                self.dialog.attributes('-topmost', False)
+            try:
+                if self.dialog and hasattr(self.dialog, 'attributes'):
+                    self.dialog.attributes('-topmost', False)
+            except tk.TclError:
+                pass  # Dialog might be destroyed
         
-        self.dialog.after(2000, remove_topmost)
+        callback3 = self.dialog.after(2000, remove_topmost)
+        self.scheduled_callbacks.append(callback3)
         
         # Handle window close event properly
         self.dialog.protocol("WM_DELETE_WINDOW", self._on_window_close)
     
+    def _cleanup_and_destroy(self):
+        """Safely cleanup and destroy the dialog"""
+        try:
+            # Cancel any scheduled callbacks
+            if hasattr(self, 'scheduled_callbacks'):
+                for callback_id in self.scheduled_callbacks:
+                    try:
+                        if self.dialog:
+                            self.dialog.after_cancel(callback_id)
+                    except tk.TclError:
+                        pass  # Callback might already be executed or cancelled
+                self.scheduled_callbacks.clear()
+            
+            # Destroy the dialog
+            if self.dialog:
+                try:
+                    self.dialog.destroy()
+                except tk.TclError:
+                    pass  # Dialog might already be destroyed
+                self.dialog = None
+        except Exception as e:
+            print(f"[WARNING] Error during dialog cleanup: {e}")
+    
     def _on_window_close(self):
-        """Handle window close event"""
-        # Set result to None (cancelled) and close dialog
+        """Handle window close event (X button)"""
+        self._cancel_resolution()
+    
+    def _cancel_resolution(self):
+        """Cancel the resolution process"""
         self.result = Stage2Result(
             success=False,
             resolved_files=[],
             resolution_strategies={},
             message="User cancelled Stage 2 resolution"
         )
-        if self.dialog:
-            self.dialog.quit()  # Exit mainloop
-            self.dialog.destroy()  # Destroy window
+        self._cleanup_and_destroy()
     
     def _create_ui(self):
         """Create the complete UI for Stage 2 resolution"""
@@ -1076,26 +1120,27 @@ class Stage2ConflictResolutionDialog:
                 self.current_file_index = i
                 self._update_file_list()
                 self._load_current_file()
-                return
-          # All files resolved
+                return          # All files resolved
         self._check_completion()
     
     def _check_completion(self):
         """Check if all files are resolved and offer completion"""
         unresolved_count = sum(1 for f in self.conflicted_files if not f.is_resolved)        
         if unresolved_count == 0:
-            result = messagebox.askyesno(
-                "All Files Resolved",
-                "🎉 All files have been resolved!\n\nWould you like to complete the resolution process?",
-                default="yes",
-                parent=self.dialog  # Properly parent the dialog
-            )
-            if result:
-                self._complete_resolution()
-            # Maintain focus after dialog
-            if self.dialog:
-                self.dialog.lift()
-                self.dialog.focus_force()
+            try:
+                result = messagebox.askyesno(
+                    "All Files Resolved",
+                    "🎉 All files have been resolved!\n\nWould you like to complete the resolution process?",
+                    default="yes",
+                    parent=self.dialog  # Properly parent the dialog
+                )
+                if result:
+                    self._complete_resolution()
+                    return  # Don't try to maintain focus after completion                # Maintain focus after dialog only if dialog still exists
+                self._safe_maintain_focus()
+            except tk.TclError:
+                # Dialog might have been destroyed during messagebox display
+                pass
     
     def _load_local_to_editor(self):
         """Load local content to manual merge editor"""
@@ -1131,33 +1176,29 @@ class Stage2ConflictResolutionDialog:
                 delete=False
             )
             temp_file.write(current_file.local_content)
-            temp_file.close()            
-            # Launch external editor
+            temp_file.close()              # Launch external editor
             editor_commands = self.available_editors[editor_name]
             success = ExternalEditorManager.launch_external_editor(list(editor_commands), temp_file.name)
             
             if success:
                 # DON'T make Stage 2 dialog topmost - we want external editor to be on top
                 # Just ensure Stage 2 dialog stays above the setup wizard (its normal position)
-                if self.dialog:
-                    self.dialog.lift()  # Lift above setup wizard but not above everything
-                    self.dialog.focus_force()
-                    # DO NOT set topmost=True here - external editor should be above us
-                    
-                    # Show dialog to wait for user to finish editing - properly parented
-                    # This dialog will appear above Stage 2 dialog but below external editor
-                    result = messagebox.askyesno(
-                        "External Editor",
-                        f"✅ {editor_name} has been opened with the file.\n\n"
-                        f"Edit the file and save it, then click 'Yes' to load the changes back.\n"
-                        f"Click 'No' to cancel external editing.",
-                        default="yes",
-                        parent=self.dialog  # Important: parent the dialog properly
-                    )
-                    
-                    # After messagebox closes, ensure Stage 2 dialog is still above setup wizard
-                    self.dialog.lift()
-                    self.dialog.focus_force()
+                self._safe_maintain_focus()
+                # DO NOT set topmost=True here - external editor should be above us
+                
+                # Show dialog to wait for user to finish editing - properly parented
+                # This dialog will appear above Stage 2 dialog but below external editor
+                result = messagebox.askyesno(
+                    "External Editor",
+                    f"✅ {editor_name} has been opened with the file.\n\n"
+                    f"Edit the file and save it, then click 'Yes' to load the changes back.\n"
+                    f"Click 'No' to cancel external editing.",
+                    default="yes",
+                    parent=self.dialog  # Important: parent the dialog properly
+                )
+                
+                # After messagebox closes, ensure Stage 2 dialog maintains focus
+                self._safe_maintain_focus()
                 
                 if result:
                     # Read back the edited content
@@ -1171,9 +1212,7 @@ class Stage2ConflictResolutionDialog:
                             self.editor_text.insert(1.0, edited_content)
                         
                         # Ensure dialog maintains focus after loading content
-                        if self.dialog:
-                            self.dialog.lift()
-                            self.dialog.focus_force()
+                        self._safe_maintain_focus()
                         
                         messagebox.showinfo(
                             "External Edit Complete",
@@ -1211,14 +1250,14 @@ class Stage2ConflictResolutionDialog:
             
             if not result:
                 return
-            
-            # Auto-resolve unresolved files to keep local version
+              # Auto-resolve unresolved files to keep local version
             for file_conflict in self.conflicted_files:
                 if not file_conflict.is_resolved:
                     file_conflict.resolved_content = file_conflict.local_content
                     file_conflict.is_resolved = True
                     file_conflict.resolution_strategy = FileResolutionStrategy.KEEP_LOCAL
                     self.resolution_strategies[file_conflict.file_path] = FileResolutionStrategy.KEEP_LOCAL
+        
         self.result = Stage2Result(
             success=True,
             resolved_files=[f.file_path for f in self.conflicted_files],
@@ -1226,20 +1265,8 @@ class Stage2ConflictResolutionDialog:
             message=f"Stage 2 resolution completed successfully for {len(self.conflicted_files)} files"
         )
         
-        if self.dialog:
-            self.dialog.destroy()
+        self._cleanup_and_destroy()
 
-    
-    def _cancel_resolution(self):
-        """Cancel the resolution process"""
-        self.result = Stage2Result(
-            success=False,
-            resolved_files=[],
-            resolution_strategies={},
-            message="User cancelled Stage 2 resolution"
-        )
-        if self.dialog:
-            self.dialog.destroy()
     
     def _activate_manual_merge(self):
         """Activate manual merge tab and load current file content"""
