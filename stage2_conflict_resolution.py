@@ -217,6 +217,17 @@ class Stage2ConflictResolutionDialog:
         # External editors
         self.available_editors = ExternalEditorManager.detect_available_editors()
     
+    def _maintain_focus(self):
+        """Helper method to maintain proper window focus and layering"""
+        if self.dialog:
+            try:
+                self.dialog.lift()  # Bring to front
+                self.dialog.focus_force()  # Force focus
+                self.dialog.update()  # Update the display
+            except tk.TclError:
+                # Window might have been destroyed
+                pass
+    
     def show(self) -> Optional[Stage2Result]:
         """Show the Stage 2 dialog and return resolution result"""
         if not self.conflicted_files:
@@ -1066,22 +1077,25 @@ class Stage2ConflictResolutionDialog:
                 self._update_file_list()
                 self._load_current_file()
                 return
-        
-        # All files resolved
+          # All files resolved
         self._check_completion()
     
     def _check_completion(self):
         """Check if all files are resolved and offer completion"""
-        unresolved_count = sum(1 for f in self.conflicted_files if not f.is_resolved)
-        
+        unresolved_count = sum(1 for f in self.conflicted_files if not f.is_resolved)        
         if unresolved_count == 0:
             result = messagebox.askyesno(
                 "All Files Resolved",
                 "🎉 All files have been resolved!\n\nWould you like to complete the resolution process?",
-                default="yes"
+                default="yes",
+                parent=self.dialog  # Properly parent the dialog
             )
             if result:
                 self._complete_resolution()
+            # Maintain focus after dialog
+            if self.dialog:
+                self.dialog.lift()
+                self.dialog.focus_force()
     
     def _load_local_to_editor(self):
         """Load local content to manual merge editor"""
@@ -1117,21 +1131,33 @@ class Stage2ConflictResolutionDialog:
                 delete=False
             )
             temp_file.write(current_file.local_content)
-            temp_file.close()
-            
+            temp_file.close()            
             # Launch external editor
             editor_commands = self.available_editors[editor_name]
             success = ExternalEditorManager.launch_external_editor(list(editor_commands), temp_file.name)
             
             if success:
-                # Show dialog to wait for user to finish editing
-                result = messagebox.askyesno(
-                    "External Editor",
-                    f"✅ {editor_name} has been opened with the file.\n\n"
-                    f"Edit the file and save it, then click 'Yes' to load the changes back.\n"
-                    f"Click 'No' to cancel external editing.",
-                    default="yes"
-                )
+                # DON'T make Stage 2 dialog topmost - we want external editor to be on top
+                # Just ensure Stage 2 dialog stays above the setup wizard (its normal position)
+                if self.dialog:
+                    self.dialog.lift()  # Lift above setup wizard but not above everything
+                    self.dialog.focus_force()
+                    # DO NOT set topmost=True here - external editor should be above us
+                    
+                    # Show dialog to wait for user to finish editing - properly parented
+                    # This dialog will appear above Stage 2 dialog but below external editor
+                    result = messagebox.askyesno(
+                        "External Editor",
+                        f"✅ {editor_name} has been opened with the file.\n\n"
+                        f"Edit the file and save it, then click 'Yes' to load the changes back.\n"
+                        f"Click 'No' to cancel external editing.",
+                        default="yes",
+                        parent=self.dialog  # Important: parent the dialog properly
+                    )
+                    
+                    # After messagebox closes, ensure Stage 2 dialog is still above setup wizard
+                    self.dialog.lift()
+                    self.dialog.focus_force()
                 
                 if result:
                     # Read back the edited content
@@ -1144,9 +1170,15 @@ class Stage2ConflictResolutionDialog:
                             self.editor_text.delete(1.0, tk.END)
                             self.editor_text.insert(1.0, edited_content)
                         
+                        # Ensure dialog maintains focus after loading content
+                        if self.dialog:
+                            self.dialog.lift()
+                            self.dialog.focus_force()
+                        
                         messagebox.showinfo(
                             "External Edit Complete",
-                            "Content loaded from external editor. You can now save as Manual Merge."
+                            "Content loaded from external editor. You can now save as Manual Merge.",
+                            parent=self.dialog  # Properly parent this dialog too
                         )
                     except Exception as e:
                         messagebox.showerror("Error", f"Failed to read edited file: {e}")
@@ -1187,168 +1219,4 @@ class Stage2ConflictResolutionDialog:
                     file_conflict.is_resolved = True
                     file_conflict.resolution_strategy = FileResolutionStrategy.KEEP_LOCAL
                     self.resolution_strategies[file_conflict.file_path] = FileResolutionStrategy.KEEP_LOCAL
-        
-        # Create result
-        self.result = Stage2Result(
-            success=True,
-            resolved_files=[f.file_path for f in self.conflicted_files],
-            resolution_strategies=self.resolution_strategies,
-            message=f"Successfully resolved {len(self.conflicted_files)} files"
-        )
-        
-        if self.dialog:
-            self.dialog.quit()
-            self.dialog.destroy()
-    
-    def _cancel_resolution(self):
-        """Cancel the resolution process"""
-        result = messagebox.askyesno(
-            "Cancel Resolution",
-            "❌ Are you sure you want to cancel the file resolution process?\n\n"
-            "All progress will be lost.",
-            default="no"
-        )
-        
-        if result:
-            self.result = Stage2Result(
-                success=False,
-                resolved_files=[],
-                resolution_strategies={},
-                message="Resolution cancelled by user"
-            )
-            if self.dialog:
-                self.dialog.quit()
-                self.dialog.destroy()
-    
-    def _activate_manual_merge(self):
-        """Activate manual merge mode - switch to manual merge tab and load content"""
-        # Switch to the manual merge tab (index 1)
-        if hasattr(self, 'content_notebook'):
-            self.content_notebook.select(1)  # Select the Manual Merge Editor tab
-        
-        # Load current file content into editor
-        self._load_current_file_to_editor()
-        
-        # Focus the editor for immediate editing
-        if hasattr(self, 'editor_text') and self.editor_text:
-            self.editor_text.focus_set()
-            
-        # External editor buttons are already created and always visible
-    
-    def _load_current_file_to_editor(self):
-        """Load current file content into the manual merge editor"""
-        if self.editor_text and self.conflicted_files:
-            current_file = self.conflicted_files[self.current_file_index]
-            self.editor_text.delete(1.0, tk.END)
-            # Start with local content as default
-            self.editor_text.insert(1.0, current_file.local_content)
-    
-    def _create_external_editor_buttons(self):
-        """Create buttons for available external editors"""
-        if not hasattr(self, 'external_editor_frame'):
-            return
-        
-        # Clear existing buttons
-        for widget in self.external_editor_frame.winfo_children():
-            if isinstance(widget, tk.Button):
-                widget.destroy()
-        
-        # Add external editor buttons (max 4 to fit nicely)
-        for editor_name in list(self.available_editors.keys())[:4]:
-            editor_btn = tk.Button(
-                self.external_editor_frame,
-                text=editor_name,
-                command=lambda name=editor_name: self._open_external_editor(name),
-                font=("Arial", 9),
-                bg="#F3F4F6",
-                fg="#374151",
-                relief=tk.FLAT,
-                cursor="hand2",
-                padx=10,
-                pady=4
-            )
-            editor_btn.pack(side=tk.LEFT, padx=(0, 5))
-
-    # =============================================================================
-    # CONVENIENCE FUNCTIONS
-    # =============================================================================
-
-def create_file_conflict_details(file_path: str, local_content: str, remote_content: str) -> FileConflictDetails:
-    """Create FileConflictDetails object from file information"""
-    return FileConflictDetails(
-        file_path=file_path,
-        local_content=local_content,
-        remote_content=remote_content,
-        has_differences=(local_content.strip() != remote_content.strip()),
-        is_binary=b'\0' in local_content.encode('utf-8', errors='ignore'),
-        file_size_local=len(local_content.encode('utf-8')),
-        file_size_remote=len(remote_content.encode('utf-8'))
-    )
-
-
-def show_stage2_resolution(parent: Optional[tk.Tk], conflicted_files: List[FileConflictDetails]) -> Optional[Stage2Result]:
-    """
-    Convenience function to show Stage 2 conflict resolution dialog
-    
-    Args:
-        parent: Parent window
-        conflicted_files: List of files that need resolution
-        
-    Returns:
-        Stage2Result or None if cancelled
-    """
-    dialog = Stage2ConflictResolutionDialog(parent, conflicted_files)
-    return dialog.show()
-
-
-if __name__ == "__main__":
-    # Test Stage 2 resolution system
-    print("Testing Stage 2 Conflict Resolution System...")
-    
-    # Create sample conflicted files for testing
-    test_files = [
-        create_file_conflict_details(
-            "test1.txt",
-            "Line 1\nLine 2 Local\nLine 3",
-            "Line 1\nLine 2 Remote\nLine 3\nLine 4 Remote"
-        ),
-        create_file_conflict_details(
-            "test2.md",
-            "# Header\nLocal content\n## Section",
-            "# Header\nRemote content\n## Section\n### Subsection"
-        )
-    ]
-    
-    print(f"✅ Created {len(test_files)} test file conflict details")
-    print(f"   • {test_files[0].file_path} (differences: {test_files[0].has_differences})")
-    print(f"   • {test_files[1].file_path} (differences: {test_files[1].has_differences})")
-    
-    # Test external editor detection
-    editors = ExternalEditorManager.detect_available_editors()
-    print(f"✅ Detected {len(editors)} external editors: {list(editors.keys())}")
-    
-    # Test auto-merge functionality
-    print("✅ Testing auto-merge functionality...")
-    dialog = Stage2ConflictResolutionDialog(None, test_files)
-    merged_content = dialog._attempt_auto_merge(test_files[0])
-    if merged_content:
-        print("   Auto-merge successful, preview:")
-        print("   " + merged_content.replace('\n', '\n   ')[:200] + "...")
-    else:
-        print("   Auto-merge returned None")
-    
-    # Test GUI if available
-    try:
-        print("✅ Testing GUI components...")
-        root = tk.Tk()
-        root.withdraw()  # Hide root window
-        
-        print("   GUI components initialized successfully")
-        print("   To test the full dialog, call show_stage2_resolution() from another script")
-        
-        root.destroy()
-        print("✅ All Stage 2 tests completed successfully!")
-        
-    except Exception as e:
-        print(f"⚠ GUI test skipped (expected in headless environments): {e}")
-        print("✅ Non-GUI tests completed successfully!")
+       
