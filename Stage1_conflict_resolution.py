@@ -48,6 +48,19 @@ except ImportError as e:
     STAGE2_AVAILABLE = False
     print(f"⚠ Stage 2 module not available: {e}")
 
+# Import backup manager
+try:
+    from backup_manager import OgresyncBackupManager, BackupReason
+    import conflict_resolution_integration as backup_integration
+    BACKUP_MANAGER_AVAILABLE = True
+    print("✓ Backup manager module loaded")
+except ImportError as e:
+    OgresyncBackupManager = None
+    BackupReason = None
+    backup_integration = None
+    BACKUP_MANAGER_AVAILABLE = False
+    print(f"⚠ Backup manager module not available: {e}")
+
 
 # =============================================================================
 # DATA STRUCTURES AND ENUMS
@@ -116,6 +129,12 @@ class ConflictResolutionEngine:
         self.git_available = self._check_git_availability()
         self.default_remote_branch = "origin/main"  # Default fallback
         
+        # Initialize backup manager if available
+        if BACKUP_MANAGER_AVAILABLE and OgresyncBackupManager:
+            self.backup_manager = OgresyncBackupManager(vault_path)
+        else:
+            self.backup_manager = None
+        
     def _check_git_availability(self) -> bool:
         """Check if git is available in the system"""
         try:
@@ -127,20 +146,37 @@ class ConflictResolutionEngine:
     
     def _run_git_command(self, command: str, cwd: Optional[str] = None) -> Tuple[str, str, int]:
         """Run a git command safely with cross-platform support"""
+        print(f"[DEBUG] _run_git_command called with: '{command}'")
         try:
             working_dir = cwd or self.vault_path
             
-            # Handle cross-platform command execution
+            # Handle cross-platform command execution with better Windows support
             if platform.system() == "Windows":
-                # On Windows, use shell=True for better command handling
-                result = subprocess.run(
-                    command,
-                    shell=True,
-                    cwd=working_dir,
-                    capture_output=True,
-                    text=True,
-                    timeout=30
-                )
+                # On Windows, for git commands with complex arguments, use proper argument splitting
+                # This avoids shell interpretation issues with quotes and special characters
+                try:
+                    # For Windows, split the command properly and avoid shell=True when possible
+                    command_parts = shlex.split(command, posix=False)  # posix=False for Windows
+                    print(f"[DEBUG] Windows command parts: {command_parts}")
+                    
+                    result = subprocess.run(
+                        command_parts,
+                        cwd=working_dir,
+                        capture_output=True,
+                        text=True,
+                        timeout=30
+                    )
+                except (ValueError, OSError) as e:
+                    # If splitting fails, fall back to shell=True but escape the command properly
+                    print(f"[DEBUG] Command splitting failed ({e}), using shell=True fallback")
+                    result = subprocess.run(
+                        command,
+                        shell=True,
+                        cwd=working_dir,
+                        capture_output=True,
+                        text=True,
+                        timeout=30
+                    )
             else:
                 # On Unix-like systems (Linux, macOS), split command properly
                 try:
@@ -163,7 +199,10 @@ class ConflictResolutionEngine:
                         capture_output=True,
                         text=True,
                         timeout=30
-                    )
+                    )            
+            print(f"[DEBUG] Command executed successfully. RC: {result.returncode}")
+            if result.returncode != 0:
+                print(f"[DEBUG] Command stderr: {result.stderr}")
             
             return result.stdout, result.stderr, result.returncode
             
@@ -175,7 +214,19 @@ class ConflictResolutionEngine:
             return "", f"Unexpected error: {e}", 1
     
     def _create_safety_backup_branch(self, operation_name: str) -> str:
-        """Create a safety backup branch before any git operation"""
+        """Create a safety backup using the backup manager"""
+        if self.backup_manager and BACKUP_MANAGER_AVAILABLE and BackupReason:
+            backup_id = self.backup_manager.create_backup(
+                BackupReason.CONFLICT_RESOLUTION,
+                f"Safety backup before {operation_name} operation"
+            )
+            if backup_id:
+                print(f"✅ Safety backup created: {backup_id}")
+                return backup_id
+            else:
+                print("⚠️ Could not create backup using backup manager - falling back to legacy")
+        
+        # Fallback to legacy backup branch creation
         timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
         backup_branch_name = f"ogresync-backup-{operation_name}-{timestamp}"
         
@@ -198,10 +249,55 @@ class ConflictResolutionEngine:
         stdout, stderr, rc = self._run_git_command("git config user.email")
         if rc != 0 or not stdout.strip():
             self._run_git_command('git config user.email "ogresync@local"')
-        
-        # Set merge strategy to preserve history
+          # Set merge strategy to preserve history
         self._run_git_command("git config pull.rebase false")
         self._run_git_command("git config merge.tool false")
+    
+    def _is_meaningful_file(self, file_path: str) -> bool:
+        """Check if a file should be considered meaningful user content (exclude system files)"""
+        file_name = os.path.basename(file_path)
+        
+        # System and temporary files to ignore
+        ignored_files = {
+            'README.md', '.gitignore', '.DS_Store', 'Thumbs.db', 
+            'desktop.ini', '.env', '.env.local', '.env.example',
+            'config.txt', 'ogresync.exe'  # Ogresync specific files
+        }
+        
+        # File extensions to ignore
+        ignored_extensions = {
+            '.pyc', '.pyo', '.pyd', '.so', '.dll', '.dylib',
+            '.tmp', '.temp', '.log', '.cache', '.ico', '.exe'
+        }
+        
+        # Directory patterns to ignore in file paths
+        ignored_dir_patterns = {
+            '.git/', '.obsidian/', '__pycache__/', '.vscode/', 
+            '.idea/', '.vs/', 'node_modules/', '.pytest_cache/',
+            '.mypy_cache/', '.coverage/', 'venv/', '.venv/',
+            'env/', '.env/', 'assets/'
+        }
+        
+        # Check if file name is in ignored list
+        if file_name in ignored_files:
+            return False
+        
+        # Check if file starts with dot (hidden files)
+        if file_name.startswith('.'):
+            return False
+        
+        # Check file extension
+        _, ext = os.path.splitext(file_name)
+        if ext.lower() in ignored_extensions:
+            return False
+        
+        # Check if file path contains ignored directory patterns
+        normalized_path = file_path.replace('\\', '/')
+        for pattern in ignored_dir_patterns:
+            if pattern in normalized_path:
+                return False
+        
+        return True
     
     def analyze_conflicts(self, remote_url: Optional[str] = None) -> ConflictAnalysis:
         """
@@ -246,9 +342,11 @@ class ConflictResolutionEngine:
                 conflicted_files.append(file_info)
             else:
                 identical_files.append(file_path)
-        
-        # Determine conflict type and create analysis
-        has_conflicts = bool(conflicted_files or local_only or remote_only)
+          # Determine conflict type and create analysis
+        # IMPORTANT: Only consider it a "conflict" if there are actual content differences
+        # in files that exist in both repositories. Having different files (local_only or remote_only)
+        # is not a conflict - it's just different content that can be safely merged.
+        has_conflicts = bool(conflicted_files)
         conflict_type = ConflictType.INITIAL_SETUP  # For now, focusing on initial setup
         
         analysis = ConflictAnalysis(
@@ -261,24 +359,23 @@ class ConflictResolutionEngine:
             remote_only_files=remote_only,
             identical_files=identical_files,
             has_conflicts=has_conflicts,
-            summary=self._generate_conflict_summary(conflicted_files, local_only, remote_only)
-        )
+            summary=self._generate_conflict_summary(conflicted_files, local_only, remote_only)        )
         
         print(f"[DEBUG] Analysis complete. Has conflicts: {has_conflicts}")
         return analysis
     
     def _get_local_files(self) -> List[str]:
-        """Get list of files in local repository"""
+        """Get list of meaningful content files in local repository (excluding system files)"""
         files = []
         try:
             if os.path.exists(self.vault_path):
                 for root, dirs, filenames in os.walk(self.vault_path):
-                    # Skip .git directory and backup directories
-                    if '.git' in root or 'backup' in root.lower():
-                        continue
+                    # Skip certain directories entirely (modify dirs in-place to prevent walking into them)
+                    dirs[:] = [d for d in dirs if d not in {'.git', '.obsidian', '__pycache__', '.vscode', '.idea', 'node_modules', '.vs', '.pytest_cache', '.mypy_cache', '.coverage', 'venv', '.venv', 'env', '.env'}]
+                    
                     for filename in filenames:
-                        if not filename.startswith('.'):
-                            rel_path = os.path.relpath(os.path.join(root, filename), self.vault_path)
+                        rel_path = os.path.relpath(os.path.join(root, filename), self.vault_path)
+                        if self._is_meaningful_file(rel_path):
                             files.append(rel_path.replace(os.sep, '/'))  # Normalize path separators
         except Exception as e:
             print(f"[DEBUG] Error getting local files: {e}")
@@ -297,8 +394,7 @@ class ConflictResolutionEngine:
             # First, try to fetch remote information
             stdout, stderr, rc = self._run_git_command("git fetch origin")
             if rc == 0:
-                print("[DEBUG] Successfully fetched from remote")
-                
+                print("[DEBUG] Successfully fetched from remote")                
                 # Try to determine the default branch
                 branches_to_try = ["origin/main", "origin/master"]
                 remote_files_found = False
@@ -308,10 +404,10 @@ class ConflictResolutionEngine:
                     print(f"[DEBUG] Trying branch: {branch}")
                     stdout, stderr, rc = self._run_git_command(f"git ls-tree -r --name-only {branch}")
                     if rc == 0:
-                        files = [f.strip() for f in stdout.splitlines() if f.strip() and not f.startswith('.git')]
-                        # Filter out common non-content files
-                        files = [f for f in files if f not in ['.gitignore', 'README.md']]
-                        print(f"[DEBUG] Found {len(files)} files in {branch}: {files}")
+                        all_remote_files = [f.strip() for f in stdout.splitlines() if f.strip()]
+                        # Filter to only meaningful files using the same filtering logic
+                        files = [f for f in all_remote_files if self._is_meaningful_file(f)]
+                        print(f"[DEBUG] Found {len(files)} meaningful files in {branch} (filtered from {len(all_remote_files)} total): {files}")
                         default_branch = branch
                         remote_files_found = True
                         break
@@ -480,11 +576,44 @@ class ConflictResolutionEngine:
             
             # Perform smart merge using git merge (preserves history)
             print("Performing intelligent merge with history preservation...")
-            
-            # Use the detected default remote branch
+              # Use the detected default remote branch
             remote_branch = getattr(self, 'default_remote_branch', 'origin/main')
             
-            stdout, stderr, rc = self._run_git_command(f"git merge {remote_branch} --no-ff --allow-unrelated-histories -m 'Smart merge - combining local and remote changes'")
+            # Validate and fix remote branch reference
+            if not remote_branch.startswith('origin/'):
+                print(f"[DEBUG] Invalid remote branch reference '{remote_branch}', fixing...")
+                # Try to detect the correct remote branch
+                stdout, stderr, rc = self._run_git_command("git branch -r")
+                if rc == 0 and stdout.strip():
+                    remote_branches = [b.strip() for b in stdout.splitlines() if b.strip() and not b.strip().startswith('origin/HEAD')]
+                    if remote_branches:
+                        # Use the first available remote branch, preferring main/master
+                        preferred_branches = ['origin/main', 'origin/master']
+                        for preferred in preferred_branches:
+                            if preferred in remote_branches:
+                                remote_branch = preferred
+                                break
+                        else:
+                            remote_branch = remote_branches[0]
+                        print(f"[DEBUG] Corrected remote branch to: {remote_branch}")
+                    else:
+                        remote_branch = 'origin/main'  # Fallback
+                        print(f"[DEBUG] No remote branches found, using fallback: {remote_branch}")
+                else:
+                    remote_branch = 'origin/main'  # Fallback
+                    print(f"[DEBUG] Could not list remote branches, using fallback: {remote_branch}")
+            
+            print(f"[DEBUG] Using remote branch for smart merge: {remote_branch}")
+            
+            # Construct merge command with proper Windows quote handling
+            merge_message = "Smart merge - combining local and remote changes"
+            if platform.system() == "Windows":
+                smart_merge_command = f'git merge {remote_branch} --no-ff --allow-unrelated-histories -m "{merge_message}"'
+            else:
+                smart_merge_command = f"git merge {remote_branch} --no-ff --allow-unrelated-histories -m '{merge_message}'"
+            
+            print(f"[DEBUG] Smart merge command: {smart_merge_command}")
+            stdout, stderr, rc = self._run_git_command(smart_merge_command)
             
             if rc == 0:
                 # Merge successful - no conflicts
@@ -501,7 +630,7 @@ class ConflictResolutionEngine:
             else:
                 # Merge conflicts occurred - need Stage 2 resolution
                 if "CONFLICT" in stderr or "CONFLICT" in stdout:
-                    print("⚠️ Merge conflicts detected - initiating Stage 2 resolution")
+                    print("⚠️ Merge conflicts detected - initiating Stage 2 resolution for files with different content only")
                     
                     # Check if Stage 2 is available
                     if not stage2:
@@ -547,8 +676,7 @@ class ConflictResolutionEngine:
                     )
             
         except Exception as e:
-            return ResolutionResult(
-                success=False,
+            return ResolutionResult(                success=False,
                 strategy=ConflictStrategy.SMART_MERGE,
                 message=f"Error during smart merge: {e}",
                 files_processed=files_processed,
@@ -556,12 +684,20 @@ class ConflictResolutionEngine:
             )
     
     def _apply_keep_local_only(self, analysis: ConflictAnalysis, backup_branch: str) -> ResolutionResult:
-        """Apply keep local strategy - preserve local files while merging remote history"""
-        print("[DEBUG] Applying keep local strategy with history preservation")
+        """Apply keep local strategy - ensure both local and remote repositories have local content"""
+        print("[DEBUG] Applying keep local strategy - both repos will have local content")
         
         files_processed = []
         
         try:
+            # FIRST: Create comprehensive backup of remote content using backup manager
+            if backup_integration and BACKUP_MANAGER_AVAILABLE:
+                backup_id = backup_integration.create_keep_local_only_backup(self.vault_path)
+                if backup_id:
+                    print(f"✅ Created comprehensive backup of remote content: {backup_id}")
+                else:
+                    print("⚠️ Remote content backup creation failed - proceeding with git branch backup only")
+            
             # Commit any uncommitted local changes
             stdout, stderr, rc = self._run_git_command("git status --porcelain")
             if rc == 0 and stdout.strip():
@@ -572,30 +708,92 @@ class ConflictResolutionEngine:
             # Fetch remote to get latest history
             stdout, stderr, rc = self._run_git_command("git fetch origin")
             if rc != 0:
-                print(f"⚠️ Could not fetch remote: {stderr}")
-            
-            # Use merge strategy 'ours' to keep local files but merge remote history
-            print("Merging remote history while keeping local files...")            # Use the detected default remote branch
+                print(f"⚠️ Could not fetch remote: {stderr}")# Use merge strategy 'ours' to keep local files but merge remote history
+            print("Merging remote history while keeping local files...")
             remote_branch = getattr(self, 'default_remote_branch', 'origin/main')
             
-            stdout, stderr, rc = self._run_git_command(
-                f"git merge {remote_branch} -s ours --allow-unrelated-histories --no-edit -m 'Keep local files - merge remote history (non-destructive)'"
-            )
+            # Validate and fix remote branch reference
+            if not remote_branch.startswith('origin/'):
+                print(f"[DEBUG] Invalid remote branch reference '{remote_branch}', fixing...")
+                # Try to detect the correct remote branch
+                stdout, stderr, rc = self._run_git_command("git branch -r")
+                if rc == 0 and stdout.strip():
+                    remote_branches = [b.strip() for b in stdout.splitlines() if b.strip() and not b.strip().startswith('origin/HEAD')]
+                    if remote_branches:
+                        # Use the first available remote branch, preferring main/master
+                        preferred_branches = ['origin/main', 'origin/master']
+                        for preferred in preferred_branches:
+                            if preferred in remote_branches:
+                                remote_branch = preferred
+                                break
+                        else:
+                            remote_branch = remote_branches[0]
+                        print(f"[DEBUG] Corrected remote branch to: {remote_branch}")
+                    else:
+                        remote_branch = 'origin/main'  # Fallback
+                        print(f"[DEBUG] No remote branches found, using fallback: {remote_branch}")
+                else:
+                    remote_branch = 'origin/main'  # Fallback
+                    print(f"[DEBUG] Could not list remote branches, using fallback: {remote_branch}")            
+            print(f"[DEBUG] Merging with remote branch: {remote_branch}")
+            
+            # Debug: Check what branches exist
+            branches_stdout, branches_stderr, branches_rc = self._run_git_command("git branch -a")
+            print(f"[DEBUG] All branches (git branch -a): {branches_stdout}")
+            
+            # Debug: Check remote branches specifically
+            remote_branches_stdout, remote_branches_stderr, remote_branches_rc = self._run_git_command("git branch -r")
+            print(f"[DEBUG] Remote branches (git branch -r): {remote_branches_stdout}")
+            
+            # Debug: Verify the remote branch exists
+            verify_stdout, verify_stderr, verify_rc = self._run_git_command(f"git rev-parse --verify {remote_branch}")
+            print(f"[DEBUG] Verify remote branch exists: RC={verify_rc}, STDOUT={verify_stdout.strip()}, STDERR={verify_stderr}")
+            
+            # First, ensure we have the latest remote state
+            fetch_stdout, fetch_stderr, fetch_rc = self._run_git_command("git fetch origin")
+            if fetch_rc != 0:
+                print(f"[DEBUG] Fetch warning: {fetch_stderr}")
+              # Construct the merge command with detailed debugging
+            print(f"[DEBUG] Before command construction - remote_branch: '{remote_branch}'")
+            merge_strategy = "ours"
+            merge_flags = "--allow-unrelated-histories --no-edit"
+            merge_message = "Keep local files - merge remote history (local content wins)"
+            
+            # For Windows compatibility, use double quotes instead of single quotes
+            if platform.system() == "Windows":
+                merge_command = f'git merge {remote_branch} -s {merge_strategy} {merge_flags} -m "{merge_message}"'
+            else:
+                merge_command = f"git merge {remote_branch} -s {merge_strategy} {merge_flags} -m '{merge_message}'"
+            
+            print(f"[DEBUG] Executing merge command: {merge_command}")
+            print(f"[DEBUG] Remote branch variable value: '{remote_branch}'")
+            print(f"[DEBUG] Remote branch type: {type(remote_branch)}")
+            print(f"[DEBUG] Command components:")
+            print(f"[DEBUG]   - remote_branch: '{remote_branch}'")
+            print(f"[DEBUG]   - merge_strategy: '{merge_strategy}'")
+            print(f"[DEBUG]   - merge_flags: '{merge_flags}'")
+            print(f"[DEBUG]   - merge_message: '{merge_message}'")
+            print(f"[DEBUG]   - platform: {platform.system()}")
+            
+            stdout, stderr, rc = self._run_git_command(merge_command)
+            
+            print(f"[DEBUG] Merge result - RC: {rc}, STDOUT: {stdout[:200]}, STDERR: {stderr[:200]}")
             
             if rc == 0:
                 print("✅ Successfully preserved local files while merging remote history")
                 files_processed = analysis.local_files
                 
-                # Push the merged history (this won't create a pull request since it's a proper merge)
-                print("Pushing merged history to remote...")
-                stdout, stderr, push_rc = self._run_git_command("git push origin main")
+                # Push the merged history to remote so both repos have local content
+                print("Pushing local content to remote repository...")
+                current_branch = self._get_current_branch()
+                stdout, stderr, push_rc = self._run_git_command(f"git push origin {current_branch}")
                 
                 if push_rc == 0:
-                    print("✅ Successfully pushed merged history - no pull request needed")
-                    message = "Local files preserved with complete history merge - pushed successfully"
+                    print("✅ Successfully pushed local content to remote - both repos now have local content")
+                    message = f"Both repositories now have local content ({len(files_processed)} files: {', '.join(files_processed[:3])}{'...' if len(files_processed) > 3 else ''})"
                 else:
                     print(f"⚠️ Could not push: {stderr}")
-                    message = "Local files preserved with history merge - manual push may be needed"
+                    message = f"Local content preserved locally ({len(files_processed)} files), but push to remote failed: {stderr[:100]}"
                 
                 return ResolutionResult(
                     success=True,
@@ -607,36 +805,74 @@ class ConflictResolutionEngine:
             else:
                 # Try alternative approach if merge fails
                 print("⚠️ Standard merge failed, trying alternative approach...")
+                print(f"[DEBUG] Merge failure details - STDERR: {stderr}")
                 
                 # Reset back to clean state
                 self._run_git_command("git merge --abort")
                 
-                # Try merge with allow-unrelated-histories
-                # Use the detected default remote branch
-                remote_branch = getattr(self, 'default_remote_branch', 'origin/main')
+                # Try a different approach: use git reset to match remote, then restore local files
+                print("Trying reset and restore approach...")
                 
-                stdout, stderr, rc = self._run_git_command(
-                    f"git merge {remote_branch} -s ours --allow-unrelated-histories --no-edit -m 'Keep local files - merge unrelated histories'"
+                # First, stash any uncommitted changes
+                stash_stdout, stash_stderr, stash_rc = self._run_git_command("git stash push -m 'Temporary stash for keep local strategy'")
+                print(f"[DEBUG] Stash result: RC={stash_rc}")
+                  # Reset to remote branch
+                # Validate remote branch reference first
+                reset_branch = remote_branch
+                if not reset_branch.startswith('origin/'):
+                    print(f"[DEBUG] Invalid reset branch reference '{reset_branch}', using fallback")
+                    reset_branch = 'origin/main'
+                
+                reset_stdout, reset_stderr, reset_rc = self._run_git_command(f"git reset --hard {reset_branch}")
+                print(f"[DEBUG] Reset result: RC={reset_rc}, STDERR: {reset_stderr[:200]}")
+                
+                if reset_rc == 0:
+                    # Now restore local files from stash
+                    if stash_rc == 0:
+                        pop_stdout, pop_stderr, pop_rc = self._run_git_command("git stash pop")
+                        print(f"[DEBUG] Stash pop result: RC={pop_rc}")
+                        
+                        # If conflicts occur during stash pop, resolve by keeping local versions
+                        if pop_rc != 0 and "CONFLICT" in pop_stderr:
+                            print("Resolving stash conflicts by keeping local versions...")
+                            # Add all files (this resolves conflicts by keeping working directory version)
+                            self._run_git_command("git add -A")
+                    
+                    # Commit the result
+                    commit_stdout, commit_stderr, commit_rc = self._run_git_command(
+                        'git commit -m "Keep local files - preserve local content while merging remote history"'
+                    )
+                    print(f"[DEBUG] Commit result: RC={commit_rc}")
+                    
+                    if commit_rc == 0:
+                        print("✅ Successfully preserved local files using reset approach")
+                        files_processed = analysis.local_files
+                        
+                        # Try to push
+                        current_branch = self._get_current_branch()
+                        stdout, stderr, push_rc = self._run_git_command(f"git push origin {current_branch}")
+                        
+                        if push_rc == 0:
+                            message = f"Both repositories now have local content via reset approach ({len(files_processed)} files)"
+                        else:
+                            message = f"Local content preserved via reset approach ({len(files_processed)} files), push to remote needed"
+                        
+                        return ResolutionResult(
+                            success=True,
+                            strategy=ConflictStrategy.KEEP_LOCAL_ONLY,
+                            message=message,
+                            files_processed=files_processed,
+                            backup_created=backup_branch
+                        )
+                
+                # If all approaches fail, return error with detailed information
+                return ResolutionResult(
+                    success=False,
+                    strategy=ConflictStrategy.KEEP_LOCAL_ONLY,
+                    message=f"Could not merge remote history. Original error: {stderr}. Reset error: {reset_stderr if 'reset_stderr' in locals() else 'N/A'}",
+                    files_processed=files_processed,
+                    backup_created=backup_branch
                 )
-                
-                if rc == 0:
-                    print("✅ Successfully merged unrelated histories while keeping local files")
-                    files_processed = analysis.local_files
-                    return ResolutionResult(
-                        success=True,
-                        strategy=ConflictStrategy.KEEP_LOCAL_ONLY,
-                        message="Local files preserved with unrelated history merge",
-                        files_processed=files_processed,
-                        backup_created=backup_branch
-                    )
-                else:
-                    return ResolutionResult(
-                        success=False,
-                        strategy=ConflictStrategy.KEEP_LOCAL_ONLY,
-                        message=f"Could not merge remote history: {stderr}",
-                        files_processed=files_processed,
-                        backup_created=backup_branch
-                    )
         
         except Exception as e:
             return ResolutionResult(
@@ -647,6 +883,22 @@ class ConflictResolutionEngine:
                 backup_created=backup_branch
             )
     
+    def _get_current_branch(self) -> str:
+        """Get the current branch name"""
+        try:
+            stdout, stderr, rc = self._run_git_command("git branch --show-current")
+            if rc == 0 and stdout.strip():
+                return stdout.strip()
+            else:
+                # Fallback method for older git versions
+                stdout, stderr, rc = self._run_git_command("git rev-parse --abbrev-ref HEAD")
+                if rc == 0 and stdout.strip():
+                    return stdout.strip()
+                else:                    # Final fallback
+                    return "main"
+        except:
+            return "main"
+    
     def _apply_keep_remote_only(self, analysis: ConflictAnalysis, backup_branch: str) -> ResolutionResult:
         """Apply keep remote strategy - adopt remote files while preserving local history in backup"""
         print("[DEBUG] Applying keep remote strategy with history preservation")
@@ -654,6 +906,14 @@ class ConflictResolutionEngine:
         files_processed = []
         
         try:
+            # FIRST: Create comprehensive backup of local files using backup manager
+            if backup_integration and BACKUP_MANAGER_AVAILABLE:
+                backup_id = backup_integration.create_keep_remote_only_backup(self.vault_path)
+                if backup_id:
+                    print(f"✅ Created comprehensive backup: {backup_id}")
+                else:
+                    print("⚠️ Backup creation failed - proceeding with git branch backup only")
+            
             # Commit any uncommitted local changes to preserve them
             stdout, stderr, rc = self._run_git_command("git status --porcelain")
             if rc == 0 and stdout.strip():
@@ -685,13 +945,44 @@ class ConflictResolutionEngine:
             
             # Method: Create a merge commit but then reset working directory to remote
             # This preserves ALL history but achieves exact functional equivalence
-            
-            # First, try a merge to create the history preservation commit
+              # First, try a merge to create the history preservation commit
             remote_branch = getattr(self, 'default_remote_branch', 'origin/main')
             
-            stdout, stderr, rc = self._run_git_command(
-                f"git merge {remote_branch} -X theirs --no-edit -m 'Adopt remote files - preserve local history (functional equivalent)'"
-            )
+            # Validate and fix remote branch reference
+            if not remote_branch.startswith('origin/'):
+                print(f"[DEBUG] Invalid remote branch reference '{remote_branch}', fixing...")
+                # Try to detect the correct remote branch
+                stdout, stderr, rc = self._run_git_command("git branch -r")
+                if rc == 0 and stdout.strip():
+                    remote_branches = [b.strip() for b in stdout.splitlines() if b.strip() and not b.strip().startswith('origin/HEAD')]
+                    if remote_branches:
+                        # Use the first available remote branch, preferring main/master
+                        preferred_branches = ['origin/main', 'origin/master']
+                        for preferred in preferred_branches:
+                            if preferred in remote_branches:
+                                remote_branch = preferred
+                                break
+                        else:
+                            remote_branch = remote_branches[0]
+                        print(f"[DEBUG] Corrected remote branch to: {remote_branch}")
+                    else:
+                        remote_branch = 'origin/main'  # Fallback
+                        print(f"[DEBUG] No remote branches found, using fallback: {remote_branch}")
+                else:
+                    remote_branch = 'origin/main'  # Fallback
+                    print(f"[DEBUG] Could not list remote branches, using fallback: {remote_branch}")
+            
+            print(f"[DEBUG] Using remote branch for merge: {remote_branch}")
+            
+            # Construct merge command with proper Windows quote handling
+            remote_merge_message = "Adopt remote files - preserve local history (functional equivalent)"
+            if platform.system() == "Windows":
+                remote_merge_command = f'git merge {remote_branch} -X theirs --no-edit -m "{remote_merge_message}"'
+            else:
+                remote_merge_command = f"git merge {remote_branch} -X theirs --no-edit -m '{remote_merge_message}'"
+            
+            print(f"[DEBUG] Remote merge command: {remote_merge_command}")
+            stdout, stderr, rc = self._run_git_command(remote_merge_command)
             
             if rc == 0:
                 # Merge succeeded, but working directory might not exactly match remote
@@ -741,8 +1032,7 @@ class ConflictResolutionEngine:
                                     print(f"  Removed: {file_path}")
                             except Exception as e:
                                 print(f"  Warning: Could not remove {file_path}: {e}")
-                    
-                    # Commit any changes to maintain git state consistency
+                      # Commit any changes to maintain git state consistency
                     stdout_status, _, _ = self._run_git_command("git status --porcelain")
                     if stdout_status.strip():
                         self._run_git_command("git add -A")
@@ -754,7 +1044,7 @@ class ConflictResolutionEngine:
                 return ResolutionResult(
                     success=True,
                     strategy=ConflictStrategy.KEEP_REMOTE_ONLY,
-                    message="Remote files adopted with complete history preservation - functionally equivalent to reset --hard",
+                    message=f"Both repositories now have remote content ({len(analysis.remote_files)} files: {', '.join(analysis.remote_files[:3])}{'...' if len(analysis.remote_files) > 3 else ''})",
                     files_processed=files_processed,
                     backup_created=backup_branch
                 )
@@ -790,8 +1080,7 @@ class ConflictResolutionEngine:
                     )
         
         except Exception as e:
-            return ResolutionResult(
-                success=False,
+            return ResolutionResult(                success=False,
                 strategy=ConflictStrategy.KEEP_REMOTE_ONLY,
                 message=f"Error in keep remote strategy: {e}",
                 files_processed=files_processed,
@@ -799,15 +1088,15 @@ class ConflictResolutionEngine:
             )
     
     def _initiate_stage2_resolution(self, analysis: ConflictAnalysis) -> Optional[Any]:
-        """Initiate Stage 2 resolution for conflicted files"""
+        """Initiate Stage 2 resolution for files with different content only"""
         if not STAGE2_AVAILABLE:
             print("[ERROR] Stage 2 module not available")
             return None
         
         try:
-            print("[DEBUG] Preparing Stage 2 resolution...")
+            print("[DEBUG] Preparing Stage 2 resolution - only for files with different content...")
             
-            # Prepare conflicted files for Stage 2
+            # Prepare conflicted files for Stage 2 - ONLY include files with different content
             conflicted_files = []
             
             # First, try to get conflicts from git status (for active merge conflicts)
@@ -818,52 +1107,61 @@ class ConflictResolutionEngine:
                     if line.startswith('UU ') or line.startswith('AA '):
                         file_path = line[3:].strip()
                         print(f"[DEBUG] Found git merge conflict: {file_path}")
-                        
-                        # Get conflicted content from git
+                          # Get conflicted content from git
                         local_content = self._get_conflict_version(file_path, "ours")
                         remote_content = self._get_conflict_version(file_path, "theirs")
                         
                         if local_content is not None and remote_content is not None:
-                            if STAGE2_AVAILABLE:
-                                file_conflict = stage2.create_file_conflict_details(
-                                    file_path, local_content, remote_content
-                                )
-                                conflicted_files.append(file_conflict)
-            
-            # If no git conflicts found, use analysis conflicts
-            if not conflicted_files and analysis.conflicted_files and STAGE2_AVAILABLE:
-                print("[DEBUG] No git conflicts found, using analysis conflicts")
+                            # Only add if content actually differs
+                            if local_content.strip() != remote_content.strip():
+                                print(f"[DEBUG] Content differs for {file_path} - adding to Stage 2")
+                                if STAGE2_AVAILABLE and stage2:
+                                    file_conflict = stage2.create_file_conflict_details(
+                                        file_path, local_content, remote_content
+                                    )
+                                    conflicted_files.append(file_conflict)
+                            else:
+                                print(f"[DEBUG] Content is identical for {file_path} - skipping Stage 2")
+              # Add files from analysis that have different content
+            if analysis.conflicted_files and STAGE2_AVAILABLE and stage2:
+                print("[DEBUG] Adding analysis conflicts with different content...")
                 for file_info in analysis.conflicted_files:
-                    file_conflict = stage2.create_file_conflict_details(
-                        file_info.path, file_info.local_content, file_info.remote_content
-                    )
-                    conflicted_files.append(file_conflict)
-            
-            # Also add files that have differences but aren't in git conflict state
-            if analysis.common_files and STAGE2_AVAILABLE:
-                print("[DEBUG] Checking common files for content differences...")
+                    if file_info.content_differs:  # Only files with actual content differences
+                        print(f"[DEBUG] Content differs for {file_info.path} - adding to Stage 2")
+                        file_conflict = stage2.create_file_conflict_details(
+                            file_info.path, file_info.local_content, file_info.remote_content
+                        )
+                        conflicted_files.append(file_conflict)
+                    else:
+                        print(f"[DEBUG] Content is identical for {file_info.path} - skipping Stage 2")
+              # Check common files for content differences (only include if they actually differ)
+            if analysis.common_files and STAGE2_AVAILABLE and stage2:
+                print("[DEBUG] Checking common files for actual content differences...")
                 for file_path in analysis.common_files:
+                    # Skip if already processed
                     if file_path not in [f.file_path for f in conflicted_files]:
                         local_content = self._get_file_content(file_path, "local")
                         remote_content = self._get_file_content(file_path, "remote") 
                         
-                        if local_content != remote_content:
-                            print(f"[DEBUG] Found content difference: {file_path}")
+                        # Only add to Stage 2 if content actually differs
+                        if local_content.strip() != remote_content.strip():
+                            print(f"[DEBUG] Content differs for {file_path} - adding to Stage 2")
                             file_conflict = stage2.create_file_conflict_details(
                                 file_path, local_content, remote_content
                             )
                             conflicted_files.append(file_conflict)
-            
+                        else:
+                            print(f"[DEBUG] Content is identical for {file_path} - skipping Stage 2")
+              
             if not conflicted_files:
-                print("[DEBUG] No conflicted files found for Stage 2 resolution")
+                print("[DEBUG] No files with different content found for Stage 2 resolution")
+                print("[DEBUG] All common files have identical content - smart merge can proceed automatically")
                 return None
             
-            print(f"[DEBUG] Found {len(conflicted_files)} files requiring Stage 2 resolution")
+            print(f"[DEBUG] Found {len(conflicted_files)} files with different content requiring Stage 2 resolution")
             for f in conflicted_files:
-                print(f"  - {f.file_path} (has_differences: {f.has_differences})")
-            
-            # Show Stage 2 dialog and get user resolutions
-            if STAGE2_AVAILABLE:
+                print(f"  - {f.file_path} (has_differences: {f.has_differences})")              # Show Stage 2 dialog and get user resolutions
+            if STAGE2_AVAILABLE and stage2:
                 print("[DEBUG] Opening Stage 2 dialog...")
                 # Create a new root window for Stage 2 since Stage 1 window is closed
                 stage2_result = stage2.show_stage2_resolution(None, conflicted_files)
@@ -1009,6 +1307,7 @@ class ConflictResolutionDialog:
         self.analysis = analysis
         self.result = None
         self.dialog: Optional[Union[tk.Tk, tk.Toplevel]] = None
+        self.listboxes = []  # Initialize listboxes for per-list scrolling
         
     def show(self) -> Optional[ConflictStrategy]:
         """Show the dialog and return the selected strategy"""
@@ -1024,9 +1323,8 @@ class ConflictResolutionDialog:
         self.dialog.configure(bg="#FAFBFC")
         self.dialog.resizable(True, True)
         print("[DEBUG] Configured dialog")
-        
-        # Set size and position - optimized for better layout without history guarantee section
-        width, height = 900, 700  # Reduced width to prevent excessive empty space
+          # Set size and position - optimized for horizontal layout and better space utilization
+        width, height = 1200, 750  # Increased width for horizontal strategy layout
         
         # Get screen dimensions safely
         screen_width = self.dialog.winfo_screenwidth()
@@ -1039,25 +1337,43 @@ class ConflictResolutionDialog:
         
         self.dialog.geometry(f"{width}x{height}+{x}+{y}")
         print(f"[DEBUG] Set geometry: {width}x{height}+{x}+{y}")
+          # Set window size constraints for better fullscreen/maximize support
+        min_width = min(1000, int(screen_width * 0.6))  # At least 60% of screen width, max 1000
+        min_height = min(650, int(screen_height * 0.5))  # At least 50% of screen height, max 650
+        # No max constraints to allow full maximization/fullscreen
         
-        # Set minimum window size to ensure all content remains visible
-        self.dialog.minsize(900, 900)  # Ensure minimum size is enforced
-        #self.dialog.maxsize(1200, 900)  # Set maximum size to prevent excessive stretching
-        print("[DEBUG] Set window size constraints: min=900x750, max=1200x900")
+        self.dialog.minsize(min_width, min_height)
+        # Remove maxsize constraint to allow fullscreen/maximize
+        print(f"[DEBUG] Set window size constraints: min={min_width}x{min_height}, no max size limit")
         
         # Make dialog modal
         self.dialog.grab_set()
         self.dialog.focus_set()
-        print("[DEBUG] Set modal focus")
-        
-        # Add window event handlers to enforce minimum size
+        print("[DEBUG] Set modal focus")        # Add window event handlers to enforce minimum size and handle resize events
         def on_window_configure(event):
-            if event.widget == self.dialog:
-                # Enforce minimum size
-                if self.dialog.winfo_width() < 900:
-                    self.dialog.geometry(f"900x{self.dialog.winfo_height()}")
-                if self.dialog.winfo_height() < 750:
-                    self.dialog.geometry(f"{self.dialog.winfo_width()}x750")
+            if event.widget == self.dialog and self.dialog:
+                try:
+                    # Enforce minimum size with cross-platform compatibility
+                    current_width = self.dialog.winfo_width()
+                    current_height = self.dialog.winfo_height()
+                    
+                    needs_resize = False
+                    new_width = current_width
+                    new_height = current_height
+                    
+                    if current_width < min_width:
+                        new_width = min_width
+                        needs_resize = True
+                    if current_height < min_height:
+                        new_height = min_height
+                        needs_resize = True
+                    
+                    if needs_resize:
+                        # Only resize if necessary to avoid infinite recursion
+                        self.dialog.geometry(f"{new_width}x{new_height}")
+                        
+                except Exception as e:
+                    print(f"[DEBUG] Window configure error: {e}")
         
         self.dialog.bind('<Configure>', on_window_configure)
         
@@ -1067,13 +1383,13 @@ class ConflictResolutionDialog:
         except Exception as e:
             print(f"[ERROR] Failed to create UI: {e}")
             return None
-        
-        # Center the dialog and bring to front
+          # Center the dialog and bring to front - with null checks
         try:
-            self.dialog.lift()
-            self.dialog.attributes('-topmost', True)
-            self.dialog.after_idle(lambda: self.dialog.attributes('-topmost', False))
-            print("[DEBUG] Dialog brought to front")
+            if self.dialog:
+                self.dialog.lift()
+                self.dialog.attributes('-topmost', True)
+                self.dialog.after_idle(lambda: self.dialog.attributes('-topmost', False) if self.dialog else None)
+                print("[DEBUG] Dialog brought to front")
         except Exception as e:
             print(f"[DEBUG] Could not bring dialog to front: {e}")
         
@@ -1108,10 +1424,38 @@ class ConflictResolutionDialog:
         
         canvas_frame = main_canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         main_canvas.configure(yscrollcommand=main_scrollbar.set)
+          # Store references to listboxes for per-list scrolling
+        self.listboxes = []
         
-        # Enable mouse wheel scrolling throughout the entire dialog
+        # Mouse wheel scrolling handler with per-widget detection
         def _on_mousewheel(event):
+            # Find which widget the mouse is over
+            widget_under_mouse = event.widget.winfo_containing(event.x_root, event.y_root)
+            
+            # Check if mouse is over a listbox
+            for listbox in self.listboxes:
+                if widget_under_mouse == listbox or self._is_child_of(widget_under_mouse, listbox):
+                    # Scroll only this listbox
+                    listbox.yview_scroll(int(-1*(event.delta/120)), "units")
+                    return "break"  # Prevent event propagation
+            
+            # If not over a listbox, scroll the main canvas
             main_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+        # Helper function to check if a widget is a child of another
+        def _is_child_of(child, parent):
+            current = child
+            while current:
+                if current == parent:
+                    return True
+                try:
+                    current = current.master
+                except AttributeError:
+                    break
+            return False
+        
+        # Store helper function in instance for use in other methods
+        self._is_child_of = _is_child_of
         
         # Bind mouse wheel to the entire dialog window for better UX
         if self.dialog:
@@ -1119,9 +1463,19 @@ class ConflictResolutionDialog:
             
             # Also handle Linux/Unix scroll events
             def _on_button_4(event):
+                widget_under_mouse = event.widget.winfo_containing(event.x_root, event.y_root)
+                for listbox in self.listboxes:
+                    if widget_under_mouse == listbox or self._is_child_of(widget_under_mouse, listbox):
+                        listbox.yview_scroll(-1, "units")
+                        return "break"
                 main_canvas.yview_scroll(-1, "units")
             
             def _on_button_5(event):
+                widget_under_mouse = event.widget.winfo_containing(event.x_root, event.y_root)
+                for listbox in self.listboxes:
+                    if widget_under_mouse == listbox or self._is_child_of(widget_under_mouse, listbox):
+                        listbox.yview_scroll(1, "units")
+                        return "break"
                 main_canvas.yview_scroll(1, "units")
             
             self.dialog.bind_all("<Button-4>", _on_button_4)
@@ -1136,13 +1490,11 @@ class ConflictResolutionDialog:
         
         # Pack canvas and scrollbar
         main_canvas.pack(side="left", fill="both", expand=True)
-        main_scrollbar.pack(side="right", fill="y")
-        
-        # Create content sections
+        main_scrollbar.pack(side="right", fill="y")        # Create content sections in proper order with better space allocation
         self._create_header(scrollable_frame)
-        self._create_conflict_analysis_section(scrollable_frame)
-        self._create_strategy_selection_section(scrollable_frame)
-        self._create_controls(scrollable_frame)
+        self._create_conflict_analysis_section(scrollable_frame)  # This will take most space
+        self._create_strategy_selection_section(scrollable_frame)  # Compact horizontal layout
+        self._create_controls(scrollable_frame)  # Move back to scrollable area for proper flow
     
     def _create_header(self, parent):
         """Create the dialog header with improved messaging"""
@@ -1154,14 +1506,11 @@ class ConflictResolutionDialog:
             text="🔒 Repository Conflict Resolution",
             font=("Arial", 18, "bold"),
             bg="#FAFBFC",
-            fg="#1E293B"
-        )
+            fg="#1E293B"        )
         title_label.pack()
     
-    # This section has been removed to free up space for better UI layout
-    
     def _create_conflict_analysis_section(self, parent):
-        """Create the enhanced conflict analysis section with improved layout"""
+        """Create the enhanced conflict analysis section with improved layout and scrollbars"""
         analysis_frame = tk.LabelFrame(
             parent,
             text="📊 Conflict Analysis",
@@ -1171,119 +1520,139 @@ class ConflictResolutionDialog:
             padx=15,
             pady=15
         )
-        analysis_frame.pack(fill=tk.X, pady=(0, 20))  # Changed to fill X only, not BOTH
+        analysis_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 20))  # Fill both X and Y, expand to take more space
         
-        # Create main container with compact layout
+        # Create main container with expanded layout
         main_container = tk.Frame(analysis_frame, bg="#FEF3C7")
-        main_container.pack(fill=tk.X)  # Changed to fill X only
+        main_container.pack(fill=tk.BOTH, expand=True)  # Fill both X and Y
         
-        # Three column layout for the three file categories - more compact
+        # Three column layout for the three file categories - expanded
         columns_frame = tk.Frame(main_container, bg="#FEF3C7")
-        columns_frame.pack(fill=tk.X)
+        columns_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         
         # Column 1: Local Repository Files
         local_col = tk.Frame(columns_frame, bg="#FEF3C7")
-        local_col.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 3))
+        local_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
         
         local_label = tk.Label(
             local_col,
             text=f"🏠 Local ({len(self.analysis.local_files)})",
-            font=("Arial", 9, "bold"),
+            font=("Arial", 10, "bold"),
             bg="#FEF3C7",
             fg="#92400E"
         )
-        local_label.pack(anchor=tk.W, pady=(0, 3))
+        local_label.pack(anchor=tk.W, pady=(0, 5))
         
-        # Compact listbox for local files
+        # Expanded listbox frame with scrollbar for local files
         local_frame = tk.Frame(local_col, bg="#FEF3C7", relief=tk.SUNKEN, borderwidth=1)
-        local_frame.pack(fill=tk.X, pady=(0, 5))
+        local_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
         
+        # Create listbox with scrollbar
+        local_scrollbar = tk.Scrollbar(local_frame, orient=tk.VERTICAL)
         local_listbox = tk.Listbox(
             local_frame,
-            height=4,  # Reduced height for compact layout
-            font=("Courier", 8),
+            font=("Courier", 9),
             bg="#FFFBEB",
             fg="#92400E",
-            selectmode=tk.SINGLE
+            selectmode=tk.SINGLE,
+            yscrollcommand=local_scrollbar.set
         )
-        local_listbox.pack(fill=tk.X)
+        local_scrollbar.config(command=local_listbox.yview)
         
-        for file in self.analysis.local_files[:10]:  # Show only first 10 files to save space
+        local_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        local_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Register listbox for per-list scrolling
+        self.listboxes.append(local_listbox)
+        
+        # Add all local files (no limit)
+        for file in self.analysis.local_files:
             local_listbox.insert(tk.END, f"📄 {file}")
-        if len(self.analysis.local_files) > 10:
-            local_listbox.insert(tk.END, f"... and {len(self.analysis.local_files) - 10} more")
         
         # Column 2: Remote Repository Files  
         remote_col = tk.Frame(columns_frame, bg="#FEF3C7")
-        remote_col.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(3, 3))
+        remote_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 5))
         
         remote_label = tk.Label(
             remote_col,
             text=f"🌐 Remote ({len(self.analysis.remote_files)})",
-            font=("Arial", 9, "bold"),
+            font=("Arial", 10, "bold"),
             bg="#FEF3C7",
             fg="#92400E"
         )
-        remote_label.pack(anchor=tk.W, pady=(0, 3))
+        remote_label.pack(anchor=tk.W, pady=(0, 5))
         
-        # Compact listbox for remote files
+        # Expanded listbox frame with scrollbar for remote files
         remote_frame = tk.Frame(remote_col, bg="#FEF3C7", relief=tk.SUNKEN, borderwidth=1)
-        remote_frame.pack(fill=tk.X, pady=(0, 5))
+        remote_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
         
+        # Create listbox with scrollbar
+        remote_scrollbar = tk.Scrollbar(remote_frame, orient=tk.VERTICAL)
         remote_listbox = tk.Listbox(
             remote_frame,
-            height=4,  # Reduced height for compact layout
-            font=("Courier", 8),
+            font=("Courier", 9),
             bg="#FFFBEB",
             fg="#92400E",
-            selectmode=tk.SINGLE
+            selectmode=tk.SINGLE,
+            yscrollcommand=remote_scrollbar.set
         )
-        remote_listbox.pack(fill=tk.X)
+        remote_scrollbar.config(command=remote_listbox.yview)
         
-        for file in self.analysis.remote_files[:10]:  # Show only first 10 files to save space
+        remote_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        remote_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Register listbox for per-list scrolling
+        self.listboxes.append(remote_listbox)
+        
+        # Add all remote files (no limit)
+        for file in self.analysis.remote_files:
             remote_listbox.insert(tk.END, f"📄 {file}")
-        if len(self.analysis.remote_files) > 10:
-            remote_listbox.insert(tk.END, f"... and {len(self.analysis.remote_files) - 10} more")
         
         # Column 3: Common Files with conflict status
         common_col = tk.Frame(columns_frame, bg="#FEF3C7")
-        common_col.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(3, 0))
+        common_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 0))
         
         common_label = tk.Label(
             common_col,
             text=f"🤝 Common ({len(self.analysis.common_files)})",
-            font=("Arial", 9, "bold"),
+            font=("Arial", 10, "bold"),
             bg="#FEF3C7",
             fg="#92400E"
         )
-        common_label.pack(anchor=tk.W, pady=(0, 3))
+        common_label.pack(anchor=tk.W, pady=(0, 5))
         
-        # Compact listbox for common files with status
+        # Expanded listbox frame with scrollbar for common files
         common_frame = tk.Frame(common_col, bg="#FEF3C7", relief=tk.SUNKEN, borderwidth=1)
-        common_frame.pack(fill=tk.X, pady=(0, 5))
+        common_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
         
+        # Create listbox with scrollbar
+        common_scrollbar = tk.Scrollbar(common_frame, orient=tk.VERTICAL)
         common_listbox = tk.Listbox(
             common_frame,
-            height=4,  # Reduced height for compact layout
-            font=("Courier", 8),
+            font=("Courier", 9),
             bg="#FFFBEB",
             fg="#92400E",
-            selectmode=tk.SINGLE
+            selectmode=tk.SINGLE,
+            yscrollcommand=common_scrollbar.set
         )
-        common_listbox.pack(fill=tk.X)
+        common_scrollbar.config(command=common_listbox.yview)
         
-        # Add common files with status indicators - compact format
+        common_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        common_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Register listbox for per-list scrolling
+        self.listboxes.append(common_listbox)
+          # Add all common files with content status indicators (same content / different content)
         conflicted_file_paths = {f.path for f in self.analysis.conflicted_files}
-        for file in self.analysis.common_files[:10]:  # Show only first 10 files
+        for file in self.analysis.common_files:
             if file in conflicted_file_paths:
-                common_listbox.insert(tk.END, f"⚠️ {file}")
+                # File has different content
+                common_listbox.insert(tk.END, f"⚠️ {file} (different content)")
             else:
-                common_listbox.insert(tk.END, f"✅ {file}")
-        if len(self.analysis.common_files) > 10:
-            common_listbox.insert(tk.END, f"... and {len(self.analysis.common_files) - 10} more")
-    
+                # File has same content
+                common_listbox.insert(tk.END, f"✅ {file} (same content)")
     def _create_strategy_selection_section(self, parent):
-        """Create the enhanced strategy selection section with proper radio button grouping"""
+        """Create the enhanced strategy selection section with horizontal layout and simplified options"""
         strategy_frame = tk.LabelFrame(
             parent,
             text="🎯 Choose Resolution Strategy",
@@ -1293,7 +1662,7 @@ class ConflictResolutionDialog:
             padx=20,
             pady=20
         )
-        strategy_frame.pack(fill=tk.X, pady=(0, 20))
+        strategy_frame.pack(fill=tk.X, pady=(0, 15))  # Reduced bottom padding for more compact layout
         
         # Important: Use a single StringVar to ensure mutual exclusivity
         self.strategy_var = tk.StringVar(value="smart_merge")
@@ -1308,110 +1677,110 @@ class ConflictResolutionDialog:
         )
         instruction_label.pack(anchor=tk.W, pady=(0, 15))
         
-        # Smart Merge option with highlighted background
-        smart_frame = tk.Frame(strategy_frame, bg="#DCFCE7", relief=tk.RAISED, borderwidth=2)
-        smart_frame.pack(fill=tk.X, pady=8, padx=5)
+        # Horizontal container for the three strategy options
+        strategies_container = tk.Frame(strategy_frame, bg="#F0FDF4")
+        strategies_container.pack(fill=tk.X, pady=(0, 15))
+        
+        # Strategy 1: Smart Merge (Recommended) - Left column
+        smart_frame = tk.Frame(strategies_container, bg="#DCFCE7", relief=tk.RAISED, borderwidth=2)
+        smart_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
         
         self.smart_radio = tk.Radiobutton(
             smart_frame,
-            text="🧠 Smart Merge (Recommended)",
+            text="🧠 Smart Merge\n(Recommended)",
             variable=self.strategy_var,
             value="smart_merge",
-            font=("Arial", 12, "bold"),
+            font=("Arial", 11, "bold"),
             bg="#DCFCE7",
             fg="#166534",
             activebackground="#DCFCE7",
             activeforeground="#166534",
-            selectcolor="#FFFFFF",  # White background for selected radio button
+            selectcolor="#FFFFFF",
             highlightbackground="#DCFCE7",
             relief=tk.FLAT,
-            indicatoron=True,  # Ensure radio button indicator is shown
-            command=self._update_selection_indicator
+            indicatoron=True,
+            command=self._update_selection_indicator,
+            wraplength=150,
+            justify=tk.CENTER
         )
-        self.smart_radio.pack(anchor=tk.W, padx=10, pady=(10, 5))
-        
+        self.smart_radio.pack(pady=(10, 5))        
         smart_desc = tk.Label(
             smart_frame,
-            text="✅ Intelligently combines both repositories\n"
-                 "✅ Files with conflicts will be resolved interactively\n"
-                 "✅ Best choice for preserving all work from both sides",
-            font=("Arial", 10, "normal"),
+            text="Intelligently combines both repositories. Files with identical content are merged automatically. Only files with different content require manual resolution.",
+            font=("Arial", 9, "normal"),
             bg="#DCFCE7",
             fg="#166534",
-            justify=tk.LEFT,
-            wraplength=600
+            justify=tk.CENTER,
+            wraplength=150
         )
-        smart_desc.pack(anchor=tk.W, padx=(30, 10), pady=(0, 10))
-        
-        # Keep Local option
-        local_frame = tk.Frame(strategy_frame, bg="#F9FAFB", relief=tk.RAISED, borderwidth=1)
-        local_frame.pack(fill=tk.X, pady=5, padx=5)
+        smart_desc.pack(padx=5, pady=(0, 10))
+          # Strategy 2: Keep Local Files Only - Center column
+        local_frame = tk.Frame(strategies_container, bg="#E0F2FE", relief=tk.RAISED, borderwidth=1)
+        local_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 5))
         
         self.local_radio = tk.Radiobutton(
             local_frame,
-            text="🏠 Keep Local Only",
+            text="🏠 Keep Local\nFiles Only",
             variable=self.strategy_var,
             value="keep_local_only",
-            font=("Arial", 12, "bold"),
-            bg="#F9FAFB",
-            fg="#374151",
-            activebackground="#F9FAFB",
-            activeforeground="#374151",
-            selectcolor="#FFFFFF",  # White background for selected radio button
-            highlightbackground="#F9FAFB",
+            font=("Arial", 11, "bold"),
+            bg="#E0F2FE",
+            fg="#0369A1",
+            activebackground="#E0F2FE",
+            activeforeground="#0369A1",
+            selectcolor="#FFFFFF",
+            highlightbackground="#E0F2FE",
             relief=tk.FLAT,
-            indicatoron=True,  # Ensure radio button indicator is shown
-            command=self._update_selection_indicator
+            indicatoron=True,
+            command=self._update_selection_indicator,
+            wraplength=150,
+            justify=tk.CENTER
         )
-        self.local_radio.pack(anchor=tk.W, padx=10, pady=(10, 5))
-        
+        self.local_radio.pack(pady=(10, 5))        
         local_desc = tk.Label(
             local_frame,
-            text="📁 Preserve local files while merging remote history\n"
-                 "💾 Remote changes will be backed up in separate branches\n"
-                 "⚠️ Remote-only files will be ignored",
-            font=("Arial", 10, "normal"),
-            bg="#F9FAFB",
-            fg="#374151",
-            justify=tk.LEFT,
-            wraplength=600
+            text="Both local and remote repositories will have local content only. Remote content will be backed up.",
+            font=("Arial", 9, "normal"),
+            bg="#E0F2FE",
+            fg="#0369A1",
+            justify=tk.CENTER,
+            wraplength=150
         )
-        local_desc.pack(anchor=tk.W, padx=(30, 10), pady=(0, 10))
+        local_desc.pack(padx=5, pady=(0, 10))
         
-        # Keep Remote option
-        remote_frame = tk.Frame(strategy_frame, bg="#F9FAFB", relief=tk.RAISED, borderwidth=1)
-        remote_frame.pack(fill=tk.X, pady=5, padx=5)
+        # Strategy 3: Keep Remote Files Only - Right column
+        remote_frame = tk.Frame(strategies_container, bg="#F3E8FF", relief=tk.RAISED, borderwidth=1)
+        remote_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(10, 0))
         
         self.remote_radio = tk.Radiobutton(
             remote_frame,
-            text="🌐 Keep Remote Only",
+            text="🌐 Keep Remote\nFiles Only",
             variable=self.strategy_var,
             value="keep_remote_only",
-            font=("Arial", 12, "bold"),
-            bg="#F9FAFB",
-            fg="#374151",
-            activebackground="#F9FAFB",
-            activeforeground="#374151",
-            selectcolor="#FFFFFF",  # White background for selected radio button
-            highlightbackground="#F9FAFB",
+            font=("Arial", 11, "bold"),
+            bg="#F3E8FF",
+            fg="#7C3AED",
+            activebackground="#F3E8FF",
+            activeforeground="#7C3AED",
+            selectcolor="#FFFFFF",
+            highlightbackground="#F3E8FF",
             relief=tk.FLAT,
-            indicatoron=True,  # Ensure radio button indicator is shown
-            command=self._update_selection_indicator
+            indicatoron=True,
+            command=self._update_selection_indicator,
+            wraplength=150,
+            justify=tk.CENTER
         )
-        self.remote_radio.pack(anchor=tk.W, padx=10, pady=(10, 5))
-        
+        self.remote_radio.pack(pady=(10, 5))        
         remote_desc = tk.Label(
             remote_frame,
-            text="🌐 Adopt remote files while preserving local history\n"
-                 "💾 Local files will be backed up in separate branches\n"
-                 "⚠️ Local-only files will be replaced by remote versions",
-            font=("Arial", 10, "normal"),
-            bg="#F9FAFB",
-            fg="#374151",
-            justify=tk.LEFT,
-            wraplength=600
+            text="Both local and remote repositories will have remote content only. Local content will be backed up.",
+            font=("Arial", 9, "normal"),
+            bg="#F3E8FF",
+            fg="#7C3AED",
+            justify=tk.CENTER,
+            wraplength=150
         )
-        remote_desc.pack(anchor=tk.W, padx=(30, 10), pady=(0, 10))
+        remote_desc.pack(padx=5, pady=(0, 10))
         
         # Add visual indicator for current selection
         selection_frame = tk.Frame(strategy_frame, bg="#F0FDF4")
@@ -1428,13 +1797,12 @@ class ConflictResolutionDialog:
         
         # Ensure the initial selection is properly set
         self._update_selection_indicator()
-    
     def _update_selection_indicator(self):
         """Update the selection indicator when strategy changes"""
         strategy_names = {
             "smart_merge": "💡 Currently selected: Smart Merge (Recommended)",
-            "keep_local_only": "💡 Currently selected: Keep Local Only",
-            "keep_remote_only": "💡 Currently selected: Keep Remote Only"
+            "keep_local_only": "💡 Currently selected: Keep Local Files Only",
+            "keep_remote_only": "💡 Currently selected: Keep Remote Files Only"
         }
         
         selected = self.strategy_var.get()
@@ -1443,54 +1811,42 @@ class ConflictResolutionDialog:
         if hasattr(self, 'selection_label') and self.selection_label:
             self.selection_label.configure(text=strategy_names.get(selected, ""))
             
-            # Change color based on selection
+            # Change color based on selection - use neutral colors
             if selected == "smart_merge":
                 self.selection_label.configure(fg="#15803D")  # Green for recommended
             elif selected == "keep_local_only":
-                self.selection_label.configure(fg="#2563EB")  # Blue for local
+                self.selection_label.configure(fg="#0369A1")  # Blue for local
             else:  # keep_remote_only
-                self.selection_label.configure(fg="#DC2626")  # Red for remote (more destructive)
+                self.selection_label.configure(fg="#7C3AED")  # Purple for remote (neutral)
             
             # Force update the display
-            self.selection_label.update_idletasks()
-        
+            self.selection_label.update_idletasks()        
         print(f"[DEBUG] Selection indicator updated for: {selected}")  # Debug output
-    
     def _create_controls(self, parent):
-        """Create the control buttons directly below the strategy selection"""
-        # Control panel below strategy selection
+        """Create the control buttons directly below the strategy selection section"""
+        # Control panel positioned in normal flow below strategy selection
         controls_frame = tk.Frame(parent, bg="#F8F9FA", relief=tk.RAISED, borderwidth=2)
-        controls_frame.pack(fill=tk.X, pady=(10, 20), padx=5)
+        controls_frame.pack(fill=tk.X, pady=(10, 20), padx=5)  # Normal flow positioning
         
-        # Inner frame for proper spacing
+        # Inner frame for proper spacing and centering
         inner_frame = tk.Frame(controls_frame, bg="#F8F9FA")
-        inner_frame.pack(fill=tk.X, padx=20, pady=15)
+        inner_frame.pack(pady=15)  # Center the inner frame
         
-        # Add a clear separator line above buttons
-        separator_label = tk.Label(
-            inner_frame,
-            text="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-            font=("Arial", 8, "normal"),
-            bg="#F8F9FA",
-            fg="#9CA3AF"
-        )
-        separator_label.pack(fill=tk.X, pady=(0, 10))
-        
-        # Instruction text
+        # Instruction text - centered
         instruction_label = tk.Label(
             inner_frame,
             text="⚡ Ready to proceed? Click the button below to apply your selected strategy:",
-            font=("Arial", 10, "bold"),
+            font=("Arial", 11, "bold"),
             bg="#F8F9FA",
             fg="#374151"
         )
-        instruction_label.pack(pady=(0, 10))
+        instruction_label.pack(pady=(0, 15))
         
-        # Button container for centering
+        # Button container for proper centering
         button_frame = tk.Frame(inner_frame, bg="#F8F9FA")
         button_frame.pack()
         
-        # Cancel button
+        # Cancel button - improved styling
         cancel_btn = tk.Button(
             button_frame,
             text="❌ Cancel",
@@ -1501,11 +1857,12 @@ class ConflictResolutionDialog:
             relief=tk.FLAT,
             cursor="hand2",
             padx=25,
-            pady=10
+            pady=10,
+            bd=1
         )
-        cancel_btn.pack(side=tk.LEFT, padx=(0, 15))
+        cancel_btn.pack(side=tk.LEFT, padx=(0, 20))
         
-        # Proceed button
+        # Proceed button - improved styling
         proceed_btn = tk.Button(
             button_frame,
             text="✅ Proceed with Selected Strategy",
@@ -1516,7 +1873,8 @@ class ConflictResolutionDialog:
             relief=tk.FLAT,
             cursor="hand2",
             padx=25,
-            pady=10
+            pady=10,
+            bd=1
         )
         proceed_btn.pack(side=tk.LEFT)
     
@@ -1547,6 +1905,13 @@ class ConflictResolver:
         self.vault_path = vault_path
         self.parent = parent
         self.engine = ConflictResolutionEngine(vault_path)
+        
+        # Initialize backup manager if available
+        if BACKUP_MANAGER_AVAILABLE and OgresyncBackupManager:
+            self.backup_manager = OgresyncBackupManager(vault_path)
+        else:
+            self.backup_manager = None
+            print("[WARNING] Backup manager not available - using legacy backup methods")
     
     def resolve_initial_setup_conflicts(self, remote_url: str) -> ResolutionResult:
         """Resolve conflicts during initial repository setup"""

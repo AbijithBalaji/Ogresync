@@ -2470,6 +2470,28 @@ Created: {time.strftime('%Y-%m-%d %H:%M:%S')}
                 # First fetch to get latest remote state
                 fetch_result = subprocess.run(['git', 'fetch', 'origin'], 
                                             cwd=vault_path, capture_output=True, text=True)
+                  # CRITICAL: Check if remote branch exists first (empty remote scenario)
+                # This handles the case where the remote repository is completely empty
+                remote_branch_exists = subprocess.run(['git', 'rev-parse', '--verify', f'origin/{current_branch}'], 
+                                                    cwd=vault_path, capture_output=True, text=True)
+                
+                if remote_branch_exists.returncode != 0:
+                    # Remote branch doesn't exist - this is definitely the remote_empty scenario
+                    print(f"[DEBUG] Final sync - Remote branch '{current_branch}' doesn't exist, pushing to empty remote")
+                    self._update_status(f"📤 Remote repository is empty - pushing {len(current_local_files)} files...")
+                    
+                    # Push to remote (this will create the remote branch)
+                    push_result = subprocess.run(['git', 'push', '-u', 'origin', current_branch], 
+                                               cwd=vault_path, capture_output=True, text=True, timeout=120)
+                    
+                    if push_result.returncode == 0:
+                        print(f"[DEBUG] Final sync - Successfully pushed to empty remote")
+                        self._update_status(f"✅ Successfully pushed {len(current_local_files)} files to remote repository!")
+                        return True, f"Final synchronization completed - pushed {len(current_local_files)} files to empty remote"
+                    else:
+                        push_error = push_result.stderr.strip()
+                        print(f"[DEBUG] Final sync - Push to empty remote failed: {push_error}")
+                        return False, f"Failed to push files to empty remote repository: {push_error}"
                 
                 # Check if we're ahead of remote (have commits to push)
                 ahead_result = subprocess.run(['git', 'rev-list', '--count', f'origin/{current_branch}..HEAD'], 

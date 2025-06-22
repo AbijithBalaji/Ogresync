@@ -239,15 +239,15 @@ class OgresyncBackupManager:
                             os.makedirs(os.path.dirname(dst_path), exist_ok=True)
                             shutil.copy2(src_path, dst_path)
                             manifest["files"].append(rel_path)
-            
-            # Save manifest
+              # Save manifest
             manifest_path = os.path.join(snapshot_dir, "backup_manifest.json")
             with open(manifest_path, 'w', encoding='utf-8') as f:
                 json.dump(manifest, f, indent=2)
             
             print(f"✅ File snapshot backup created: {snapshot_dir}")
             return snapshot_dir
-              except Exception as e:
+            
+        except Exception as e:
             print(f"❌ Error creating file snapshot backup: {e}")
             return None
     
