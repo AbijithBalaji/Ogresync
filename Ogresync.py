@@ -2350,37 +2350,48 @@ def detect_and_resolve_incomplete_git_operations(vault_path):
             return False, None, True  # No incomplete operations
         
         safe_update_log(f"🔧 Detected incomplete {operation_type} operation. Attempting to resolve...", None)
-        
-        # Attempt to resolve the operation
-        resolution_success = False
-        
+          
         if operation_type in ['interactive rebase', 'rebase']:
-            safe_update_log("📝 Completing rebase operation...", None)
+            safe_update_log("📝 Attempting to resolve rebase operation...", None)
             
-            # First try to continue the rebase
+            # Enhanced rebase resolution - try multiple strategies
+            # Strategy 1: Try to continue the rebase
             continue_out, continue_err, continue_rc = run_command("git rebase --continue", cwd=vault_path)
             
             if continue_rc == 0:
                 safe_update_log("✅ Rebase completed successfully", None)
                 resolution_success = True
             else:
-                # If continue fails, check if we can skip or abort
+                # Strategy 2: Check if we can skip current commit
                 if "nothing to commit" in (continue_out + continue_err).lower():
-                    # Try to skip the current commit
                     skip_out, skip_err, skip_rc = run_command("git rebase --skip", cwd=vault_path)
                     if skip_rc == 0:
                         safe_update_log("✅ Rebase completed by skipping current commit", None)
                         resolution_success = True
                     else:
-                        # Last resort: abort the rebase
-                        safe_update_log("⚠️ Aborting rebase to restore repository to clean state...", None)
+                        # Strategy 3: Abort the rebase (safest for repository switches)
+                        safe_update_log("⚠️ Complex rebase detected. Aborting to ensure clean state...", None)
                         abort_out, abort_err, abort_rc = run_command("git rebase --abort", cwd=vault_path)
                         if abort_rc == 0:
-                            safe_update_log("✅ Rebase aborted successfully. Repository restored to previous state.", None)
+                            safe_update_log("✅ Rebase aborted. Repository restored to clean state.", None)
+                            # Additional cleanup for repository switches
+                            reset_out, reset_err, reset_rc = run_command("git reset --hard HEAD", cwd=vault_path)
+                            if reset_rc == 0:
+                                safe_update_log("✅ Repository state cleaned up successfully.", None)
                             resolution_success = True
                         else:
                             safe_update_log(f"❌ Failed to abort rebase: {abort_err}", None)
                             resolution_success = False
+                else:
+                    # Strategy 3: Direct abort for other rebase issues
+                    safe_update_log("⚠️ Aborting rebase due to unresolvable conflicts...", None)
+                    abort_out, abort_err, abort_rc = run_command("git rebase --abort", cwd=vault_path)
+                    if abort_rc == 0:
+                        safe_update_log("✅ Rebase aborted successfully. Repository state restored.", None)
+                        resolution_success = True
+                    else:
+                        safe_update_log(f"❌ Failed to abort rebase: {abort_err}", None)
+                        resolution_success = False
         elif operation_type == 'merge':
             safe_update_log("📝 Completing merge operation...", None)
             
