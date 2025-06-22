@@ -22,8 +22,8 @@ Date: June 2025
 import os
 import json
 import time
-import shutil
 import subprocess
+import shutil
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple, Union
 from dataclasses import dataclass, asdict
@@ -53,7 +53,7 @@ class BackupInfo:
     description: str
     git_branch_name: Optional[str] = None
     file_snapshot_path: Optional[str] = None
-    files_backed_up: List[str] = None
+    files_backed_up: Optional[List[str]] = None
     size_bytes: int = 0
     can_restore: bool = True
     

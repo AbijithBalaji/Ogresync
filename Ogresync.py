@@ -17,7 +17,7 @@ import pyperclip
 import requests
 import ui_elements # Import the new UI module
 try:
-    import Ogresync.Stage1_conflict_resolution as conflict_resolution # Import the enhanced conflict resolution module
+    import Stage1_conflict_resolution as conflict_resolution # Import the enhanced conflict resolution module
     CONFLICT_RESOLUTION_AVAILABLE = True
 except ImportError:
     conflict_resolution = None
@@ -348,9 +348,9 @@ def conflict_resolution_dialog(conflict_files):
         if not vault_path:
             print("No vault path configured")
             return ui_elements.create_conflict_resolution_dialog(root, conflict_files)
-        
-        # Create conflict resolver
-        resolver = conflict_resolution.ConflictResolver(vault_path, root)
+          # Create conflict resolver
+        import Stage1_conflict_resolution as cr_module
+        resolver = cr_module.ConflictResolver(vault_path, root)
         
         # Create a mock remote URL for conflict analysis (this should ideally come from git remote)
         github_url = config_data.get("GITHUB_REMOTE_URL", "")
@@ -454,9 +454,9 @@ def handle_initial_repository_conflict(vault_path, analysis, parent_window=None)
     try:
         # Use the enhanced two-stage conflict resolution system
         dialog_parent = parent_window if parent_window is not None else root
-        
-        # Create conflict resolver
-        resolver = conflict_resolution.ConflictResolver(vault_path, dialog_parent)
+          # Create conflict resolver
+        import Stage1_conflict_resolution as cr_module
+        resolver = cr_module.ConflictResolver(vault_path, dialog_parent)
         
         # Get GitHub URL for analysis
         github_url = config_data.get("GITHUB_REMOTE_URL", "")
@@ -680,21 +680,21 @@ def set_github_remote(vault_path):
                             backup_branch = f"backup-before-linking-conflict-{timestamp}"
                             run_command(f"git branch {backup_branch}", cwd=vault_path)
                             safe_update_log(f"State backed up to: {backup_branch}", 33)
+                              # Use enhanced conflict resolver
+                            import Stage1_conflict_resolution as cr_module
+                            resolver = cr_module.ConflictResolver(vault_path, root)
+                            remote_url = config_data.get("GITHUB_REMOTE_URL", "")
+                            resolution_result = resolver.resolve_initial_setup_conflicts(remote_url)
                             
-                            # Use enhanced conflict resolver
-                            resolver = conflict_resolution.ConflictResolver(vault_path, root)
-                            resolution_result = resolver.resolve_conflicts(conflict_resolution.ConflictType.REPOSITORY_SETUP)
-                            
-                            if resolution_result and resolution_result.get('strategy') != 'cancelled':
-                                success = conflict_resolution.apply_conflict_resolution(vault_path, resolution_result)
-                                if success:
-                                    safe_update_log("✅ Repository linking conflicts resolved successfully", 35)
+                            if resolution_result.success:
+                                safe_update_log("✅ Repository linking conflicts resolved successfully", 35)
+                            else:
+                                if "cancelled by user" in resolution_result.message.lower():
+                                    safe_update_log("❌ Repository linking conflict resolution was cancelled", 35)
+                                    return False
                                 else:
                                     safe_update_log("❌ Enhanced conflict resolution failed during repository linking", 35)
                                     return False
-                            else:
-                                safe_update_log("❌ Repository linking conflict resolution was cancelled", 35)
-                                return False
                                 
                         except Exception as e:
                             safe_update_log(f"❌ Error in enhanced conflict resolution during repository linking: {e}", 35)
@@ -868,19 +868,19 @@ def validate_vault_directory(vault_path):
                             backup_branch = f"backup-before-recovery-conflict-{timestamp}"
                             run_command(f"git branch {backup_branch}", cwd=vault_path)
                             safe_update_log(f"State backed up to: {backup_branch}", None)
+                              # Use enhanced conflict resolver
+                            import Stage1_conflict_resolution as cr_module
+                            resolver = cr_module.ConflictResolver(vault_path, root)
+                            remote_url = config_data.get("GITHUB_REMOTE_URL", "")
+                            resolution_result = resolver.resolve_initial_setup_conflicts(remote_url)
                             
-                            # Use enhanced conflict resolver
-                            resolver = conflict_resolution.ConflictResolver(vault_path, root)
-                            resolution_result = resolver.resolve_conflicts(conflict_resolution.ConflictType.REPOSITORY_SETUP)
-                            
-                            if resolution_result and resolution_result.get('strategy') != 'cancelled':
-                                success = conflict_resolution.apply_conflict_resolution(vault_path, resolution_result)
-                                if success:
-                                    safe_update_log("✅ Vault recovery conflicts resolved successfully", None)
+                            if resolution_result.success:
+                                safe_update_log("✅ Vault recovery conflicts resolved successfully", None)
+                            else:
+                                if "cancelled by user" in resolution_result.message.lower():
+                                    safe_update_log("❌ Vault recovery conflict resolution was cancelled", None)
                                 else:
                                     safe_update_log("❌ Enhanced conflict resolution failed during vault recovery", None)
-                            else:
-                                safe_update_log("❌ Vault recovery conflict resolution was cancelled", None)
                                 
                         except Exception as e:
                             safe_update_log(f"❌ Error in enhanced conflict resolution during vault recovery: {e}", None)
@@ -1281,42 +1281,66 @@ def perform_initial_commit_and_push(vault_path):
                     else:
                         safe_update_log(f"Error pushing after pull: {err_push}", 60)
                 elif "CONFLICT" in (pull_out + pull_err):
-                    # Conflict during initial setup pull - use enhanced conflict resolution
+                    # Conflict during initial setup pull - use 2-stage conflict resolution
                     safe_update_log("❌ Merge conflict detected during initial setup pull.", 56)
-                    safe_update_log("Using enhanced conflict resolution system...", 57)
+                    safe_update_log("🔧 Activating 2-stage conflict resolution system...", 57)
+                    
+                    # Abort the current merge to get to a clean state
+                    run_command("git merge --abort", cwd=vault_path)
                     
                     try:
-                        # Create backup branch before conflict resolution
-                        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-                        backup_branch = f"backup-before-setup-conflict-{timestamp}"
-                        run_command(f"git branch {backup_branch}", cwd=vault_path)
-                        safe_update_log(f"State backed up to: {backup_branch}", 57)
+                        if not CONFLICT_RESOLUTION_AVAILABLE:
+                            safe_update_log("❌ Enhanced conflict resolution system not available. Manual resolution required.", 59)
+                            safe_update_log("Please resolve conflicts manually and try again.", 59)
+                            return
                         
-                        # Analyze conflicts using the new system
-                        analysis = conflict_resolution.analyze_repository_conflicts(vault_path)
+                        # Create backup using backup manager if available
+                        backup_id = None
+                        if 'backup_manager' in sys.modules:
+                            try:
+                                from backup_manager import create_setup_safety_backup
+                                backup_id = create_setup_safety_backup(vault_path, "initial-setup-conflict")
+                                if backup_id:
+                                    safe_update_log(f"✅ Safety backup created: {backup_id}", 57)
+                            except Exception as backup_err:
+                                safe_update_log(f"⚠️ Could not create backup: {backup_err}", 57)
                         
-                        # Use enhanced conflict resolver for setup conflicts
-                        resolver = conflict_resolution.ConflictResolver(vault_path, root, analysis)
-                        resolution_result = resolver.resolve_conflicts(conflict_resolution.ConflictType.REPOSITORY_SETUP)
+                        # Import and use the proper conflict resolution modules
+                        import Stage1_conflict_resolution as cr_module
                         
-                        if resolution_result and resolution_result.get('strategy') != 'cancelled':
-                            success = conflict_resolution.apply_conflict_resolution(vault_path, resolution_result)
-                            if success:
-                                safe_update_log("✅ Setup conflicts resolved successfully", 59)
-                                # Try to push again after resolution
-                                out_push, err_push, rc_push = run_command("git push -u origin main", cwd=vault_path)
-                                if rc_push == 0:
-                                    safe_update_log("Initial commit pushed to remote repository successfully.", 60)
-                                else:
-                                    safe_update_log(f"Warning: Could not push after conflict resolution: {err_push}", 60)
+                        # Create conflict resolver for initial setup conflicts
+                        resolver = cr_module.ConflictResolver(vault_path, root)
+                        remote_url = config_data.get("GITHUB_REMOTE_URL", "")
+                        
+                        # Resolve conflicts using the 2-stage system
+                        resolution_result = resolver.resolve_initial_setup_conflicts(remote_url)
+                        
+                        if resolution_result.success:
+                            safe_update_log("✅ Initial setup conflicts resolved successfully", 59)
+                            if backup_id:
+                                safe_update_log(f"📝 Note: Safety backup available if needed: {backup_id}", 59)
+                            # Try to push again after resolution
+                            out_push, err_push, rc_push = run_command("git push -u origin main", cwd=vault_path)
+                            if rc_push == 0:
+                                safe_update_log("Initial commit pushed to remote repository successfully.", 60)
                             else:
-                                safe_update_log("❌ Enhanced conflict resolution failed during setup", 59)
+                                safe_update_log(f"Warning: Could not push after conflict resolution: {err_push}", 60)
                         else:
-                            safe_update_log("❌ Setup conflict resolution was cancelled", 59)
+                            if "cancelled by user" in resolution_result.message.lower():
+                                safe_update_log("❌ Initial setup conflict resolution was cancelled by user", 59)
+                                safe_update_log("Setup cannot continue without resolving conflicts.", 59)
+                                return
+                            else:
+                                safe_update_log(f"❌ Initial setup conflict resolution failed: {resolution_result.message}", 59)
+                                if backup_id:
+                                    safe_update_log(f"📝 Your work is safe in backup: {backup_id}", 59)
+                                return
                             
                     except Exception as e:
-                        safe_update_log(f"❌ Error in enhanced conflict resolution during setup: {e}", 59)
+                        safe_update_log(f"❌ Error in 2-stage conflict resolution during setup: {e}", 59)
                         safe_update_log("Initial setup may be incomplete. Please resolve conflicts manually.", 59)
+                        import traceback
+                        traceback.print_exc()
                 else:
                     safe_update_log(f"Error pulling remote commits: {pull_err}", 60)
             else:
@@ -1551,29 +1575,23 @@ def auto_sync(use_threading=True):
                             safe_update_log("❌ Merge conflict detected during sync initialization.", 16)
                             safe_update_log("Using enhanced conflict resolution system...", 17)
                             
-                            try:
-                                # Create backup branch before conflict resolution
+                            try:                                # Create backup branch before any operation for safety
                                 timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-                                backup_branch = f"backup-before-sync-init-conflict-{timestamp}"
+                                backup_branch = f"backup-local-before-sync-init-{timestamp}"
                                 run_command(f"git branch {backup_branch}", cwd=vault_path)
-                                safe_update_log(f"State backed up to: {backup_branch}", 17)
+                                safe_update_log(f"Local state backed up to: {backup_branch}", 17)
                                 
-                                # Analyze conflicts using the new system
-                                analysis = conflict_resolution.analyze_repository_conflicts(vault_path)
+                                # For sync initialization, we want remote content to take precedence
+                                # Use reset --hard to replace local with remote content (your preference)
+                                safe_update_log("Replacing local content with remote content...", 17)
+                                reset_out, reset_err, reset_rc = run_command("git reset --hard origin/main", cwd=vault_path)
                                 
-                                # Use enhanced conflict resolver for sync initialization conflicts
-                                resolver = conflict_resolution.ConflictResolver(vault_path, root, analysis)
-                                resolution_result = resolver.resolve_conflicts(conflict_resolution.ConflictType.REPOSITORY_SETUP)
-                                
-                                if resolution_result and resolution_result.get('strategy') != 'cancelled':
-                                    success = conflict_resolution.apply_conflict_resolution(vault_path, resolution_result)
-                                    if success:
-                                        safe_update_log("✅ Sync initialization conflicts resolved successfully", 18)
-                                    else:
-                                        safe_update_log("❌ Enhanced conflict resolution failed during sync initialization", 18)
-                                        network_available = False
+                                if reset_rc == 0:
+                                    safe_update_log("✅ Successfully synchronized with remote repository", 18)
+                                    safe_update_log(f"📝 Note: Previous local state preserved in backup branch: {backup_branch}", 18)
                                 else:
-                                    safe_update_log("❌ Sync initialization conflict resolution was cancelled", 18)
+                                    safe_update_log(f"❌ Failed to synchronize with remote: {reset_err}", 18)
+                                    safe_update_log(f"📝 Your local work is safe in backup branch: {backup_branch}", 18)
                                     network_available = False
                                     
                             except Exception as e:
@@ -1621,85 +1639,44 @@ def auto_sync(use_threading=True):
                     content_files = [f for f in remote_files if f not in ['README.md', '.gitignore']]
                     
                     if content_files:
-                        safe_update_log(f"Remote has {len(content_files)} content files. Downloading them...", 22)
-                        # Create backup branch before any operation for safety
-                        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-                        backup_branch = f"backup-local-before-download-{timestamp}"
-                        run_command(f"git branch {backup_branch}", cwd=vault_path)
-                        safe_update_log(f"Local state backed up to: {backup_branch}", 23)
+                        safe_update_log(f"🔄 Remote has {len(content_files)} content files. Replacing local content with remote files...", 22)
                         
-                        # For functional equivalence to reset --hard, we need working directory to exactly match remote
-                        # But we want to preserve history, so we'll use a hybrid approach
-                        safe_update_log("Downloading remote files with history preservation...", 24)
+                        # Create backup using backup manager if available
+                        backup_id = None
+                        if 'backup_manager' in sys.modules:
+                            try:
+                                from backup_manager import create_setup_safety_backup
+                                backup_id = create_setup_safety_backup(vault_path, "pre-initial-sync")
+                                if backup_id:
+                                    safe_update_log(f"✅ Safety backup created: {backup_id}", 22)
+                            except Exception as backup_err:
+                                safe_update_log(f"⚠️ Could not create backup: {backup_err}", 22)
                         
-                        # First, try merge approach for history preservation
-                        merge_out, merge_err, merge_rc = run_command("git merge origin/main --no-ff -m 'Download remote files - preserve history'", cwd=vault_path)
+                        # For initial sync, we want remote content to take precedence (user preference)
+                        # Use reset --hard to replace local with remote content  
+                        safe_update_log("📥 Downloading and replacing local content with remote files...", 24)
                         
-                        if merge_rc == 0:
-                            # Check if working directory exactly matches remote (for functional equivalence)
-                            ls_remote_out, _, ls_remote_rc = run_command("git ls-tree -r --name-only origin/main", cwd=vault_path)
-                            if ls_remote_rc == 0:
-                                remote_files_set = set(f.strip() for f in ls_remote_out.splitlines() if f.strip())
-                                
-                                # Check current working directory files
-                                current_files_set = set()
-                                for root_dir, dirs, files in os.walk(vault_path):
-                                    if '.git' in root_dir:
-                                        continue
-                                    for file in files:
-                                        if not file.startswith('.'):
-                                            rel_path = os.path.relpath(os.path.join(root_dir, file), vault_path)
-                                            current_files_set.add(rel_path.replace(os.sep, '/'))
-                                
-                                # Remove any extra local files for true functional equivalence
-                                extra_files = current_files_set - remote_files_set
-                                if extra_files:
-                                    safe_update_log(f"Removing {len(extra_files)} extra local files for functional equivalence...", 24)
-                                    for extra_file in extra_files:
-                                        try:
-                                            extra_path = os.path.join(vault_path, extra_file)
-                                            if os.path.exists(extra_path):
-                                                os.remove(extra_path)
-                                        except Exception as e:
-                                            safe_update_log(f"Warning: Could not remove {extra_file}: {e}", 24)
-                                    
-                                    # Update git state
-                                    run_command("git add -A", cwd=vault_path)
-                                    run_command('git commit --amend --no-edit', cwd=vault_path)
-                            
-                            safe_update_log(f"Successfully downloaded all remote files with history preservation! ({len(content_files)} files)", 25)
-                            safe_update_log(f"Note: Previous local state preserved in git history and backup branch: {backup_branch}", 25)
-                            
-                        else:
-                            # If merge fails, try merge with allow-unrelated-histories
-                            safe_update_log("Standard merge failed, trying with unrelated histories...", 24)
-                            unrelated_out, unrelated_err, unrelated_rc = run_command("git merge origin/main --allow-unrelated-histories --no-ff -m 'Download remote files - unrelated histories'", cwd=vault_path)
-                            
-                            if unrelated_rc == 0:
-                                safe_update_log(f"Successfully downloaded remote files with history preservation! ({len(content_files)} files)", 25)
+                        reset_out, reset_err, reset_rc = run_command("git reset --hard origin/main", cwd=vault_path)
+                        if reset_rc == 0:
+                            safe_update_log(f"✅ Successfully replaced local content with {len(content_files)} remote files!", 25)
+                            if backup_id:
+                                safe_update_log(f"📝 Note: Previous local state safely backed up: {backup_id}", 25)
                             else:
-                                # Last resort: use reset --hard but with comprehensive backup protection
-                                safe_update_log("Merge strategies failed, using reset method with backup protection...", 24)
-                                safe_update_log(f"Note: All local work is safely preserved in backup branch: {backup_branch}", 24)
-                                
-                                reset_out, reset_err, reset_rc = run_command("git reset --hard origin/main", cwd=vault_path)
-                                if reset_rc == 0:
-                                    safe_update_log(f"Downloaded remote files - local history safe in: {backup_branch}", 25)
-                                    
-                                    # Create recovery instructions
-                                    recovery_file = os.path.join(vault_path, f"RECOVERY_INSTRUCTIONS_{timestamp}.txt")
-                                    try:
-                                        with open(recovery_file, 'w', encoding='utf-8') as f:
-                                            f.write("OGRESYNC RECOVERY INSTRUCTIONS\\n")
-                                            f.write("=" * 40 + "\\n\\n")
-                                            f.write(f"Backup branch: {backup_branch}\\n")
-                                            f.write("To recover your local work:\\n")
-                                            f.write(f"  git checkout {backup_branch}\\n")
-                                            f.write(f"  git checkout -b recovery {backup_branch}\\n")
-                                    except Exception as e:
-                                        safe_update_log(f"Note: Could not create recovery file: {e}", 25)
-                                else:
-                                    safe_update_log(f"Error with fallback method: {reset_err}", 22)
+                                # Fallback: Create git branch backup
+                                timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+                                backup_branch = f"backup-local-before-initial-sync-{timestamp}"
+                                run_command(f"git branch {backup_branch}", cwd=vault_path)
+                                safe_update_log(f"📝 Note: Previous local state preserved in backup branch: {backup_branch}", 25)
+                        else:
+                            safe_update_log(f"❌ Error replacing local content with remote: {reset_err}", 22)
+                            safe_update_log("Trying alternative download method...", 22)
+                            
+                            # Fallback: try merge approach  
+                            merge_out, merge_err, merge_rc = run_command("git merge origin/main --allow-unrelated-histories --strategy-option=theirs", cwd=vault_path)
+                            if merge_rc == 0:
+                                safe_update_log(f"✅ Downloaded remote files using merge fallback! ({len(content_files)} files)", 25)
+                            else:
+                                safe_update_log(f"❌ Could not download remote files: {merge_err}", 25)
                         
                         # Verify files were actually downloaded
                         new_local_files = []
@@ -1727,40 +1704,57 @@ def auto_sync(use_threading=True):
                     safe_update_log("❌ Unable to pull updates due to a network error. Local changes remain safely stashed.", 30)
                 elif "CONFLICT" in (out + err):  # Detect merge conflicts
                     safe_update_log("❌ A merge conflict was detected during the pull operation.", 30)
-                    safe_update_log("Using enhanced conflict resolution system...", 32)
+                    safe_update_log("🔧 Activating 2-stage conflict resolution system...", 32)
                     
-                    # Use the new conflict resolution system instead of the old manual approach
+                    # Abort the current rebase to get to a clean state
+                    run_command("git rebase --abort", cwd=vault_path)
+                    
+                    # Use the 2-stage conflict resolution system
                     try:
-                        # Create backup branch before conflict resolution
-                        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-                        backup_branch = f"backup-before-conflict-resolution-{timestamp}"
-                        run_command(f"git branch {backup_branch}", cwd=vault_path)
-                        safe_update_log(f"State backed up to: {backup_branch}", 33)
+                        if not CONFLICT_RESOLUTION_AVAILABLE:
+                            safe_update_log("❌ Enhanced conflict resolution system not available. Manual resolution required.", 35)
+                            safe_update_log("Please resolve conflicts manually and try again.", 35)
+                            return
                         
-                        # Analyze conflicts using the new system
-                        analysis = conflict_resolution.analyze_repository_conflicts(vault_path)
+                        # Create backup using backup manager if available
+                        backup_id = None
+                        if 'backup_manager' in sys.modules:
+                            try:
+                                from backup_manager import create_conflict_resolution_backup
+                                backup_id = create_conflict_resolution_backup(vault_path, "sync-pull-conflict")
+                                if backup_id:
+                                    safe_update_log(f"✅ Safety backup created: {backup_id}", 33)
+                            except Exception as backup_err:
+                                safe_update_log(f"⚠️ Could not create backup: {backup_err}", 33)
                         
-                        # Use enhanced conflict resolver
-                        resolver = conflict_resolution.ConflictResolver(vault_path, root, analysis)
-                        resolution_result = resolver.resolve_conflicts(conflict_resolution.ConflictType.MERGE_CONFLICT)
+                        # Import and use the proper conflict resolution modules
+                        import Stage1_conflict_resolution as cr_module
                         
-                        if resolution_result and resolution_result.get('strategy') != 'cancelled':
-                            success = conflict_resolution.apply_conflict_resolution(vault_path, resolution_result)
-                            if success:
-                                safe_update_log("✅ Conflicts resolved successfully using enhanced system", 35)
-                            else:
-                                safe_update_log("❌ Enhanced conflict resolution failed", 35)
-                                # Abort the operation to prevent data loss
-                                run_command("git rebase --abort", cwd=vault_path)
+                        # Create conflict resolver for sync pull conflicts
+                        resolver = cr_module.ConflictResolver(vault_path, root)
+                        remote_url = config_data.get("GITHUB_REMOTE_URL", "")
+                        
+                        # Resolve conflicts using the 2-stage system
+                        resolution_result = resolver.resolve_initial_setup_conflicts(remote_url)
+                        
+                        if resolution_result.success:
+                            safe_update_log("✅ Sync pull conflicts resolved successfully using 2-stage system", 35)
+                            if backup_id:
+                                safe_update_log(f"📝 Note: Safety backup available if needed: {backup_id}", 35)
                         else:
-                            safe_update_log("❌ Conflict resolution was cancelled", 35)
-                            run_command("git rebase --abort", cwd=vault_path)
-                            
+                            if "cancelled by user" in resolution_result.message.lower():
+                                safe_update_log("❌ Conflict resolution was cancelled by user", 35)
+                                safe_update_log("📝 Your local changes remain stashed and can be recovered.", 35)
+                            else:
+                                safe_update_log(f"❌ Conflict resolution failed: {resolution_result.message}", 35)
+                                if backup_id:
+                                    safe_update_log(f"📝 Your work is safe in backup: {backup_id}", 35)
+                                
                     except Exception as e:
-                        safe_update_log(f"❌ Error in enhanced conflict resolution: {e}", 35)
-                        # Fallback: abort the rebase to prevent data loss
-                        run_command("git rebase --abort", cwd=vault_path)
-                        safe_update_log("Rebase aborted to prevent data loss. Please resolve conflicts manually.", 35)
+                        safe_update_log(f"❌ Error in 2-stage conflict resolution during sync pull: {e}", 35)
+                        safe_update_log("📝 Your local changes remain stashed and can be recovered manually.", 35)
+                        import traceback
+                        traceback.print_exc()
                     else:
                         safe_update_log("No valid conflict resolution chosen. Aborting rebase.", 30)
                         run_command("git rebase --abort", cwd=vault_path)
@@ -1837,40 +1831,58 @@ def auto_sync(use_threading=True):
                         remote_changes_detected = False
                     elif "CONFLICT" in (out + err):  # Detect merge conflicts
                         safe_update_log("❌ Merge conflict detected with new remote changes during sync.", 54)
-                        safe_update_log("Using enhanced conflict resolution system...", 55)
+                        safe_update_log("🔧 Activating 2-stage conflict resolution system...", 55)
                         
-                        # Use the new conflict resolution system
+                        # Abort the current rebase to get to a clean state
+                        run_command("git rebase --abort", cwd=vault_path)
+                        
+                        # Use the enhanced 2-stage conflict resolution system
                         try:
-                            # Create backup branch before conflict resolution
-                            timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-                            backup_branch = f"backup-before-session-sync-conflict-{timestamp}"
-                            run_command(f"git branch {backup_branch}", cwd=vault_path)
-                            safe_update_log(f"State backed up to: {backup_branch}", 56)
+                            if not CONFLICT_RESOLUTION_AVAILABLE:
+                                safe_update_log("❌ Enhanced conflict resolution system not available. Manual resolution required.", 58)
+                                return
                             
-                            # Analyze conflicts using the new system
-                            analysis = conflict_resolution.analyze_repository_conflicts(vault_path)
+                            # Create backup using backup manager if available
+                            backup_id = None
+                            if 'backup_manager' in sys.modules:
+                                try:
+                                    from backup_manager import create_conflict_resolution_backup
+                                    backup_id = create_conflict_resolution_backup(vault_path, "post-obsidian-session-conflict")
+                                    if backup_id:
+                                        safe_update_log(f"✅ Safety backup created: {backup_id}", 56)
+                                except Exception as backup_err:
+                                    safe_update_log(f"⚠️ Could not create backup: {backup_err}", 56)
+                              # Import and use the proper conflict resolution modules
+                            import Stage1_conflict_resolution as cr_module
                             
-                            # Use enhanced conflict resolver for session sync conflicts
-                            resolver = conflict_resolution.ConflictResolver(vault_path, root, analysis)
-                            resolution_result = resolver.resolve_conflicts(conflict_resolution.ConflictType.MERGE_CONFLICT)
+                            # Create conflict resolver for post-Obsidian session conflicts
+                            resolver = cr_module.ConflictResolver(vault_path, root)
+                            remote_url = config_data.get("GITHUB_REMOTE_URL", "")
                             
-                            if resolution_result and resolution_result.get('strategy') != 'cancelled':
-                                success = conflict_resolution.apply_conflict_resolution(vault_path, resolution_result)
-                                if success:
-                                    safe_update_log("✅ Session sync conflicts resolved successfully using enhanced system", 58)
-                                else:
-                                    safe_update_log("❌ Enhanced conflict resolution failed during session sync", 58)
-                                    # Abort the operation to prevent data loss
-                                    run_command("git rebase --abort", cwd=vault_path)
+                            # Resolve conflicts using the 2-stage system
+                            resolution_result = resolver.resolve_initial_setup_conflicts(remote_url)
+                            
+                            if resolution_result.success:
+                                safe_update_log("✅ Post-Obsidian session conflicts resolved successfully using 2-stage system", 58)
+                                if backup_id:
+                                    safe_update_log(f"📝 Note: Safety backup available if needed: {backup_id}", 58)
                             else:
-                                safe_update_log("❌ Session sync conflict resolution was cancelled", 58)
-                                run_command("git rebase --abort", cwd=vault_path)
+                                if "cancelled by user" in resolution_result.message.lower():
+                                    safe_update_log("❌ Conflict resolution was cancelled by user", 58)
+                                    safe_update_log("📝 Your local changes remain uncommitted. You can resolve conflicts manually later.", 58)
+                                else:
+                                    safe_update_log(f"❌ Conflict resolution failed: {resolution_result.message}", 58)
+                                    if backup_id:
+                                        safe_update_log(f"📝 Your work is safe in backup: {backup_id}", 58)
+                                # Set flag to skip pushing since conflicts weren't resolved
+                                remote_changes_detected = False
                                 
                         except Exception as e:
-                            safe_update_log(f"❌ Error in enhanced conflict resolution during session sync: {e}", 58)
-                            # Fallback: abort the rebase to prevent data loss
-                            run_command("git rebase --abort", cwd=vault_path)
-                            safe_update_log("Rebase aborted to prevent data loss. Please resolve conflicts manually.", 58)
+                            safe_update_log(f"❌ Error in 2-stage conflict resolution during session sync: {e}", 58)
+                            safe_update_log("📝 Your local changes remain uncommitted. Please resolve conflicts manually.", 58)
+                            import traceback
+                            traceback.print_exc()
+                            remote_changes_detected = False
                     else:
                         safe_update_log("❌ Error pulling new remote changes during session sync.", 54)
                 else:
@@ -1890,39 +1902,55 @@ def auto_sync(use_threading=True):
                     safe_update_log("❌ Unable to pull updates due to network error. Continuing with local commit.", 52)
                 elif "CONFLICT" in (out + err):  # Same conflict resolution as above
                     safe_update_log("❌ Merge conflict detected in new remote changes.", 52)
-                    safe_update_log("Using enhanced conflict resolution system...", 53)
+                    safe_update_log("🔧 Activating 2-stage conflict resolution system...", 53)
+                    
+                    # Abort the current rebase to get to a clean state
+                    run_command("git rebase --abort", cwd=vault_path)
                     
                     try:
-                        # Create backup branch before conflict resolution
-                        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-                        backup_branch = f"backup-before-sync-conflict-{timestamp}"
-                        run_command(f"git branch {backup_branch}", cwd=vault_path)
-                        safe_update_log(f"State backed up to: {backup_branch}", 53)
+                        if not CONFLICT_RESOLUTION_AVAILABLE:
+                            safe_update_log("❌ Enhanced conflict resolution system not available. Manual resolution required.", 55)
+                            return
                         
-                        # Analyze conflicts using the new system
-                        analysis = conflict_resolution.analyze_repository_conflicts(vault_path)
+                        # Create backup using backup manager if available
+                        backup_id = None
+                        if 'backup_manager' in sys.modules:
+                            try:
+                                from backup_manager import create_conflict_resolution_backup
+                                backup_id = create_conflict_resolution_backup(vault_path, "fallback-remote-conflict")
+                                if backup_id:
+                                    safe_update_log(f"✅ Safety backup created: {backup_id}", 53)
+                            except Exception as backup_err:
+                                safe_update_log(f"⚠️ Could not create backup: {backup_err}", 53)
                         
-                        # Use enhanced conflict resolver
-                        resolver = conflict_resolution.ConflictResolver(vault_path, root, analysis)
-                        resolution_result = resolver.resolve_conflicts(conflict_resolution.ConflictType.MERGE_CONFLICT)
+                        # Import and use the proper conflict resolution modules
+                        import Stage1_conflict_resolution as cr_module
                         
-                        if resolution_result and resolution_result.get('strategy') != 'cancelled':
-                            success = conflict_resolution.apply_conflict_resolution(vault_path, resolution_result)
-                            if success:
-                                safe_update_log("✅ Sync conflicts resolved successfully using enhanced system", 55)
-                            else:
-                                safe_update_log("❌ Enhanced conflict resolution failed", 55)
-                                # Abort the operation to prevent data loss
-                                run_command("git rebase --abort", cwd=vault_path)
+                        # Create conflict resolver for fallback remote conflicts
+                        resolver = cr_module.ConflictResolver(vault_path, root)
+                        remote_url = config_data.get("GITHUB_REMOTE_URL", "")
+                        
+                        # Resolve conflicts using the 2-stage system
+                        resolution_result = resolver.resolve_initial_setup_conflicts(remote_url)
+                        
+                        if resolution_result.success:
+                            safe_update_log("✅ Fallback remote conflicts resolved successfully using 2-stage system", 55)
+                            if backup_id:
+                                safe_update_log(f"📝 Note: Safety backup available if needed: {backup_id}", 55)
                         else:
-                            safe_update_log("❌ Conflict resolution was cancelled", 55)
-                            run_command("git rebase --abort", cwd=vault_path)
-                            
+                            if "cancelled by user" in resolution_result.message.lower():
+                                safe_update_log("❌ Conflict resolution was cancelled by user", 55)
+                                safe_update_log("📝 Your local changes remain uncommitted.", 55)
+                            else:
+                                safe_update_log(f"❌ Conflict resolution failed: {resolution_result.message}", 55)
+                                if backup_id:
+                                    safe_update_log(f"📝 Your work is safe in backup: {backup_id}", 55)
+                                    
                     except Exception as e:
-                        safe_update_log(f"❌ Error in enhanced conflict resolution: {e}", 55)
-                        # Fallback: abort the rebase to prevent data loss
-                        run_command("git rebase --abort", cwd=vault_path)
-                        safe_update_log("Rebase aborted to prevent data loss. Please resolve conflicts manually.", 55)
+                        safe_update_log(f"❌ Error in 2-stage conflict resolution during fallback: {e}", 55)
+                        safe_update_log("📝 Your local changes remain uncommitted and can be recovered manually.", 55)
+                        import traceback
+                        traceback.print_exc()
                 else:
                     safe_update_log("New remote updates have been successfully pulled.", 52)
                     # Log pulled files
