@@ -256,8 +256,7 @@ class ConflictResolutionEngine:
     def _is_meaningful_file(self, file_path: str) -> bool:
         """Check if a file should be considered meaningful user content (exclude system files)"""
         file_name = os.path.basename(file_path)
-        
-        # System and temporary files to ignore
+          # System and temporary files to ignore
         ignored_files = {
             'README.md', '.gitignore', '.DS_Store', 'Thumbs.db', 
             'desktop.ini', '.env', '.env.local', '.env.example',
@@ -275,7 +274,7 @@ class ConflictResolutionEngine:
             '.git/', '.obsidian/', '__pycache__/', '.vscode/', 
             '.idea/', '.vs/', 'node_modules/', '.pytest_cache/',
             '.mypy_cache/', '.coverage/', 'venv/', '.venv/',
-            'env/', '.env/', 'assets/'
+            'env/', '.env/', 'assets/', '.ogresync-backups/'
         }
         
         # Check if file name is in ignored list
@@ -290,12 +289,15 @@ class ConflictResolutionEngine:
         _, ext = os.path.splitext(file_name)
         if ext.lower() in ignored_extensions:
             return False
-        
-        # Check if file path contains ignored directory patterns
+          # Check if file path contains ignored directory patterns
         normalized_path = file_path.replace('\\', '/')
         for pattern in ignored_dir_patterns:
             if pattern in normalized_path:
                 return False
+        
+        # Check for Ogresync recovery instructions files
+        if file_name.startswith('OGRESYNC_RECOVERY_INSTRUCTIONS_'):
+            return False
         
         return True
     
@@ -331,22 +333,24 @@ class ConflictResolutionEngine:
         print(f"[DEBUG] Common files: {common_files}")
         print(f"[DEBUG] Local only: {local_only}")
         print(f"[DEBUG] Remote only: {remote_only}")
-        
-        # Check for content conflicts in common files
+          # Check for content conflicts in common files
         conflicted_files = []
         identical_files = []
-        
+
         for file_path in common_files:
             file_info = self._analyze_file_conflict(file_path)
             if file_info.content_differs:
                 conflicted_files.append(file_info)
             else:
                 identical_files.append(file_path)
-          # Determine conflict type and create analysis
-        # IMPORTANT: Only consider it a "conflict" if there are actual content differences
-        # in files that exist in both repositories. Having different files (local_only or remote_only)
-        # is not a conflict - it's just different content that can be safely merged.
-        has_conflicts = bool(conflicted_files)
+        
+        # Determine if user choice is needed
+        # We need user input whenever both local and remote have meaningful files,
+        # regardless of whether they overlap or not. This ensures the user can choose
+        # their preferred strategy (Smart Merge, Keep Local Only, Keep Remote Only)
+        # when both repositories contain content.
+        both_have_files = bool(local_files) and bool(remote_files)
+        has_conflicts = both_have_files
         conflict_type = ConflictType.INITIAL_SETUP  # For now, focusing on initial setup
         
         analysis = ConflictAnalysis(
@@ -987,13 +991,30 @@ class ConflictResolutionEngine:
             if rc == 0:
                 # Merge succeeded, but working directory might not exactly match remote
                 # We need to ensure working directory EXACTLY matches remote state
-                
-                # Get list of files that exist in remote
+                  # Get list of files that exist in remote
                 remote_files_out, _, remote_rc = self._run_git_command(f"git ls-tree -r --name-only {remote_branch}")
                 if remote_rc == 0:
                     remote_files = set(f.strip() for f in remote_files_out.splitlines() if f.strip())
                     
-                    # Get list of files currently in working directory
+                    # CRITICAL FIX: For "Keep Remote Only", we need to ensure ALL remote files 
+                    # have exactly the remote content, not just add missing files
+                    print(f"Ensuring all {len(remote_files)} remote files have exact remote content...")
+                    
+                    # Force checkout ALL remote files to ensure exact content match
+                    for file_path in remote_files:
+                        try:
+                            # Force checkout the file from remote (this overwrites local content)
+                            checkout_cmd = f"git checkout {remote_branch} -- {file_path}"
+                            stdout_co, stderr_co, rc_co = self._run_git_command(checkout_cmd)
+                            if rc_co == 0:
+                                print(f"  Replaced with remote version: {file_path}")
+                                files_processed.append(file_path)
+                            else:
+                                print(f"  Warning: Could not checkout {file_path}: {stderr_co}")
+                        except Exception as e:
+                            print(f"  Warning: Could not replace {file_path}: {e}")
+                    
+                    # Get current files after checkout to check for extras to remove
                     current_files = set()
                     for root, dirs, files in os.walk(self.vault_path):
                         if '.git' in root:
@@ -1002,23 +1023,6 @@ class ConflictResolutionEngine:
                             if not file.startswith('.'):
                                 rel_path = os.path.relpath(os.path.join(root, file), self.vault_path)
                                 current_files.add(rel_path.replace(os.sep, '/'))
-                    
-                    # Add any missing remote files
-                    missing_remote_files = remote_files - current_files
-                    if missing_remote_files:
-                        print(f"Adding {len(missing_remote_files)} missing remote files...")
-                        for file_path in missing_remote_files:
-                            try:
-                                # Check out the file from remote
-                                checkout_cmd = f"git checkout {remote_branch} -- {file_path}"
-                                stdout_co, stderr_co, rc_co = self._run_git_command(checkout_cmd)
-                                if rc_co == 0:
-                                    print(f"  Added: {file_path}")
-                                    files_processed.append(file_path)
-                                else:
-                                    print(f"  Warning: Could not checkout {file_path}: {stderr_co}")
-                            except Exception as e:
-                                print(f"  Warning: Could not add {file_path}: {e}")
                     
                     # Remove any local files that don't exist in remote (for true equivalence)
                     extra_local_files = current_files - remote_files
@@ -1701,12 +1705,11 @@ class ConflictResolutionDialog:
             indicatoron=True,
             command=self._update_selection_indicator,
             wraplength=150,
-            justify=tk.CENTER
-        )
+            justify=tk.CENTER        )
         self.smart_radio.pack(pady=(10, 5))        
         smart_desc = tk.Label(
             smart_frame,
-            text="Intelligently combines both repositories. Files with identical content are merged automatically. Only files with different content require manual resolution.",
+            text="Combines both repositories intelligently. Files with different content require manual resolution.",
             font=("Arial", 9, "normal"),
             bg="#DCFCE7",
             fg="#166534",
@@ -1734,12 +1737,11 @@ class ConflictResolutionDialog:
             indicatoron=True,
             command=self._update_selection_indicator,
             wraplength=150,
-            justify=tk.CENTER
-        )
+            justify=tk.CENTER        )
         self.local_radio.pack(pady=(10, 5))        
         local_desc = tk.Label(
             local_frame,
-            text="Both local and remote repositories will have local content only. Remote content will be backed up.",
+            text="Both repositories will have local content only. Remote content backed up.",
             font=("Arial", 9, "normal"),
             bg="#E0F2FE",
             fg="#0369A1",
@@ -1768,12 +1770,11 @@ class ConflictResolutionDialog:
             indicatoron=True,
             command=self._update_selection_indicator,
             wraplength=150,
-            justify=tk.CENTER
-        )
+            justify=tk.CENTER        )
         self.remote_radio.pack(pady=(10, 5))        
         remote_desc = tk.Label(
             remote_frame,
-            text="Both local and remote repositories will have remote content only. Local content will be backed up.",
+            text="Both repositories will have remote content only. Local content backed up.",
             font=("Arial", 9, "normal"),
             bg="#F3E8FF",
             fg="#7C3AED",

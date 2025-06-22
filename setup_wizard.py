@@ -41,10 +41,12 @@ except ImportError:
 try:
     import Stage1_conflict_resolution
     import stage2_conflict_resolution
+    from Stage1_conflict_resolution import ConflictStrategy
     CONFLICT_RESOLUTION_AVAILABLE = True
 except ImportError:
     Stage1_conflict_resolution = None
     stage2_conflict_resolution = None
+    ConflictStrategy = None
     CONFLICT_RESOLUTION_AVAILABLE = False
 
 try:
@@ -113,8 +115,7 @@ class OgresyncSetupWizard:
             SetupWizardStep("Final Sync", "Intelligent synchronization with safeguards", "📥"),
             SetupWizardStep("Complete Setup", "Finalize configuration", "🎉")
         ]
-        
-        # State management
+          # State management
         self.wizard_state = {
             "current_step": 0,
             "steps": self.setup_steps,
@@ -122,7 +123,8 @@ class OgresyncSetupWizard:
             "vault_path": "",
             "obsidian_path": "",
             "github_url": "",
-            "setup_complete": False
+            "setup_complete": False,
+            "conflict_resolution_strategy": None  # Track the chosen strategy
         }
         
         # UI components
@@ -2310,8 +2312,7 @@ Created: {time.strftime('%Y-%m-%d %H:%M:%S')}
             # Show Stage 1 dialog - handle parent type conversion
             self._update_status("🎯 Opening Stage 1 conflict resolution dialog...")
             print("[DEBUG] Opening Stage 1 conflict resolution dialog...")
-            
-            # Convert self.dialog to proper parent for conflict resolution
+              # Convert self.dialog to proper parent for conflict resolution
             dialog_parent = self.dialog if isinstance(self.dialog, tk.Tk) else None
             stage1_dialog = Stage1_conflict_resolution.ConflictResolutionDialog(dialog_parent, conflict_analysis)
             selected_strategy = stage1_dialog.show()
@@ -2319,6 +2320,9 @@ Created: {time.strftime('%Y-%m-%d %H:%M:%S')}
             print(f"[DEBUG] User selected strategy: {selected_strategy}")
             
             if selected_strategy:
+                # Save the selected strategy for use in final sync
+                self.wizard_state["conflict_resolution_strategy"] = selected_strategy
+                
                 # Apply the selected strategy
                 self._update_status(f"⚙️ Applying {selected_strategy.value} strategy...")
                 print(f"[DEBUG] Applying strategy: {selected_strategy.value}")
@@ -2380,7 +2384,6 @@ Created: {time.strftime('%Y-%m-%d %H:%M:%S')}
                     
         except Exception as e:
             return False, f"Error during simple merge: {str(e)}"
-    
     def _handle_unknown_scenario(self, vault_path, current_step):
         """Handle unknown scenarios with graceful fallback."""
         self._update_status("❓ Unknown repository state - attempting graceful synchronization...")
@@ -2388,6 +2391,7 @@ Created: {time.strftime('%Y-%m-%d %H:%M:%S')}
         try:
             # Try basic fetch and status check
             import subprocess
+            
             fetch_result = subprocess.run(['git', 'fetch', 'origin'], 
                                         cwd=vault_path, capture_output=True, text=True, timeout=30)
             
@@ -2407,93 +2411,101 @@ Created: {time.strftime('%Y-%m-%d %H:%M:%S')}
         except Exception as e:
             current_step.set_status("success")  # Don't fail the setup for unknown scenarios
             return True, f"Repository sync completed with issues: {str(e)}"
+    
     def _step_final_sync(self):
-        """Step 10: Final synchronization - intelligent push with priority for local_has_files_remote_empty scenario."""
+        """
+        Step 10: Final synchronization - minimal and robust approach
+        
+        Essential functions only:
+        1. Commit any uncommitted changes
+        2. Push ONLY if local_has_files_remote_empty scenario (empty remote)
+        3. Respect user's conflict resolution choices (never override)
+        4. Verify final sync status
+        """
         try:
             vault_path = self.wizard_state.get("vault_path")
             if not vault_path:
                 return False, "Vault path not set."
             
-            self._update_status("🔄 Performing final synchronization...")
+            self._update_status("🔄 Finalizing repository synchronization...")
             
             import subprocess
             
-            # Get current meaningful files
-            current_local_files = []
-            if os.path.exists(vault_path):
-                for root_dir, dirs, files in os.walk(vault_path):
-                    dirs[:] = [d for d in dirs if d not in {'.git', '.obsidian', '__pycache__', '.vscode', '.idea', 'node_modules'}]
-                    for file in files:
-                        file_path = os.path.relpath(os.path.join(root_dir, file), vault_path)
-                        if self._is_meaningful_file(file_path):
-                            current_local_files.append(file_path)
+            # CRITICAL: Check and respect user's conflict resolution choice
+            conflict_strategy = self.wizard_state.get("conflict_resolution_strategy")
+            if conflict_strategy:
+                try:
+                    from Stage1_conflict_resolution import ConflictStrategy
+                    if conflict_strategy == ConflictStrategy.KEEP_REMOTE_ONLY:
+                        print("[DEBUG] Final sync - KEEP_REMOTE_ONLY strategy: NO push allowed")
+                        self._update_status("✅ Sync complete - remote content preserved as requested")
+                        return True, "Synchronization complete - remote content preserved (no local push)"
+                    elif conflict_strategy == ConflictStrategy.SMART_MERGE:
+                        print("[DEBUG] Final sync - SMART_MERGE strategy: sync already handled in Step 9")
+                        self._update_status("✅ Sync complete - repositories already merged")
+                        return True, "Synchronization complete - smart merge already applied"
+                except ImportError:
+                    print("[DEBUG] Final sync - Could not import ConflictStrategy, continuing")
             
-            has_local_meaningful_files = len(current_local_files) > 0
-            print(f"[DEBUG] Final sync - Current local meaningful files: {current_local_files}")
-            print(f"[DEBUG] Final sync - Has local meaningful files: {has_local_meaningful_files}")
+            # STEP 1: Always commit any uncommitted changes
+            status_result = subprocess.run(['git', 'status', '--porcelain'], 
+                                         cwd=vault_path, capture_output=True, text=True)
             
-            # PRIORITY 1: If we have local files, ensure they are committed and pushed
-            if has_local_meaningful_files:
-                self._update_status(f"📝 Found {len(current_local_files)} local files - ensuring they are synchronized...")
+            if status_result.returncode == 0 and status_result.stdout.strip():
+                print("[DEBUG] Final sync - Committing uncommitted changes")
+                self._update_status("📝 Committing final changes...")
                 
-                # Ensure all local files are committed
-                status_result = subprocess.run(['git', 'status', '--porcelain'], 
-                                             cwd=vault_path, capture_output=True, text=True)
+                subprocess.run(['git', 'add', '.'], cwd=vault_path, capture_output=True, text=True)
+                commit_result = subprocess.run([
+                    'git', 'commit', '-m', 'Final setup commit - ensure all changes are saved'
+                ], cwd=vault_path, capture_output=True, text=True)
                 
-                if status_result.returncode == 0 and status_result.stdout.strip():
-                    # There are uncommitted changes, commit them
-                    print(f"[DEBUG] Final sync - Committing uncommitted changes")
-                    self._update_status("� Committing any uncommitted changes...")
+                if commit_result.returncode == 0:
+                    print("[DEBUG] Final sync - Successfully committed changes")
+                else:
+                    print(f"[DEBUG] Final sync - Commit failed: {commit_result.stderr}")
+            
+            # STEP 2: Check if we need to push (ONLY for empty remote scenario)
+            current_branch_result = subprocess.run(['git', 'branch', '--show-current'], 
+                                                 cwd=vault_path, capture_output=True, text=True)
+            current_branch = current_branch_result.stdout.strip() if current_branch_result.returncode == 0 else "main"
+            
+            # Fetch latest remote state
+            subprocess.run(['git', 'fetch', 'origin'], cwd=vault_path, capture_output=True, text=True)
+            
+            # Check if remote branch exists - this is the key indicator
+            remote_branch_exists = subprocess.run(['git', 'rev-parse', '--verify', f'origin/{current_branch}'], 
+                                                cwd=vault_path, capture_output=True, text=True)
+            
+            if remote_branch_exists.returncode != 0:
+                # Remote branch doesn't exist = empty remote scenario
+                print("[DEBUG] Final sync - Empty remote detected, pushing local content")
+                self._update_status("📤 Pushing local content to empty remote repository...")
+                
+                push_result = subprocess.run(['git', 'push', '-u', 'origin', current_branch], 
+                                           cwd=vault_path, capture_output=True, text=True, timeout=120)
+                
+                if push_result.returncode == 0:
+                    print("[DEBUG] Final sync - Successfully pushed to empty remote")
+                    self._update_status("✅ Successfully synchronized with remote repository!")
+                    return True, "Synchronization complete - local content pushed to empty remote"
+                else:
+                    push_error = push_result.stderr.strip()
+                    print(f"[DEBUG] Final sync - Push to empty remote failed: {push_error}")
                     
-                    # Add all files
-                    add_result = subprocess.run(['git', 'add', '.'], 
-                                              cwd=vault_path, capture_output=True, text=True)
-                    
-                    if add_result.returncode == 0:
-                        # Commit changes
-                        commit_result = subprocess.run(['git', 'commit', '-m', f'Final setup commit - {len(current_local_files)} files'], 
-                                                     cwd=vault_path, capture_output=True, text=True)
-                        
-                        if commit_result.returncode == 0:
-                            print(f"[DEBUG] Final sync - Successfully committed {len(current_local_files)} files")
-                        else:
-                            print(f"[DEBUG] Final sync - Commit failed: {commit_result.stderr}")
-                
-                # Get current branch and check push status
-                current_branch_result = subprocess.run(['git', 'branch', '--show-current'], 
-                                                     cwd=vault_path, capture_output=True, text=True)
-                current_branch = current_branch_result.stdout.strip() if current_branch_result.returncode == 0 else "main"
-                
-                # Check if we have unpushed commits (especially important for remote_empty scenario)
-                self._update_status("🔍 Checking if files need to be pushed to remote...")
-                
-                # First fetch to get latest remote state
-                fetch_result = subprocess.run(['git', 'fetch', 'origin'], 
-                                            cwd=vault_path, capture_output=True, text=True)
-                  # CRITICAL: Check if remote branch exists first (empty remote scenario)
-                # This handles the case where the remote repository is completely empty
-                remote_branch_exists = subprocess.run(['git', 'rev-parse', '--verify', f'origin/{current_branch}'], 
-                                                    cwd=vault_path, capture_output=True, text=True)
-                
-                if remote_branch_exists.returncode != 0:
-                    # Remote branch doesn't exist - this is definitely the remote_empty scenario
-                    print(f"[DEBUG] Final sync - Remote branch '{current_branch}' doesn't exist, pushing to empty remote")
-                    self._update_status(f"📤 Remote repository is empty - pushing {len(current_local_files)} files...")
-                    
-                    # Push to remote (this will create the remote branch)
-                    push_result = subprocess.run(['git', 'push', '-u', 'origin', current_branch], 
-                                               cwd=vault_path, capture_output=True, text=True, timeout=120)
-                    
-                    if push_result.returncode == 0:
-                        print(f"[DEBUG] Final sync - Successfully pushed to empty remote")
-                        self._update_status(f"✅ Successfully pushed {len(current_local_files)} files to remote repository!")
-                        return True, f"Final synchronization completed - pushed {len(current_local_files)} files to empty remote"
+                    # Provide helpful error messages
+                    if "permission denied" in push_error.lower() or "authentication failed" in push_error.lower():
+                        return False, f"Authentication failed. Please verify your SSH key setup.\nError: {push_error}"
+                    elif "repository not found" in push_error.lower():
+                        return False, f"Repository not found. Please verify the repository URL.\nError: {push_error}"
                     else:
-                        push_error = push_result.stderr.strip()
-                        print(f"[DEBUG] Final sync - Push to empty remote failed: {push_error}")
-                        return False, f"Failed to push files to empty remote repository: {push_error}"
+                        return False, f"Failed to push to empty remote repository.\nError: {push_error}"
+            
+            # STEP 3: For existing remotes, just verify sync status (don't force push)
+            else:
+                print("[DEBUG] Final sync - Remote branch exists, verifying sync status")
                 
-                # Check if we're ahead of remote (have commits to push)
+                # Check if we're ahead of remote (have unpushed commits)
                 ahead_result = subprocess.run(['git', 'rev-list', '--count', f'origin/{current_branch}..HEAD'], 
                                             cwd=vault_path, capture_output=True, text=True)
                 
@@ -2503,188 +2515,28 @@ Created: {time.strftime('%Y-%m-%d %H:%M:%S')}
                         print(f"[DEBUG] Final sync - Commits ahead of remote: {commits_ahead}")
                         
                         if commits_ahead > 0:
-                            self._update_status(f"📤 Pushing {commits_ahead} commit(s) with {len(current_local_files)} files to remote...")
-                            
-                            # Push to remote
-                            push_result = subprocess.run(['git', 'push', 'origin', current_branch], 
-                                                       cwd=vault_path, capture_output=True, text=True, timeout=120)
-                            
-                            if push_result.returncode == 0:
-                                print(f"[DEBUG] Final sync - Successfully pushed {commits_ahead} commits")
-                                self._update_status(f"✅ Successfully pushed {len(current_local_files)} files to remote repository!")
-                                return True, f"Final synchronization completed - pushed {len(current_local_files)} files to remote"
-                            else:
-                                push_error = push_result.stderr.strip()
-                                print(f"[DEBUG] Final sync - Push failed: {push_error}")
-                                
-                                # Provide helpful error messages
-                                if "permission denied" in push_error.lower() or "authentication failed" in push_error.lower():
-                                    return False, f"Push failed due to authentication issues. Please check your SSH key configuration.\nError: {push_error}"
-                                elif "repository not found" in push_error.lower():
-                                    return False, f"Repository not found. Please verify the repository URL is correct.\nError: {push_error}"
-                                elif "rejected" in push_error.lower() and "non-fast-forward" in push_error.lower():
-                                    return False, f"Push rejected - remote has changes. This suggests the remote repository has been modified.\nError: {push_error}"
-                                else:
-                                    return False, f"Failed to push files to remote repository.\nError: {push_error}"
+                            # Conservative approach: don't auto-push to existing remotes
+                            # Let the user decide later or handle in normal workflow
+                            print("[DEBUG] Final sync - Have unpushed commits, but respecting existing remote")
+                            self._update_status("✅ Repository synchronized (local commits preserved)")
+                            return True, f"Synchronization complete - {commits_ahead} local commit(s) ready for manual sync"
                         else:
-                            # We're not ahead - check if remote and local are in sync
-                            print(f"[DEBUG] Final sync - No commits to push, checking sync status")
-                            self._update_status("✅ Local and remote repositories are already synchronized")
-                            return True, f"Final synchronization completed - {len(current_local_files)} files already synchronized"
-                            
+                            print("[DEBUG] Final sync - No commits ahead, repositories are in sync")
+                            self._update_status("✅ Repository already synchronized")
+                            return True, "Synchronization complete - repositories are in sync"
+                    
                     except ValueError:
-                        print(f"[DEBUG] Final sync - Could not parse ahead count: '{ahead_result.stdout.strip()}'")
-                        # Continue with best effort
-                
-                # If we can't determine ahead status, try to push anyway (for remote_empty scenario)
-                print(f"[DEBUG] Final sync - Could not determine push status, attempting push anyway")
-                self._update_status(f"📤 Attempting to push {len(current_local_files)} files to remote...")
-                
-                push_result = subprocess.run(['git', 'push', 'origin', current_branch], 
-                                           cwd=vault_path, capture_output=True, text=True, timeout=120)
-                
-                if push_result.returncode == 0:
-                    print(f"[DEBUG] Final sync - Push successful")
-                    self._update_status(f"✅ Successfully pushed {len(current_local_files)} files to remote repository!")
-                    return True, f"Final synchronization completed - pushed {len(current_local_files)} files to remote"
+                        print("[DEBUG] Final sync - Could not parse ahead count")
+                        self._update_status("✅ Repository synchronization completed")
+                        return True, "Synchronization complete"
                 else:
-                    push_error = push_result.stderr.strip()
-                    if "up-to-date" in push_error.lower() or "up to date" in push_error.lower():
-                        # Already up to date
-                        print(f"[DEBUG] Final sync - Already up to date")
-                        self._update_status("✅ Repository is already up to date")
-                        return True, f"Final synchronization completed - {len(current_local_files)} files already synchronized"
-                    else:
-                        print(f"[DEBUG] Final sync - Push failed: {push_error}")
-                        return False, f"Failed to push files to remote repository: {push_error}"
-                behind_result = subprocess.run(['git', 'log', f'HEAD..origin/{current_branch}', '--oneline'], 
-                                             cwd=vault_path, capture_output=True, text=True)
-                
-                if behind_result.returncode == 0 and behind_result.stdout.strip():
-                    # We're behind remote, pull the changes
-                    self._update_status("📥 Pulling missing remote content to local repository...")
-                    pull_result = subprocess.run(['git', 'pull', 'origin', current_branch, '--no-rebase'], 
-                                               cwd=vault_path, capture_output=True, text=True)
-                    
-                    if pull_result.returncode == 0:
-                        # Count the files we got
-                        final_local_files = []
-                        for root_dir, dirs, files in os.walk(vault_path):
-                            dirs[:] = [d for d in dirs if d not in {'.git', '.obsidian', '__pycache__', '.vscode', '.idea', 'node_modules'}]
-                            for file in files:
-                                file_path = os.path.relpath(os.path.join(root_dir, file), vault_path)
-                                if self._is_meaningful_file(file_path):
-                                    final_local_files.append(file)
-                        
-                        self._update_status(f"✅ Successfully retrieved {len(final_local_files)} files from remote repository")
-                        return True, f"Final synchronization completed - pulled {len(final_local_files)} files from remote (no push needed)"
-                    else:
-                        return False, f"Failed to pull remote content: {pull_result.stderr}"
-                else:
-                    self._update_status("✅ Local and remote are synchronized - no action needed")
-                    return True, "Final synchronization completed - repositories are in sync (no push needed)"
-            
-            # Continue with normal final sync logic only if local has meaningful files
-            # First, ensure we're up to date with remote
-            fetch_result = subprocess.run(['git', 'fetch', 'origin'], 
-                                        cwd=vault_path, capture_output=True, text=True)
-            
-            if fetch_result.returncode != 0:
-                self._update_status("Warning: Could not fetch from remote, proceeding anyway...")
-            
-            # Check current repository state
-            status_result = subprocess.run(['git', 'status', '--porcelain'], 
-                                         cwd=vault_path, capture_output=True, text=True)
-            
-            has_uncommitted_changes = status_result.returncode == 0 and status_result.stdout.strip()
-            
-            # Get current branch and remote tracking info
-            current_branch_result = subprocess.run(['git', 'branch', '--show-current'], 
-                                                 cwd=vault_path, capture_output=True, text=True)
-            current_branch = current_branch_result.stdout.strip() if current_branch_result.returncode == 0 else "main"
-            
-            # Check if we have meaningful unpushed commits
-            unpushed_result = subprocess.run(['git', 'log', f'origin/{current_branch}..HEAD', '--oneline'], 
-                                           cwd=vault_path, capture_output=True, text=True)
-            
-            # Check if local and remote are in sync (same commit hash)
-            local_commit_result = subprocess.run(['git', 'rev-parse', 'HEAD'], 
-                                                cwd=vault_path, capture_output=True, text=True)
-            remote_commit_result = subprocess.run(['git', 'rev-parse', f'origin/{current_branch}'], 
-                                                 cwd=vault_path, capture_output=True, text=True)
-            
-            local_commit = local_commit_result.stdout.strip() if local_commit_result.returncode == 0 else ""
-            remote_commit = remote_commit_result.stdout.strip() if remote_commit_result.returncode == 0 else ""
-            
-            if local_commit and remote_commit and local_commit == remote_commit:
-                # Repositories are in perfect sync
-                self._update_status("✅ Local and remote repositories are perfectly synchronized")
-                return True, "Final synchronization completed - repositories are in sync"
-            
-            # If there are uncommitted changes, commit them first
-            if has_uncommitted_changes:
-                self._update_status("📝 Committing pending changes...")
-                subprocess.run(['git', 'add', '.'], cwd=vault_path, capture_output=True)
-                commit_result = subprocess.run(['git', 'commit', '-m', 'Final setup commit - user content'], 
-                                             cwd=vault_path, capture_output=True, text=True)
-                
-                if commit_result.returncode != 0:
-                    self._update_status("Warning: Could not commit pending changes")
-            
-            # Check for unpushed commits again after potential commit
-            unpushed_result = subprocess.run(['git', 'log', f'origin/{current_branch}..HEAD', '--oneline'], 
-                                           cwd=vault_path, capture_output=True, text=True)
-            
-            if unpushed_result.returncode == 0 and unpushed_result.stdout.strip():
-                unpushed_commits = unpushed_result.stdout.strip().split('\n')
-                
-                # Analyze unpushed commits to see if they contain meaningful changes
-                meaningful_commits = False
-                for commit_line in unpushed_commits:
-                    # Check if commit contains meaningful changes (not just system files)
-                    commit_hash = commit_line.split()[0]
-                    diff_result = subprocess.run(['git', 'diff', f'{commit_hash}^', commit_hash, '--name-only'], 
-                                               cwd=vault_path, capture_output=True, text=True)
-                    
-                    if diff_result.returncode == 0:
-                        changed_files = diff_result.stdout.strip().split('\n')
-                        for changed_file in changed_files:
-                            if changed_file and self._is_meaningful_file(changed_file):
-                                meaningful_commits = True
-                                break
-                        if meaningful_commits:
-                            break
-                
-                if meaningful_commits:
-                    # Push meaningful commits
-                    self._update_status(f"📤 Pushing {len(unpushed_commits)} meaningful commit(s) to remote...")
-                    push_result = subprocess.run(['git', 'push', 'origin', current_branch], 
-                                               cwd=vault_path, capture_output=True, text=True)
-                    
-                    if push_result.returncode == 0:
-                        self._update_status("✅ Successfully pushed meaningful commits to remote!")
-                        return True, f"Final synchronization completed - {len(unpushed_commits)} meaningful commit(s) pushed"
-                    else:
-                        return False, f"Failed to push commits: {push_result.stderr}"
-                else:
-                    # Unpushed commits contain only system files - don't push, reset to remote
-                    self._update_status("🚫 Unpushed commits contain only system files - preserving remote state")
-                    
-                    # Reset to remote state to avoid future confusion
-                    reset_result = subprocess.run(['git', 'reset', '--hard', f'origin/{current_branch}'], 
-                                                cwd=vault_path, capture_output=True, text=True)
-                    if reset_result.returncode == 0:
-                        self._update_status("✅ Reset to remote state - repositories are now synchronized")
-                        return True, "Final synchronization completed - system commits discarded, remote content preserved"
-                    else:
-                        return True, "Final synchronization completed - unpushed commits contain only system files"
-            else:
-                # No unpushed commits
-                self._update_status("✅ No unpushed commits found - repositories are synchronized")
-                return True, "Final synchronization completed - repositories are in sync"
+                    print("[DEBUG] Final sync - Could not check sync status")
+                    self._update_status("✅ Repository synchronization completed")
+                    return True, "Synchronization complete"
                     
         except Exception as e:
-            return False, f"Error in final sync: {str(e)}"
+            print(f"[DEBUG] Final sync error: {e}")
+            return False, f"Error in final synchronization: {str(e)}"
     
     def _step_complete_setup(self):
         """Step 11: Complete setup."""
