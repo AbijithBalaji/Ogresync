@@ -252,11 +252,11 @@ class Stage2ConflictResolutionDialog:
         self.file_list_var = tk.StringVar()
         
         # Set larger size for better usability and proper minimum sizes
-        width, height = 1400, 900  # Increased size for better layout
+        width, height = 1500, 900  # Increased width for better layout
         x = (self.dialog.winfo_screenwidth() // 2) - (width // 2)
         y = (self.dialog.winfo_screenheight() // 2) - (height // 2)
         self.dialog.geometry(f"{width}x{height}+{x}+{y}")
-        self.dialog.minsize(1200, 700)  # Increased minimum size
+        self.dialog.minsize(1350, 700)  # Increased minimum width to prevent cramping
         
         # Handle window close event properly
         self.dialog.protocol("WM_DELETE_WINDOW", self._on_window_close)
@@ -280,21 +280,21 @@ class Stage2ConflictResolutionDialog:
         main_frame = tk.Frame(self.dialog, bg="#FAFBFC")
         main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
         
+        # Bottom panel - Controls (create first and pack to bottom to ensure it's always visible)
+        self._create_controls_panel(main_frame)
+        
         # Header
         self._create_header(main_frame)
         
-        # Content area - horizontal split
+        # Content area - horizontal split (pack after controls so it fills remaining space)
         content_frame = tk.Frame(main_frame, bg="#FAFBFC")
-        content_frame.pack(fill=tk.BOTH, expand=True, pady=(20, 0))
+        content_frame.pack(fill=tk.BOTH, expand=True, pady=(20, 20))
         
         # Left panel - File list and progress
         self._create_file_management_panel(content_frame)
         
         # Right panel - File content and resolution
         self._create_resolution_panel(content_frame)
-        
-        # Bottom panel - Controls
-        self._create_controls_panel(main_frame)
     
     def _create_header(self, parent):
         """Create the dialog header"""
@@ -333,7 +333,7 @@ class Stage2ConflictResolutionDialog:
         """Create the left panel with file list and management"""
         left_panel = tk.Frame(parent, bg="#FFFFFF", relief=tk.RAISED, borderwidth=1)
         left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
-        left_panel.configure(width=350)  # Increased width
+        left_panel.configure(width=320)  # Slightly reduced width to give more space to content
         left_panel.pack_propagate(False)
         
         # Panel title
@@ -380,7 +380,7 @@ class Stage2ConflictResolutionDialog:
             font=("Arial", 9),
             bg="#FFFFFF",
             fg="#475569",
-            wraplength=320,  # Adjusted for new width
+            wraplength=290,  # Adjusted for new width
             justify=tk.LEFT
         )
         self.file_info_label.pack(pady=(0, 15), padx=15)
@@ -400,18 +400,25 @@ class Stage2ConflictResolutionDialog:
         )
         title_label.pack(pady=(15, 10))
         
-        # Content area with notebook for different views
-        content_notebook = ttk.Notebook(right_panel)
-        content_notebook.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 15))
+        # Main content container - horizontal split between content and resolution options
+        main_content = tk.Frame(right_panel, bg="#FFFFFF")
+        main_content.pack(fill=tk.BOTH, expand=True, padx=15, pady=(10, 15))
+        
+        # Left side: Content area with notebook for different views
+        content_frame = tk.Frame(main_content, bg="#FFFFFF")
+        content_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+        
+        self.content_notebook = ttk.Notebook(content_frame)
+        self.content_notebook.pack(fill=tk.BOTH, expand=True)
         
         # Tab 1: Side-by-side comparison
-        self._create_comparison_tab(content_notebook)
+        self._create_comparison_tab(self.content_notebook)
         
-        # Tab 2: Manual merge editor
-        self._create_manual_merge_tab(content_notebook)
+        # Tab 2: Manual merge editor (with external editor options always visible)
+        self._create_manual_merge_tab(self.content_notebook)
         
-        # Resolution options
-        self._create_resolution_options(right_panel)
+        # Right side: Resolution options panel (side-by-side with content)
+        self._create_resolution_options(main_content)
     
     def _create_comparison_tab(self, notebook):
         """Create the side-by-side comparison tab"""
@@ -477,51 +484,19 @@ class Stage2ConflictResolutionDialog:
         merge_frame = tk.Frame(notebook, bg="#FFFFFF")
         notebook.add(merge_frame, text="✏️ Manual Merge Editor")
         
-        # Initially show instructions to use Manual Merge
-        self.merge_instructions_frame = tk.Frame(merge_frame, bg="#FFFFFF")
-        self.merge_instructions_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=50)
-        
-        instruction_label = tk.Label(
-            self.merge_instructions_frame,
-            text="📝 Manual Merge Editor",
-            font=("Arial", 18, "bold"),
-            bg="#FFFFFF",
-            fg="#1E293B"
-        )
-        instruction_label.pack(pady=(0, 20))
-        
-        instruction_text = tk.Label(
-            self.merge_instructions_frame,
-            text="Click the 'Manual Merge' button below to activate the merge editor.\n\n"
-                 "The editor will allow you to:\n"
-                 "• Edit the merged content manually\n"
-                 "• Load local or remote versions as starting points\n"
-                 "• Open the file in external editors\n"
-                 "• Save your custom merged version",
-            font=("Arial", 12),
-            bg="#FFFFFF",
-            fg="#475569",
-            justify=tk.CENTER
-        )
-        instruction_text.pack()
-        
-        # Editor content (initially hidden)
-        self.editor_content_frame = tk.Frame(merge_frame, bg="#FFFFFF")
-        # Don't pack initially - will be shown when Manual Merge is activated
-        
-        # Instructions for active editor
+        # Instructions for the editor
         editor_instructions = tk.Label(
-            self.editor_content_frame,
+            merge_frame,
             text="Edit the content below to create your merged version. Use the buttons to load local/remote content or open in external editors.",
             font=("Arial", 10),
             bg="#FFFFFF",
             fg="#475569",
             wraplength=800
         )
-        editor_instructions.pack(pady=(10, 5))
+        editor_instructions.pack(pady=(15, 10), padx=10)
         
         # Editor
-        editor_frame = tk.Frame(self.editor_content_frame, bg="#FFFFFF")
+        editor_frame = tk.Frame(merge_frame, bg="#FFFFFF")
         editor_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
         
         editor_title = tk.Label(
@@ -531,22 +506,22 @@ class Stage2ConflictResolutionDialog:
             bg="#FFFFFF",
             fg="#1E293B"
         )
-        editor_title.pack()
+        editor_title.pack(pady=(0, 5))
         
         self.editor_text = scrolledtext.ScrolledText(
             editor_frame,
-            height=20,
+            height=18,
             font=("Courier", 10),
             bg="#FFFFFF",
             fg="#1E293B",
             wrap=tk.WORD,
             insertbackground="#6366F1"
         )
-        self.editor_text.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
+        self.editor_text.pack(fill=tk.BOTH, expand=True)
         
         # Editor controls
         editor_controls = tk.Frame(editor_frame, bg="#FFFFFF")
-        editor_controls.pack(fill=tk.X, pady=(5, 0))
+        editor_controls.pack(fill=tk.X, pady=(8, 0))
         
         load_local_btn = tk.Button(
             editor_controls,
@@ -599,9 +574,9 @@ class Stage2ConflictResolutionDialog:
         )
         save_merge_btn.pack(side=tk.RIGHT)
         
-        # External editor controls (only shown when manual merge is active)
-        self.external_editor_frame = tk.Frame(self.editor_content_frame, bg="#FFFFFF")
-        self.external_editor_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+        # External editor controls (always visible)
+        self.external_editor_frame = tk.Frame(merge_frame, bg="#FFFFFF")
+        self.external_editor_frame.pack(fill=tk.X, padx=10, pady=(5, 10))
         
         external_label = tk.Label(
             self.external_editor_frame,
@@ -612,12 +587,20 @@ class Stage2ConflictResolutionDialog:
         )
         external_label.pack(side=tk.LEFT, padx=(0, 10))
         
-        # External editor buttons will be added dynamically
+        # Create external editor buttons immediately (always visible)
+        # Will be populated when file is selected
+        self._external_editor_buttons_created = False
     
     def _create_resolution_options(self, parent):
         """Create resolution strategy buttons"""
-        options_frame = tk.Frame(parent, bg="#FFFFFF")
-        options_frame.pack(fill=tk.X, padx=15, pady=(0, 15))
+        # Side panel for resolution options
+        options_container = tk.Frame(parent, bg="#FFFFFF", relief=tk.SUNKEN, borderwidth=1)
+        options_container.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 0))
+        options_container.configure(width=320)  # Increased width for resolution options panel
+        options_container.pack_propagate(False)
+        
+        options_frame = tk.Frame(options_container, bg="#FFFFFF")
+        options_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
         
         title_label = tk.Label(
             options_frame,
@@ -626,93 +609,102 @@ class Stage2ConflictResolutionDialog:
             bg="#FFFFFF",
             fg="#1E293B"
         )
-        title_label.pack(pady=(0, 10))
+        title_label.pack(pady=(0, 15))
         
-        # Button grid - reorganized with Manual Merge first and prominent
-        button_frame = tk.Frame(options_frame, bg="#FFFFFF")
-        button_frame.pack()
+        # Button layout - stacked vertically for side panel
         
-        # Row 1 - Manual Merge (Prominent)
-        row1 = tk.Frame(button_frame, bg="#FFFFFF")
-        row1.pack(fill=tk.X, pady=(0, 10))
+        # Manual Merge (Prominent)
+        manual_merge_container = tk.Frame(options_frame, bg="#FFFFFF", relief=tk.RIDGE, borderwidth=1)
+        manual_merge_container.pack(fill=tk.X, pady=(0, 15))
         
         manual_merge_btn = tk.Button(
-            row1,
-            text="✏️ Manual Merge (Recommended)",
+            manual_merge_container,
+            text="✏️ Manual Merge\n(Recommended)",
             command=lambda: self._activate_manual_merge(),
-            font=("Arial", 12, "bold"),
+            font=("Arial", 10, "bold"),
             bg="#6366F1",
             fg="#FFFFFF",
             relief=tk.FLAT,
             cursor="hand2",
-            padx=30,
+            padx=15,
             pady=12
         )
-        manual_merge_btn.pack(pady=(0, 5))
+        manual_merge_btn.pack(fill=tk.X, padx=10, pady=10)
         
         manual_desc = tk.Label(
-            row1,
+            manual_merge_container,
             text="Edit the file manually with full control. Recommended for important conflicts.",
-            font=("Arial", 9),
+            font=("Arial", 8),
             bg="#FFFFFF",
             fg="#475569",
-            wraplength=600
+            wraplength=280,  # Increased wrap length for wider panel
+            justify=tk.LEFT
         )
-        manual_desc.pack()
+        manual_desc.pack(padx=10, pady=(0, 10))
         
-        # Row 2 - Quick options
-        row2 = tk.Frame(button_frame, bg="#FFFFFF")
-        row2.pack(fill=tk.X, pady=(10, 5))
+        # Quick resolution options
+        quick_options_label = tk.Label(
+            options_frame,
+            text="Quick Resolution:",
+            font=("Arial", 10, "bold"),
+            bg="#FFFFFF",
+            fg="#374151"
+        )
+        quick_options_label.pack(pady=(0, 10))
         
         keep_local_btn = tk.Button(
-            row2,
-            text="� Keep Local Version",
+            options_frame,
+            text="🏠 Keep Local Version",
             command=lambda: self._resolve_file(FileResolutionStrategy.KEEP_LOCAL),
-            font=("Arial", 10),
+            font=("Arial", 9),
             bg="#DBEAFE",
             fg="#1E40AF",
             relief=tk.FLAT,
             cursor="hand2",
-            padx=20,
+            padx=15,
             pady=8
         )
-        keep_local_btn.pack(side=tk.LEFT, padx=(0, 10))
+        keep_local_btn.pack(fill=tk.X, pady=(0, 8))
         
         keep_remote_btn = tk.Button(
-            row2,
+            options_frame,
             text="🌐 Keep Remote Version",
             command=lambda: self._resolve_file(FileResolutionStrategy.KEEP_REMOTE),
-            font=("Arial", 10),
+            font=("Arial", 9),
             bg="#DCFCE7",
             fg="#166534",
             relief=tk.FLAT,
             cursor="hand2",
-            padx=20,
+            padx=15,
             pady=8
         )
-        keep_remote_btn.pack(side=tk.LEFT, padx=(0, 10))
+        keep_remote_btn.pack(fill=tk.X, pady=(0, 8))
         
         auto_merge_btn = tk.Button(
-            row2,
+            options_frame,
             text="🔄 Auto Merge",
             command=lambda: self._resolve_file(FileResolutionStrategy.AUTO_MERGE),
-            font=("Arial", 10),
+            font=("Arial", 9),
             bg="#FEF3C7",
             fg="#92400E",
             relief=tk.FLAT,
             cursor="hand2",
-            padx=20,
+            padx=15,
             pady=8
         )
-        auto_merge_btn.pack(side=tk.LEFT)
+        auto_merge_btn.pack(fill=tk.X)
     
     def _create_controls_panel(self, parent):
         """Create the bottom controls panel"""
-        controls_frame = tk.Frame(parent, bg="#FAFBFC")
-        controls_frame.pack(fill=tk.X, pady=(20, 0))
+        controls_frame = tk.Frame(parent, bg="#FAFBFC", relief=tk.RAISED, borderwidth=1)
+        controls_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(10, 0))
+        
+        # Add some padding inside the controls frame
+        inner_frame = tk.Frame(controls_frame, bg="#FAFBFC")
+        inner_frame.pack(fill=tk.X, padx=10, pady=10)
         
         # Navigation buttons
-        nav_frame = tk.Frame(controls_frame, bg="#FAFBFC")
+        nav_frame = tk.Frame(inner_frame, bg="#FAFBFC")
         nav_frame.pack(side=tk.LEFT)
         
         prev_btn = tk.Button(
@@ -744,7 +736,7 @@ class Stage2ConflictResolutionDialog:
         next_btn.pack(side=tk.LEFT)
         
         # Action buttons
-        action_frame = tk.Frame(controls_frame, bg="#FAFBFC")
+        action_frame = tk.Frame(inner_frame, bg="#FAFBFC")
         action_frame.pack(side=tk.RIGHT)
         
         cancel_btn = tk.Button(
@@ -853,6 +845,11 @@ class Stage2ConflictResolutionDialog:
                 self.editor_text.insert(1.0, current_file.resolved_content)
             else:
                 self.editor_text.insert(1.0, current_file.local_content)
+        
+        # Create external editor buttons if not already created
+        if not getattr(self, '_external_editor_buttons_created', False):
+            self._create_external_editor_buttons()
+            self._external_editor_buttons_created = True
     
     def _on_file_select(self, event):
         """Handle file selection from listbox"""
@@ -930,16 +927,45 @@ class Stage2ConflictResolutionDialog:
             self._update_file_list()
             self._load_current_file()
             
+            # Show brief status update in progress label
+            self._show_resolution_status(current_file.file_path, strategy)
+            
             # Auto-advance to next unresolved file
             self._advance_to_next_unresolved()
             
-            messagebox.showinfo(
-                "File Resolved",
-                f"✅ {current_file.file_path} resolved using {strategy.value}"
-            )
-            
         except Exception as e:
             messagebox.showerror("Resolution Error", f"Failed to resolve file: {e}")
+    
+    def _show_resolution_status(self, file_path: str, strategy: FileResolutionStrategy):
+        """Show a brief resolution status update in the progress label"""
+        if not self.progress_label:
+            return
+        
+        # Get the base filename for cleaner display
+        filename = os.path.basename(file_path)
+        
+        # Create strategy display text
+        strategy_text = {
+            FileResolutionStrategy.KEEP_LOCAL: "kept local version",
+            FileResolutionStrategy.KEEP_REMOTE: "kept remote version", 
+            FileResolutionStrategy.AUTO_MERGE: "auto-merged",
+            FileResolutionStrategy.MANUAL_MERGE: "manually merged"
+        }.get(strategy, strategy.value)
+        
+        # Show status briefly
+        original_text = self.progress_label.cget("text")
+        status_text = f"✅ {filename} {strategy_text}"
+        
+        self.progress_label.config(text=status_text, fg="#10B981")  # Green color for success
+        
+        # Restore original progress text after 2 seconds
+        if self.dialog:
+            self.dialog.after(2000, lambda: self._restore_progress_text(original_text))
+    
+    def _restore_progress_text(self, original_text: str):
+        """Restore the original progress text"""
+        if self.progress_label:
+            self.progress_label.config(text=original_text, fg="#6366F1")  # Back to original color
     
     def _attempt_auto_merge(self, file_conflict: FileConflictDetails) -> Optional[str]:
         """Attempt to automatically merge file content"""
@@ -1147,19 +1173,19 @@ class Stage2ConflictResolutionDialog:
                 self.dialog.destroy()
     
     def _activate_manual_merge(self):
-        """Activate manual merge mode - show editor and external editor options"""
-        # Hide instructions and show editor content
-        if hasattr(self, 'merge_instructions_frame'):
-            self.merge_instructions_frame.pack_forget()
-        
-        if hasattr(self, 'editor_content_frame'):
-            self.editor_content_frame.pack(fill=tk.BOTH, expand=True)
+        """Activate manual merge mode - switch to manual merge tab and load content"""
+        # Switch to the manual merge tab (index 1)
+        if hasattr(self, 'content_notebook'):
+            self.content_notebook.select(1)  # Select the Manual Merge Editor tab
         
         # Load current file content into editor
         self._load_current_file_to_editor()
         
-        # Create external editor buttons
-        self._create_external_editor_buttons()
+        # Focus the editor for immediate editing
+        if hasattr(self, 'editor_text') and self.editor_text:
+            self.editor_text.focus_set()
+            
+        # External editor buttons are already created and always visible
     
     def _load_current_file_to_editor(self):
         """Load current file content into the manual merge editor"""

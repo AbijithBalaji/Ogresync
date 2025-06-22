@@ -16,7 +16,12 @@ import webbrowser
 import pyperclip
 import requests
 import ui_elements # Import the new UI module
-import conflict_resolution # Import the new conflict resolution module
+try:
+    import Ogresync.Stage1_conflict_resolution as conflict_resolution # Import the enhanced conflict resolution module
+    CONFLICT_RESOLUTION_AVAILABLE = True
+except ImportError:
+    conflict_resolution = None
+    CONFLICT_RESOLUTION_AVAILABLE = False
 import setup_wizard # Import the new setup wizard module
 
 # ------------------------------------------------
@@ -333,50 +338,50 @@ def conflict_resolution_dialog(conflict_files):
     Returns the user's choice as one of the strings: "ours", "theirs", or "manual".
     This maintains backward compatibility while providing enhanced resolution capabilities.
     """
+    if not CONFLICT_RESOLUTION_AVAILABLE:
+        print("Enhanced conflict resolution not available, using fallback")
+        return ui_elements.create_conflict_resolution_dialog(root, conflict_files)
+    
     try:
-        # Create conflict analysis from the conflict files
-        analysis = conflict_resolution.ConflictAnalysis()
-        analysis.has_conflicts = True
-        analysis.conflict_type = conflict_resolution.ConflictType.MERGE_CONFLICT
-        analysis.summary = f"Merge conflicts detected in files: {conflict_files}"
-        
-        # Parse conflict files and create conflict info objects
-        if conflict_files and conflict_files.strip():
-            for file_path in conflict_files.strip().split('\n'):
-                if file_path.strip():
-                    conflict_info = conflict_resolution.FileConflictInfo(file_path.strip(), 'both_modified')
-                    conflict_info.has_content_conflict = True
-                    analysis.conflicted_files.append(conflict_info)
-        
         # Get vault path from config
         vault_path = config_data.get("VAULT_PATH", "")
+        if not vault_path:
+            print("No vault path configured")
+            return ui_elements.create_conflict_resolution_dialog(root, conflict_files)
         
         # Create conflict resolver
         resolver = conflict_resolution.ConflictResolver(vault_path, root)
-        resolution_result = resolver.resolve_conflicts(conflict_resolution.ConflictType.MERGE_CONFLICT)
         
-        if not resolution_result['success']:
-            # Fallback to simple choice if resolution failed
-            return None
+        # Create a mock remote URL for conflict analysis (this should ideally come from git remote)
+        github_url = config_data.get("GITHUB_REMOTE_URL", "")
         
-        strategy = resolution_result['strategy']
+        # Use the enhanced conflict resolution system
+        result = resolver.resolve_initial_setup_conflicts(github_url)
         
-        # Map new strategies to old format for backward compatibility
-        if strategy == 'keep_local':
-            return 'ours'
-        elif strategy == 'keep_remote':
-            return 'theirs'
-        elif strategy == 'smart_merge':
-            # Apply the smart merge resolution
-            if conflict_resolution.apply_conflict_resolution(vault_path, resolution_result):
-                return 'manual'  # Indicates resolution was handled
-            else:
-                return None  # Resolution failed
+        if result.success:
+            strategy = result.strategy
+            if strategy:
+                # Map new strategies to old format for backward compatibility
+                if strategy.value == "keep_local_only":
+                    return 'ours'
+                elif strategy.value == "keep_remote_only":
+                    return 'theirs'
+                elif strategy.value == "smart_merge":
+                    return 'manual'  # Indicates smart merge was applied
+            return 'manual'  # Default for successful resolution
         else:
-            return None
+            # User cancelled or resolution failed
+            if "cancelled by user" in result.message.lower():
+                return None  # User cancelled
+            else:
+                print(f"Enhanced conflict resolution failed: {result.message}")
+                # Fallback to simple dialog
+                return ui_elements.create_conflict_resolution_dialog(root, conflict_files)
             
     except Exception as e:
         print(f"Error in enhanced conflict resolution: {e}")
+        import traceback
+        traceback.print_exc()
         # Fallback to original UI element for backward compatibility
         return ui_elements.create_conflict_resolution_dialog(root, conflict_files)
 
@@ -441,83 +446,40 @@ def handle_initial_repository_conflict(vault_path, analysis, parent_window=None)
     if not analysis["conflict_detected"]:
         return True
     
+    if not CONFLICT_RESOLUTION_AVAILABLE:
+        # Fall back to simple dialog
+        safe_update_log("Enhanced conflict resolution not available, using fallback", None)
+        return False
+    
     try:
         # Use the enhanced two-stage conflict resolution system
         dialog_parent = parent_window if parent_window is not None else root
         
-        # Create enhanced conflict analysis for the new system
-        enhanced_analysis = conflict_resolution.ConflictAnalysis()
-        enhanced_analysis.has_conflicts = True
-        enhanced_analysis.conflict_type = conflict_resolution.ConflictType.REPOSITORY_SETUP
-        enhanced_analysis.summary = "Repository setup conflicts detected"
+        # Create conflict resolver
+        resolver = conflict_resolution.ConflictResolver(vault_path, dialog_parent)
         
-        # Convert analysis data to enhanced format
-        enhanced_analysis.local_only_files = analysis.get("local_files", [])
-        enhanced_analysis.remote_only_files = analysis.get("remote_files", [])
+        # Get GitHub URL for analysis
+        github_url = config_data.get("GITHUB_REMOTE_URL", "")
         
-        # Create file conflict info for files that exist in both but might be different
-        for local_file in analysis.get("local_files", []):
-            if local_file in analysis.get("remote_files", []):
-                conflict_info = conflict_resolution.FileConflictInfo(local_file, 'both_modified')
-                conflict_info.has_content_conflict = True
-                enhanced_analysis.conflicted_files.append(conflict_info)
+        # Use the enhanced conflict resolution system
+        result = resolver.resolve_initial_setup_conflicts(github_url)
         
-        # Use the enhanced conflict resolver
-        resolver = conflict_resolution.ConflictResolver(vault_path, dialog_parent, enhanced_analysis)    
-        resolution_result = resolver.resolve_conflicts(conflict_resolution.ConflictType.REPOSITORY_SETUP)
-        
-        if resolution_result['success']:
-            strategy = resolution_result['strategy']
-            
-            if strategy == 'keep_local':
-                # Use the new conflict resolution system for keep_local
-                success = conflict_resolution.apply_conflict_resolution(vault_path, resolution_result)
-                return success
-            elif strategy == 'keep_remote':
-                # Use the new conflict resolution system for keep_remote
-                success = conflict_resolution.apply_conflict_resolution(vault_path, resolution_result)
-                return success
-            elif strategy == 'smart_merge':
-                # Apply smart merge with file-by-file resolution
-                success = conflict_resolution.apply_conflict_resolution(vault_path, resolution_result)
-                if not success:
-                    # Fallback to simple merge strategy using the new system
-                    safe_update_log("Enhanced resolution failed, attempting fallback merge...", None)
-                    fallback_result = {'strategy': 'smart_merge', 'file_resolutions': {}}
-                    success = conflict_resolution.apply_conflict_resolution(vault_path, fallback_result)
-                return success
-            elif strategy == 'no_conflicts':
-                # No conflicts detected - this is a successful resolution
-                safe_update_log("No conflicts detected - proceeding with setup", None)
-                return True
-            elif strategy == 'cancelled':
-                # User cancelled the dialog
+        if result.success:
+            safe_update_log(f"Repository conflict resolved successfully: {result.message}", None)
+            return True
+        else:
+            if "cancelled by user" in result.message.lower():
                 safe_update_log("Conflict resolution cancelled by user", None)
                 return False
             else:
-                safe_update_log("Unknown resolution strategy selected.", None)
+                safe_update_log(f"Repository conflict resolution failed: {result.message}", None)
                 return False
-        else:
-            safe_update_log("Conflict resolution was cancelled or failed.", None)
-            return False
-            
+                
     except Exception as e:
-        safe_update_log(f"Error in enhanced conflict resolution: {e}", None)
-        # Fallback to the new conflict resolution system
-        safe_update_log("Attempting fallback conflict resolution using new system...", None)
-        try:
-            # Use the new conflict resolution system as fallback
-            resolver = conflict_resolution.ConflictResolver(vault_path, parent_window)
-            fallback_result = resolver.resolve_conflicts(conflict_resolution.ConflictType.REPOSITORY_SETUP)
-            
-            if fallback_result and fallback_result.get('strategy') != 'cancelled':
-                return conflict_resolution.apply_conflict_resolution(vault_path, fallback_result)
-            else:
-                safe_update_log("Fallback conflict resolution was cancelled.", None)
-                return False
-        except Exception as fallback_error:
-            safe_update_log(f"Fallback conflict resolution also failed: {fallback_error}", None)
-            return False
+        safe_update_log(f"Error in enhanced repository conflict resolution: {e}", None)
+        import traceback
+        traceback.print_exc()
+        return False
 
 def ensure_git_user_config():
     """
