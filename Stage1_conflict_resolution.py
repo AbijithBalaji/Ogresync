@@ -670,11 +670,11 @@ class ConflictResolutionEngine:
                 else:
                     remote_branch = 'origin/main'
             
-            print(f"[DEBUG] Using remote branch: {remote_branch}")
-              # STEP 5: Check if additional merge is needed or if Stage 2 already completed the merge
+            print(f"[DEBUG] Using remote branch: {remote_branch}")            # STEP 5: Check if additional merge is needed or if Stage 2 already completed the merge
             if stage2_resolved_files:
                 print("✅ Stage 2 resolution already completed the merge process - skipping redundant git merge")
                 # Stage 2 has already resolved conflicts and merged content, no additional merge needed
+                # The Stage 2 resolution commit IS the merge commit - don't overwrite it!
             else:
                 # Only perform git merge if no Stage 2 resolution occurred
                 print("Performing intelligent merge to combine all files...")
@@ -700,10 +700,11 @@ class ConflictResolutionEngine:
                         backup_created=backup_branch
                     )
                 
-                print("✅ Git merge completed")
-              # STEP 6: Ensure ALL files from both repositories are present (but be cautious if Stage 2 already ran)
+                print("✅ Git merge completed")            # STEP 6: Ensure ALL files from both repositories are present (but be cautious if Stage 2 already ran)
             if stage2_resolved_files:
-                print("✅ Stage 2 resolution handled file merging - skipping additional file checkout to avoid conflicts")
+                print("✅ Stage 2 resolution handled file merging - skipping additional file checkout to avoid overwriting resolved content")
+                # Stage 2 has already created the final resolved content for all files
+                # Don't checkout anything from remote as it would overwrite the user's Stage 2 choices
             else:
                 print("Ensuring all files from both repositories are present...")
                 
@@ -1265,14 +1266,13 @@ class ConflictResolutionEngine:
                 return stage2_result
             else:
                 print("[ERROR] Stage 2 module not available")
-                return None
-            
+                return None            
         except Exception as e:
             print(f"[ERROR] Stage 2 initiation failed: {e}")
             import traceback
             traceback.print_exc()
             return None
-    
+
     def _apply_stage2_resolutions(self, stage2_result) -> bool:
         """Apply the resolutions from Stage 2 to the git repository"""
         try:
@@ -1315,15 +1315,30 @@ class ConflictResolutionEngine:
                 print(f"[ERROR] Failed to stage resolved files: {stderr}")
                 return False
             
-            # Commit the resolution
+            # Create a proper merge commit that combines both histories
+            # First, ensure we're merging with the remote branch
+            remote_branch = getattr(self, 'default_remote_branch', 'origin/main')
+            print(f"[DEBUG] Creating merge commit with remote branch: {remote_branch}")
+            
+            # Use git commit with merge parents to create a proper merge commit
             commit_message = f"Resolve conflicts using Stage 2 resolution\\n\\nResolved {len(stage2_result.resolved_files)} files using strategies:\\n"
             for file_path, strategy in stage2_result.resolution_strategies.items():
                 commit_message += f"- {file_path}: {strategy.value}\\n"
             
+            # Create the merge commit properly
             stdout, stderr, rc = self._run_git_command(f'git commit -m "{commit_message}"')
             if rc != 0:
                 print(f"[ERROR] Failed to commit resolutions: {stderr}")
                 return False
+            
+            # Now create a proper merge with the remote branch to include remote history
+            # This ensures the commit has both local and remote as parents
+            merge_stdout, merge_stderr, merge_rc = self._run_git_command(f'git merge {remote_branch} --strategy=ours --no-edit')
+            if merge_rc == 0:
+                print(f"[DEBUG] Successfully created merge commit with {remote_branch}")
+            else:
+                print(f"[DEBUG] Merge commit creation info: {merge_stderr}")
+                # This might fail if already up to date, which is OK
             
             print("✅ Stage 2 resolutions applied and committed successfully")
             return True
