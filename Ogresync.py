@@ -74,6 +74,9 @@ def save_config():
     
     print(f"DEBUG: Config saved successfully")
 
+# Import GitHub setup functions from separate module
+import github_setup
+
 # ------------------------------------------------
 # HELPER FUNCTIONS
 # ------------------------------------------------
@@ -574,420 +577,28 @@ def create_descriptive_backup_dir(vault_path, operation_description, file_list=N
     
     return backup_dir, backup_name
 
-# ------------------------------------------------
-# GITHUB SETUP FUNCTIONS
-# ------------------------------------------------
-def is_git_repo(folder_path):
-    """
-    Checks if a folder is already a Git repository.
-    Returns True if the folder is a Git repo, otherwise False.
-    """
-    out, err, rc = run_command("git rev-parse --is-inside-work-tree", cwd=folder_path)
-    return rc == 0
+# Import GitHub setup functions from separate module
+import github_setup
 
-def initialize_git_repo(vault_path):
-    """
-    Initializes a Git repository in the selected vault folder if it's not already a repo.
-    Also sets the branch to 'main'.
-    """
-    if not is_git_repo(vault_path):
-        safe_update_log("Initializing Git repository in vault...", 15)
-        out, err, rc = run_command("git init", cwd=vault_path)
-        if rc == 0:
-            run_command("git branch -M main", cwd=vault_path)
-            safe_update_log("Git repository initialized successfully.", 20)
-        else:
-            safe_update_log("Error initializing Git repository: " + err, 20)
-    else:
-        safe_update_log("Vault is already a Git repository.", 20)
-
-def set_github_remote(vault_path):
-    """
-    Prompts the user to link an existing GitHub repository.
-    If the user chooses not to link (or closes the dialog without providing a URL),
-    an error is shown indicating that linking a repository is required.
-    Returns True if the repository is linked successfully; otherwise, returns False.
-    """
-    # Check if a remote named 'origin' already exists
-    existing_remote_url, err, rc = run_command("git remote get-url origin", cwd=vault_path)
-    if rc == 0:
-        safe_update_log(f"A remote named 'origin' already exists: {existing_remote_url}", 25)
-        override = ui_elements.ask_yes_no(
-            "Existing Remote",
-            f"A remote 'origin' already points to:\n{existing_remote_url}\n\n"
-            "Do you want to override it with a new URL?"
-        )
-        if not override:
-            safe_update_log("Keeping the existing 'origin' remote. Skipping new remote configuration.", 25)
-            return True
-        else:
-            out, err, rc = run_command("git remote remove origin", cwd=vault_path)
-            if rc != 0:
-                safe_update_log(f"Error removing existing remote: {err}", 25)
-                return False
-            safe_update_log("Existing 'origin' remote removed.", 25)
-
-    # Prompt for linking a repository
-    # Instead of allowing a "No" option, we require linking.
-    use_existing_repo = ui_elements.ask_yes_no(
-        "GitHub Repository",
-        "A GitHub repository is required for synchronization.\n"
-        "Do you have an existing repository you would like to link?\n"
-        "(If not, please create a private repository on GitHub and then link to it.)"
+# Initialize GitHub setup module dependencies
+try:
+    import Stage1_conflict_resolution as cr_module
+    github_setup.set_dependencies(
+        ui_elements=None,  # Will be set later when ui_elements is available
+        config_data=config_data,
+        save_config_func=save_config,
+        conflict_resolution_module=cr_module,
+        safe_update_log_func=safe_update_log
     )
-    if use_existing_repo:
-        repo_url = ui_elements.ask_string_dialog(
-            "GitHub Repository",
-            "Enter your GitHub repository URL (e.g., git@github.com:username/repo.git):",
-            icon=ui_elements.Icons.LINK  # Added icon
-        )
-        if repo_url:
-            out, err, rc = run_command(f"git remote add origin {repo_url}", cwd=vault_path)
-            if rc == 0:
-                safe_update_log(f"Git remote 'origin' set to: {repo_url}", 25)
-                
-                # Save the remote URL to config for future use
-                config_data["GITHUB_REMOTE_URL"] = repo_url
-                save_config()
-                safe_update_log("GitHub remote URL saved to configuration.", 25)
-                
-                # Analyze repository state for potential conflicts
-                safe_update_log("Analyzing repository content for conflicts...", 30)
-                analysis = analyze_repository_state(vault_path)
-                
-                if analysis["conflict_detected"]:
-                    safe_update_log("Repository content conflict detected. Starting conflict resolution...", 30)
-                    if not handle_initial_repository_conflict(vault_path, analysis, root):
-                        ui_elements.show_error_message("Conflict Resolution Failed", 
-                                               "Failed to resolve repository content conflict.\n"
-                                               "Please try again or resolve manually.")
-                        return False
-                    safe_update_log("Repository conflict resolved successfully.", 35)
-                elif analysis["has_remote_files"]:
-                    safe_update_log("Remote repository contains files. Downloading...", 30)
-                    # Simple case: remote has files, local is empty - just pull
-                    pull_out, pull_err, pull_rc = run_command("git pull origin main", cwd=vault_path)
-                    if pull_rc == 0:
-                        safe_update_log("Remote files downloaded successfully.", 35)
-                    elif "CONFLICT" in (pull_out + pull_err):
-                        # Unexpected conflict during repository linking - use enhanced conflict resolution
-                        safe_update_log("❌ Unexpected merge conflict during repository linking.", 32)
-                        safe_update_log("Using enhanced conflict resolution system...", 33)
-                        
-                        try:
-                            # Create backup branch before conflict resolution
-                            timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-                            backup_branch = f"backup-before-linking-conflict-{timestamp}"
-                            run_command(f"git branch {backup_branch}", cwd=vault_path)
-                            safe_update_log(f"State backed up to: {backup_branch}", 33)
-                              # Use enhanced conflict resolver
-                            import Stage1_conflict_resolution as cr_module
-                            resolver = cr_module.ConflictResolver(vault_path, root)
-                            remote_url = config_data.get("GITHUB_REMOTE_URL", "")
-                            resolution_result = resolver.resolve_initial_setup_conflicts(remote_url)
-                            
-                            if resolution_result.success:
-                                safe_update_log("✅ Repository linking conflicts resolved successfully", 35)
-                            else:
-                                if "cancelled by user" in resolution_result.message.lower():
-                                    safe_update_log("❌ Repository linking conflict resolution was cancelled", 35)
-                                    return False
-                                else:
-                                    safe_update_log("❌ Enhanced conflict resolution failed during repository linking", 35)
-                                    return False
-                                
-                        except Exception as e:
-                            safe_update_log(f"❌ Error in enhanced conflict resolution during repository linking: {e}", 35)
-                            return False
-                    else:
-                        safe_update_log(f"Warning: Could not download remote files: {pull_err}", 35)
-                elif analysis["has_local_files"]:
-                    safe_update_log("Local vault has files, remote is empty. Files will be uploaded during first sync.", 30)
-                else:
-                    safe_update_log("Both local and remote are empty. Ready for first use.", 30)
-                
-                return True
-            else:
-                ui_elements.show_error_message("Error", f"Error setting Git remote: {err}\nPlease try again.")
-                return False
-        else:
-            ui_elements.show_error_message("Error", "Repository URL not provided. You must link to a GitHub repository.")
-            return False
-    else:
-        ui_elements.show_error_message("GitHub Repository Required", 
-                             "Linking a GitHub repository is required for synchronization.\n"
-                             "Please create a repository on GitHub (private is recommended) and then link to it.")
-        return False
-
-def ensure_placeholder_file(vault_path):
-    """
-    Creates a placeholder file (README.md) in the vault ONLY if the vault is empty.
-    This ensures that there's at least one file to commit for empty vaults.
-    Handles directory creation if needed.
-    """
-    try:
-        # Ensure the vault directory exists
-        os.makedirs(vault_path, exist_ok=True)
-        
-        # Check if the vault has any files (excluding .git directory)
-        vault_files = []
-        for root, dirs, files in os.walk(vault_path):
-            # Skip .git directory
-            if '.git' in dirs:
-                dirs.remove('.git')
-            # Add files from this directory level
-            vault_files.extend([os.path.join(root, f) for f in files])
-        
-        # Only create placeholder if vault is completely empty
-        if not vault_files:
-            placeholder_path = os.path.join(vault_path, "README.md")
-            with open(placeholder_path, "w", encoding="utf-8") as f:
-                f.write("# Welcome to your Obsidian Vault\n\nThis placeholder file was generated automatically by Ogresync to initialize the repository.")
-            safe_update_log("Placeholder file 'README.md' created, as the vault was empty.", 5)
-        else:
-            safe_update_log(f"Vault contains {len(vault_files)} files - no placeholder needed.", 5)
-            
-    except Exception as e:
-        safe_update_log(f"❌ Error checking/creating placeholder file: {e}", 5)
-        raise  # Re-raise to be handled by caller
-
-def configure_remote_url_for_vault(vault_path):
-    """
-    Configures the remote URL for a vault directory.
-    If a URL is already saved in config, offers to reuse it.
-    Otherwise, prompts for a new URL.
-    Returns True if successful, False otherwise.
-    """
-    saved_url = config_data.get("GITHUB_REMOTE_URL", "").strip()
-    
-    if saved_url:
-        # Offer to reuse the saved URL
-        reuse_url = ui_elements.ask_yes_no(
-            "Use Existing Repository",
-            f"A GitHub repository URL is already configured:\n\n{saved_url}\n\n"
-            "Would you like to use this repository for the recreated vault?"
-        )
-        
-        if reuse_url:
-            # Use the saved URL
-            safe_update_log(f"Using saved remote URL: {saved_url}", None)
-            out, err, rc = run_command(f"git remote add origin {saved_url}", cwd=vault_path)
-            if rc == 0:
-                safe_update_log("Git remote configured successfully.", None)
-                # Ensure the URL is saved in config (it should be, but make sure)
-                config_data["GITHUB_REMOTE_URL"] = saved_url
-                save_config()
-                safe_update_log("GitHub remote URL confirmed in configuration.", None)
-                return True
-            else:
-                safe_update_log(f"❌ Failed to configure remote: {err}", None)
-                # Fall through to ask for new URL
-        else:
-            # User wants to use a different URL
-            safe_update_log("User chose to configure a different repository URL.", None)
-    
-    # Ask for new URL (either no saved URL or user declined to reuse)
-    repo_url = ui_elements.ask_string_dialog(
-        "GitHub Repository",
-        "Enter your GitHub repository URL (e.g., git@github.com:username/repo.git):",
-        initial_value=saved_url,  # Pre-fill with saved URL if available
-        icon=ui_elements.Icons.LINK
+except ImportError:
+    # Conflict resolution module not available
+    github_setup.set_dependencies(
+        ui_elements=None,  # Will be set later when ui_elements is available
+        config_data=config_data,
+        save_config_func=save_config,
+        conflict_resolution_module=None,
+        safe_update_log_func=safe_update_log
     )
-    
-    if repo_url and repo_url.strip():
-        repo_url = repo_url.strip()
-        out, err, rc = run_command(f"git remote add origin {repo_url}", cwd=vault_path)
-        if rc == 0:
-            safe_update_log(f"Git remote configured: {repo_url}", None)
-            
-            # Update config with new URL
-            config_data["GITHUB_REMOTE_URL"] = repo_url
-            save_config()
-            safe_update_log("GitHub remote URL updated in configuration.", None)
-            return True
-        else:
-            safe_update_log(f"❌ Failed to configure remote: {err}", None)
-            ui_elements.show_error_message(
-                "Git Remote Error",
-                f"Failed to configure GitHub remote:\n{err}\n\nPlease check the URL and try again."
-            )
-            return False
-    else:
-        safe_update_log("❌ No repository URL provided.", None)
-        ui_elements.show_error_message(
-            "URL Required",
-            "A GitHub repository URL is required to sync your vault."
-        )
-        return False
-
-def validate_vault_directory(vault_path):
-    """
-    Validates that the vault directory exists and is accessible.
-    If not, offers recovery options to the user.
-    
-    Returns:
-        tuple: (is_valid: bool, should_continue: bool, new_vault_path: str|None)
-        - is_valid: True if vault exists and is accessible
-        - should_continue: True if user wants to continue (either vault exists or recovery chosen)
-        - new_vault_path: New vault path if user selected a different directory
-    """
-    if not vault_path:
-        return False, False, None
-    
-    # Check if directory exists
-    if not os.path.exists(vault_path):
-        safe_update_log(f"❌ Vault directory not found: {vault_path}", None)
-        
-        # Offer recovery options
-        choice = ui_elements.create_vault_recovery_dialog(root, vault_path)
-        
-        if choice == "recreate":
-            # Recreate the directory and continue
-            try:
-                os.makedirs(vault_path, exist_ok=True)
-                safe_update_log(f"✅ Vault directory recreated: {vault_path}", None)
-                
-                # Initialize git repository in the recreated directory
-                initialize_git_repo(vault_path)
-                
-                # Configure remote URL (reuse saved URL or ask for new one)
-                if configure_remote_url_for_vault(vault_path):
-                    # Try to pull remote files if they exist
-                    safe_update_log("Checking for remote files to download...", None)
-                    pull_out, pull_err, pull_rc = run_command("git pull origin main", cwd=vault_path)
-                    if pull_rc == 0:
-                        safe_update_log("✅ Remote files downloaded successfully.", None)
-                    elif "CONFLICT" in (pull_out + pull_err):
-                        # Conflict during vault recovery - use enhanced conflict resolution
-                        safe_update_log("❌ Merge conflict detected during vault recovery.", None)
-                        safe_update_log("Using enhanced conflict resolution system...", None)
-                        
-                        try:
-                            # Create backup branch before conflict resolution
-                            timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-                            backup_branch = f"backup-before-recovery-conflict-{timestamp}"
-                            run_command(f"git branch {backup_branch}", cwd=vault_path)
-                            safe_update_log(f"State backed up to: {backup_branch}", None)
-                              # Use enhanced conflict resolver
-                            import Stage1_conflict_resolution as cr_module
-                            resolver = cr_module.ConflictResolver(vault_path, root)
-                            remote_url = config_data.get("GITHUB_REMOTE_URL", "")
-                            resolution_result = resolver.resolve_initial_setup_conflicts(remote_url)
-                            
-                            if resolution_result.success:
-                                safe_update_log("✅ Vault recovery conflicts resolved successfully", None)
-                            else:
-                                if "cancelled by user" in resolution_result.message.lower():
-                                    safe_update_log("❌ Vault recovery conflict resolution was cancelled", None)
-                                else:
-                                    safe_update_log("❌ Enhanced conflict resolution failed during vault recovery", None)
-                                
-                        except Exception as e:
-                            safe_update_log(f"❌ Error in enhanced conflict resolution during vault recovery: {e}", None)
-                    else:
-                        # Remote might be empty or main branch doesn't exist yet
-                        if "couldn't find remote ref" in pull_err.lower() or "fatal: couldn't find remote ref main" in pull_err.lower():
-                            safe_update_log("Remote repository is empty. This is normal for new repositories.", None)
-                        else:
-                            safe_update_log(f"Note: Could not pull remote files: {pull_err}", None)
-                    
-                    return True, True, None
-                else:
-                    # Failed to configure remote
-                    safe_update_log("❌ Failed to configure GitHub remote. Vault recreation incomplete.", None)
-                    return False, False, None
-                    
-            except Exception as e:
-                safe_update_log(f"❌ Failed to recreate vault directory: {e}", None)
-                ui_elements.show_error_message(
-                    "Directory Creation Failed",
-                    f"Failed to recreate vault directory:\n{e}\n\nPlease check permissions and try again."
-                )
-                return False, False, None
-        
-        elif choice == "select_new":
-            # Let user select a new vault directory
-            new_vault = ui_elements.ask_directory_dialog("Select New Vault Directory")
-            if new_vault:
-                # Update configuration with new path
-                config_data["VAULT_PATH"] = new_vault
-                save_config()
-                safe_update_log(f"✅ Vault path updated to: {new_vault}", None)
-                
-                # Set up the new vault directory (git init, remote config, conflict resolution)
-                if setup_new_vault_directory(new_vault):
-                    safe_update_log("✅ New vault directory setup completed successfully.", None)
-                    return True, True, new_vault
-                else:
-                    safe_update_log("❌ Failed to set up new vault directory.", None)
-                    return False, False, None
-            else:
-                safe_update_log("❌ No new vault directory selected.", None)
-                return False, False, None
-        
-        elif choice == "setup":
-            # Run setup wizard again
-            safe_update_log("User chose to run setup wizard again.", None)
-            return False, True, "run_setup"
-        
-        else:
-            # User cancelled or closed dialog
-            safe_update_log("❌ User cancelled vault recovery.", None)
-            return False, False, None
-    
-    # Check if directory is accessible
-    if not os.access(vault_path, os.R_OK | os.W_OK):
-        safe_update_log(f"❌ Vault directory is not accessible (permissions): {vault_path}", None)
-        ui_elements.show_error_message(
-            "Permission Error",
-            f"Cannot access vault directory:\n{vault_path}\n\n"
-            "Please check directory permissions and try again."
-        )
-        return False, False, None
-    
-    return True, True, None
-
-# ------------------------------------------------
-# MISSING UTILITY FUNCTIONS
-# ------------------------------------------------
-
-def setup_new_vault_directory(vault_path):
-    """
-    Set up a new vault directory with git initialization and remote configuration.
-    
-    Args:
-        vault_path: Path to the new vault directory
-    
-    Returns:
-        bool: True if setup was successful, False otherwise
-    """
-    try:
-        safe_update_log(f"Setting up new vault directory: {vault_path}", None)
-        
-        # Initialize git repository
-        if not initialize_git_repo(vault_path):
-            safe_update_log("❌ Failed to initialize git repository", None)
-            return False
-        
-        # Configure remote URL
-        if not configure_remote_url_for_vault(vault_path):
-            safe_update_log("❌ Failed to configure remote repository", None)
-            return False
-        
-        # Analyze and handle any repository conflicts
-        analysis = analyze_repository_state(vault_path)
-        if analysis["conflict_detected"]:
-            safe_update_log("Repository conflicts detected, resolving...", None)
-            if not handle_initial_repository_conflict(vault_path, analysis, root):
-                safe_update_log("❌ Failed to resolve repository conflicts", None)
-                return False
-        
-        safe_update_log("✅ New vault directory setup completed successfully", None)
-        return True
-        
-    except Exception as e:
-        safe_update_log(f"❌ Error setting up new vault directory: {e}", None)
-        return False
 
 def restart_for_setup():
     """
@@ -1110,341 +721,8 @@ def restart_to_sync_mode():
             print(f"Console fallback failed: {fallback_error}")
             print("Manual intervention required. Please check configuration.")
 
-# ------------------------------------------------
-# WIZARD STEPS (Used Only if SETUP_DONE=0)
-# ------------------------------------------------
-
-def find_obsidian_path():
-    """
-    Attempts to locate Obsidian’s installation or launch command based on the OS.
-    
-    Windows:
-      - Checks common installation directories for "Obsidian.exe".
-    Linux:
-      - Checks if 'obsidian' is in PATH.
-      - Checks common Flatpak paths.
-      - Checks common Snap path.
-      - As a fallback, returns the Flatpak command string.
-    macOS:
-      - Checks the default /Applications folder.
-      - Checks PATH.
-    
-    If not found, it prompts the user to manually locate the executable.
-    
-    Returns the path or command string to launch Obsidian, or None.
-    """
-    if sys.platform.startswith("win"):
-        possible_paths = [
-            os.path.expandvars(r"%LOCALAPPDATA%\Programs\Obsidian\Obsidian.exe"),
-            os.path.expandvars(r"%PROGRAMFILES%\Obsidian\Obsidian.exe"),
-            os.path.expandvars(r"%PROGRAMFILES(X86)%\Obsidian\Obsidian.exe")
-        ]
-        for path in possible_paths:
-            if os.path.exists(path):
-                return path
-        response = ui_elements.ask_yes_no("Obsidian Not Found",
-                                       "Obsidian was not detected in standard locations.\n"
-                                       "Would you like to locate the Obsidian executable manually?")
-        if response:
-            selected_path = ui_elements.ask_file_dialog(
-                "Select Obsidian Executable",
-                [("Obsidian Executable", "*.exe")]
-            )
-            if selected_path:
-                return selected_path
-        return None
-
-    elif sys.platform.startswith("linux"):
-        # Option 1: Check if 'obsidian' is in PATH.
-        obsidian_cmd = shutil.which("obsidian")
-        if obsidian_cmd:
-            return obsidian_cmd
-        # Option 2: Check common Flatpak paths.
-        flatpak_paths = [
-            os.path.expanduser("~/.local/share/flatpak/exports/bin/obsidian"),
-            "/var/lib/flatpak/exports/bin/obsidian"
-        ]
-        for path in flatpak_paths:
-            if os.path.exists(path):
-                return path
-        # Option 3: Check Snap installation.
-        snap_path = "/snap/bin/obsidian"
-        if os.path.exists(snap_path):
-            return snap_path
-        # Option 4: Fallback to a command string.
-        # (You can modify this if you want to prompt the user instead.)
-        return "flatpak run md.obsidian.Obsidian"
-
-    elif sys.platform.startswith("darwin"):
-        # macOS: Check default location in /Applications.
-        obsidian_app = "/Applications/Obsidian.app/Contents/MacOS/Obsidian"
-        if os.path.exists(obsidian_app):
-            return obsidian_app
-        # Option 2: Check if a command is available in PATH.
-        obsidian_cmd = shutil.which("obsidian")
-        if obsidian_cmd:
-            return obsidian_cmd
-        response = ui_elements.ask_yes_no("Obsidian Not Found",
-                                       "Obsidian was not detected in standard locations.\n"
-                                       "Would you like to locate the Obsidian application manually?")
-        if response:
-            selected_path = ui_elements.ask_file_dialog(
-                "Select Obsidian Application",
-                filetypes=[("Obsidian Application", "*.app")]
-            )
-            if selected_path:
-                return selected_path
-        return None
-
-
-def select_vault_path():
-    """
-    Asks user to select Obsidian Vault folder. Returns path or None if canceled.
-    """
-    selected = ui_elements.ask_directory_dialog("Select Obsidian Vault Folder")
-    return selected if selected else None
-
-def is_git_installed():
-    """
-    Returns True if Git is installed, else False.
-    """
-    out, err, rc = run_command("git --version")
-    return rc == 0
-
-def test_ssh_connection_sync():
-    """
-    Synchronously tests SSH to GitHub. Returns True if OK, False otherwise.
-    """
-    out, err, rc = run_command("ssh -T git@github.com")
-    print("DEBUG: SSH OUT:", out)
-    print("DEBUG: SSH ERR:", err)
-    print("DEBUG: SSH RC:", rc)
-    if "successfully authenticated" in (out + err).lower():
-        return True
-    return False
-
-def re_test_ssh():
-    """
-    Re-tests the SSH connection in a background thread.
-    If successful, automatically performs an initial commit/push if none exists yet.
-    """
-    def _test_thread():
-        safe_update_log("Re-testing SSH connection to GitHub...", 35)
-        ensure_github_known_host()  # ensures no prompt for 'yes/no'
-
-        if test_ssh_connection_sync():
-            safe_update_log("SSH connection successful!", 40)
-            
-            # Perform the initial commit/push if there are no local commits yet
-            perform_initial_commit_and_push(config_data["VAULT_PATH"])
-
-            # Mark setup as done
-            config_data["SETUP_DONE"] = "1"
-            save_config()
-
-            safe_update_log("Setup complete! You can now close this window or start sync.", 100)
-        else:
-            safe_update_log("SSH connection still failed. Check your GitHub key or generate a new one.", 40)
-
-    threading.Thread(target=_test_thread, daemon=True).start()
-
-
-def perform_initial_commit_and_push(vault_path):
-    """
-    Checks if the local repository has any commits.
-    If not, creates an initial commit and pushes it to the remote 'origin' on the 'main' branch.
-    """
-    out, err, rc = run_command("git rev-parse HEAD", cwd=vault_path)
-    if rc != 0:
-        # rc != 0 implies 'git rev-parse HEAD' failed => no commits (unborn branch)
-        safe_update_log("No local commits detected. Creating initial commit...", 50)
-
-        # Stage all files
-        run_command("git add .", cwd=vault_path)
-
-        # Commit
-        out_commit, err_commit, rc_commit = run_command('git commit -m "Initial commit"', cwd=vault_path)
-        if rc_commit == 0:
-            # Check if remote has commits before pushing
-            ls_out, ls_err, ls_rc = run_command("git ls-remote --heads origin main", cwd=vault_path)
-            
-            if ls_out.strip():
-                # Remote has commits, need to pull first
-                safe_update_log("Remote repository has existing commits. Pulling before push...", 55)
-                pull_out, pull_err, pull_rc = run_command("git pull origin main --allow-unrelated-histories", cwd=vault_path)
-                if pull_rc == 0:
-                    safe_update_log("Successfully pulled remote commits. Now pushing...", 58)
-                    # Now try to push
-                    out_push, err_push, rc_push = run_command("git push -u origin main", cwd=vault_path)
-                    if rc_push == 0:
-                        safe_update_log("Initial commit pushed to remote repository successfully.", 60)
-                    else:
-                        safe_update_log(f"Error pushing after pull: {err_push}", 60)
-                elif "CONFLICT" in (pull_out + pull_err):
-                    # Conflict during initial setup pull - use 2-stage conflict resolution
-                    safe_update_log("❌ Merge conflict detected during initial setup pull.", 56)
-                    safe_update_log("🔧 Activating 2-stage conflict resolution system...", 57)
-                    
-                    # Abort the current merge to get to a clean state
-                    run_command("git merge --abort", cwd=vault_path)
-                    
-                    try:
-                        if not CONFLICT_RESOLUTION_AVAILABLE:
-                            safe_update_log("❌ Enhanced conflict resolution system not available. Manual resolution required.", 59)
-                            safe_update_log("Please resolve conflicts manually and try again.", 59)
-                            return
-                        
-                        # Create backup using backup manager if available
-                        backup_id = None
-                        if 'backup_manager' in sys.modules:
-                            try:
-                                from backup_manager import create_setup_safety_backup
-                                backup_id = create_setup_safety_backup(vault_path, "initial-setup-conflict")
-                                if backup_id:
-                                    safe_update_log(f"✅ Safety backup created: {backup_id}", 57)
-                            except Exception as backup_err:
-                                safe_update_log(f"⚠️ Could not create backup: {backup_err}", 57)
-                        
-                        # Import and use the proper conflict resolution modules
-                        import Stage1_conflict_resolution as cr_module
-                        
-                        # Create conflict resolver for initial setup conflicts
-                        resolver = cr_module.ConflictResolver(vault_path, root)
-                        remote_url = config_data.get("GITHUB_REMOTE_URL", "")
-                        
-                        # Resolve conflicts using the 2-stage system
-                        resolution_result = resolver.resolve_initial_setup_conflicts(remote_url)
-                        
-                        if resolution_result.success:
-                            safe_update_log("✅ Initial setup conflicts resolved successfully", 59)
-                            if backup_id:
-                                safe_update_log(f"📝 Note: Safety backup available if needed: {backup_id}", 59)
-                            # Try to push again after resolution
-                            out_push, err_push, rc_push = run_command("git push -u origin main", cwd=vault_path)
-                            if rc_push == 0:
-                                safe_update_log("Initial commit pushed to remote repository successfully.", 60)
-                            else:
-                                safe_update_log(f"Warning: Could not push after conflict resolution: {err_push}", 60)
-                        else:
-                            if "cancelled by user" in resolution_result.message.lower():
-                                safe_update_log("❌ Initial setup conflict resolution was cancelled by user", 59)
-                                safe_update_log("Setup cannot continue without resolving conflicts.", 59)
-                                return
-                            else:
-                                safe_update_log(f"❌ Initial setup conflict resolution failed: {resolution_result.message}", 59)
-                                if backup_id:
-                                    safe_update_log(f"📝 Your work is safe in backup: {backup_id}", 59)
-                                return
-                            
-                    except Exception as e:
-                        safe_update_log(f"❌ Error in 2-stage conflict resolution during setup: {e}", 59)
-                        safe_update_log("Initial setup may be incomplete. Please resolve conflicts manually.", 59)
-                        import traceback
-                        traceback.print_exc()
-                else:
-                    safe_update_log(f"Error pulling remote commits: {pull_err}", 60)
-            else:
-                # Remote is empty, safe to push
-                out_push, err_push, rc_push = run_command("git push -u origin main", cwd=vault_path)
-                if rc_push == 0:
-                    safe_update_log("Initial commit pushed to remote repository successfully.", 60)
-                else:
-                    safe_update_log(f"Error pushing initial commit: {err_push}", 60)
-        else:
-            safe_update_log(f"Error committing files: {err_commit}", 60)
-    else:
-        # We already have at least one commit in this repo
-        safe_update_log("Local repository already has commits. Skipping initial commit step.", 50)
-
-
-# -- SSH Key Generation in Background
-
-def generate_ssh_key():
-    """
-    Prompts for the user's email and starts a background thread for SSH key generation.
-    """
-    user_email = ui_elements.ask_string_dialog(
-        "SSH Key Generation",
-        "Enter your email address for the SSH key:",
-        icon=ui_elements.Icons.GEAR  # Added icon
-    )
-    if not user_email:
-        ui_elements.show_error_message("Email Required", "No email address provided. SSH key generation canceled.")
-        return
-
-    threading.Thread(target=generate_ssh_key_async, args=(user_email,), daemon=True).start()
-
-
-def generate_ssh_key_async(user_email):
-    """
-    Runs in a background thread to:
-      1) Generate an SSH key if it doesn't already exist.
-      2) Copy the public key to the clipboard.
-      3) Show an info dialog on the main thread.
-      4) After the user closes the dialog, open GitHub's SSH settings in the browser.
-    """
-    key_path_private = SSH_KEY_PATH.replace("id_rsa.pub", "id_rsa")
-
-    # 1) Generate key if it doesn't exist
-    if not os.path.exists(SSH_KEY_PATH):
-        safe_update_log("Generating SSH key...", 25)
-        out, err, rc = run_command(f'ssh-keygen -t rsa -b 4096 -C "{user_email}" -f "{key_path_private}" -N ""')
-        if rc != 0:
-            safe_update_log(f"SSH key generation failed: {err}", 25)
-            return
-        safe_update_log("SSH key generated successfully.", 30)
-    else:
-        safe_update_log("SSH key already exists. Overwriting is not performed here.", 30)
-
-    # 2) Read the public key and attempt to copy to the clipboard
-    try:
-        with open(SSH_KEY_PATH, "r", encoding="utf-8") as key_file:
-            public_key = key_file.read().strip()
-        pyperclip.copy(public_key)
-        # Verify that clipboard contains the expected key
-        copied = pyperclip.paste().strip()
-        if copied != public_key:
-            raise Exception("Clipboard copy failed: content mismatch.")
-        safe_update_log("Public key successfully copied to clipboard.", 35)
-    except Exception as e:
-        safe_update_log(f"Error copying SSH key to clipboard: {e}", 35)
-        # 3) Fallback: show a dialog with manual instructions and the public key
-        ui_elements.show_info_message(
-            "Manual SSH Key Copy Required",
-            "Automatic copying of your SSH key failed.\n\n"
-            "Please open a terminal and run:\n\n"
-            "   cat ~/.ssh/id_rsa.pub\n\n"
-            "Then copy the output manually and add it to your GitHub account."
-        )
-
-    # 4) Show final info dialog and open GitHub's SSH keys page
-    def show_dialog_then_open_browser():
-        ui_elements.show_info_message(
-            "SSH Key Generated",
-            "Your SSH key has been generated and copied to the clipboard (if successful).\n\n"
-            "If automatic copying failed, please manually copy the key as described.\n\n"
-            "Click OK to open GitHub's SSH keys page to add your key."
-        )
-        webbrowser.open("https://github.com/settings/keys")
-    
-    if root is not None:
-        root.after(0, show_dialog_then_open_browser)
-
-
-def copy_ssh_key():
-    """
-    Copies the SSH key to clipboard and opens GitHub SSH settings.
-    """
-    if os.path.exists(SSH_KEY_PATH):
-        with open(SSH_KEY_PATH, "r", encoding="utf-8") as key_file:
-            ssh_key = key_file.read().strip()
-            pyperclip.copy(ssh_key)
-        webbrowser.open("https://github.com/settings/keys")
-        ui_elements.show_info_message("SSH Key Copied",
-                            "Your SSH key has been copied to the clipboard.\n"
-                            "Paste it into GitHub.")
-    else:
-        ui_elements.show_error_message("Error", "No SSH key found. Generate one first.")
+# Import wizard steps functions from separate module
+import wizard_steps
 
 # ------------------------------------------------
 # AUTO-SYNC (Used if SETUP_DONE=1)
@@ -1491,7 +769,7 @@ def auto_sync(use_threading=True):
         time.sleep(0.1)
         
         # Step 0: Validate vault directory exists
-        is_valid, should_continue, new_vault_path = validate_vault_directory(vault_path)
+        is_valid, should_continue, new_vault_path = github_setup.validate_vault_directory(vault_path, ui_elements)
         
         if not should_continue:
             safe_update_log("❌ Cannot proceed without a valid vault directory.", 0)
@@ -1517,7 +795,7 @@ def auto_sync(use_threading=True):
         if git_check_rc != 0:
             # Not a git repository - this shouldn't happen if setup was done correctly
             safe_update_log("❌ Directory is not a git repository. Initializing...", 5)
-            initialize_git_repo(vault_path)
+            github_setup.initialize_git_repo(vault_path)
             
             # Try to configure remote if we have a saved URL
             saved_url = config_data.get("GITHUB_REMOTE_URL", "").strip()
@@ -1535,7 +813,7 @@ def auto_sync(use_threading=True):
             
             # Safely ensure placeholder file with error handling
             try:
-                ensure_placeholder_file(vault_path)
+                github_setup.ensure_placeholder_file(vault_path)
             except Exception as e:
                 safe_update_log(f"❌ Error creating placeholder file: {e}", 5)
                 return
@@ -2326,6 +1604,11 @@ def detect_and_resolve_incomplete_git_operations(vault_path):
     try:
         git_dir = os.path.join(vault_path, '.git')
         
+        # Initialize variables
+        detected_operation = None
+        operation_type = None
+        resolution_success = False
+        
         # Check for various incomplete operations
         operations_to_check = {
             'rebase-merge': 'interactive rebase',
@@ -2433,6 +1716,7 @@ def detect_and_resolve_incomplete_git_operations(vault_path):
                     resolution_success = True
                 else:
                     safe_update_log(f"❌ Failed to resolve {operation_type}: {abort_err}", None)
+                    resolution_success = False
         
         elif operation_type == 'bisect':
             safe_update_log("📝 Completing bisect operation...", None)
@@ -2440,7 +1724,9 @@ def detect_and_resolve_incomplete_git_operations(vault_path):
             if reset_rc == 0:
                 safe_update_log("✅ Bisect completed successfully", None)
                 resolution_success = True
-            else:                safe_update_log(f"❌ Failed to reset bisect: {reset_err}", None)
+            else:
+                safe_update_log(f"❌ Failed to reset bisect: {reset_err}", None)
+                resolution_success = False
         
         if resolution_success:
             safe_update_log(f"✅ Successfully resolved incomplete {operation_type} operation", None)
@@ -2601,6 +1887,35 @@ def manual_git_recovery(vault_path):
 
 def main():
     global root, log_text, progress_bar
+    
+    # Initialize GitHub setup module dependencies
+    try:
+        import Stage1_conflict_resolution as cr_module
+        github_setup.set_dependencies(
+            ui_elements=ui_elements,
+            config_data=config_data,
+            save_config_func=save_config,
+            conflict_resolution_module=cr_module,
+            safe_update_log_func=safe_update_log
+        )
+    except ImportError:
+        # Conflict resolution module not available
+        github_setup.set_dependencies(
+            ui_elements=ui_elements,
+            config_data=config_data,
+            save_config_func=save_config,
+            conflict_resolution_module=None,
+            safe_update_log_func=safe_update_log
+        )
+    
+    # Initialize wizard steps module dependencies
+    wizard_steps.set_dependencies(
+        ui_elements=ui_elements,
+        config_data=config_data,
+        save_config_func=save_config,
+        safe_update_log_func=safe_update_log,
+        run_command_func=run_command
+    )
     
     # Load config, but check if this is the first run
     load_config()

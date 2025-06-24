@@ -146,6 +146,39 @@ class OgresyncSetupWizard:
             return result, None
         except Exception as e:
             return None, str(e)
+        
+    def _safe_github_setup_call(self, method_name, *args, **kwargs):
+        """Safely call a GitHub setup method with error handling."""
+        try:
+            import github_setup
+            
+            if not hasattr(github_setup, method_name):
+                return None, f"Method '{method_name}' not available in github_setup module"
+            
+            method = getattr(github_setup, method_name)
+            result = method(*args, **kwargs)
+            return result, None
+        except ImportError:
+            return None, "github_setup module not available"
+        except Exception as e:
+            return None, str(e)
+
+    def _safe_wizard_steps_call(self, method_name, *args, **kwargs):
+        """Safely call a wizard steps method with error handling."""
+        try:
+            import wizard_steps
+            
+            if not hasattr(wizard_steps, method_name):
+                return None, f"Method '{method_name}' not available in wizard_steps module"
+            
+            method = getattr(wizard_steps, method_name)
+            result = method(*args, **kwargs)
+            return result, None
+        except ImportError:
+            return None, "wizard_steps module not available"
+        except Exception as e:
+            return None, str(e)
+    
     
     def _safe_ogresync_get(self, attr_name):
         """Safely get an Ogresync attribute."""
@@ -774,7 +807,7 @@ Your configuration has been saved and Ogresync is ready to use!"""
     def _step_obsidian_checkup(self):
         """Step 1: Verify Obsidian installation."""
         try:
-            obsidian_path, error = self._safe_ogresync_call('find_obsidian_path')
+            obsidian_path, error = self._safe_wizard_steps_call('find_obsidian_path')
             if error:
                 return False, f"Obsidian detection not available: {error}"
             
@@ -801,7 +834,7 @@ Your configuration has been saved and Ogresync is ready to use!"""
     def _step_git_check(self):
         """Step 2: Verify Git installation."""
         try:
-            is_installed, error = self._safe_ogresync_call('is_git_installed')
+            is_installed, error = self._safe_wizard_steps_call('is_git_installed')
             if error:
                 # Fallback check using subprocess
                 import subprocess
@@ -848,7 +881,7 @@ Your configuration has been saved and Ogresync is ready to use!"""
     def _step_choose_vault(self):
         """Step 3: Select Obsidian vault folder."""
         try:
-            vault_path, error = self._safe_ogresync_call('select_vault_path')
+            vault_path, error = self._safe_wizard_steps_call('select_vault_path')
             if error:
                 # Fallback to manual selection
                 if ui_elements and hasattr(ui_elements, 'ask_directory_dialog'):
@@ -883,10 +916,10 @@ Your configuration has been saved and Ogresync is ready to use!"""
             self._update_status("Checking Git repository status...")
             
             # Step 4.1: Check if git is already initialized
-            is_git_repo = self._safe_ogresync_call('is_git_repo', vault_path)
+            is_git_repo = self._safe_github_setup_call('is_git_repo', vault_path)
             if not is_git_repo[0]:  # Not a git repo
                 self._update_status("Initializing Git repository...")
-                result, error = self._safe_ogresync_call('initialize_git_repo', vault_path)
+                result, error = self._safe_github_setup_call('initialize_git_repo', vault_path)
                 if error:
                     # Fallback manual git init
                     try:
@@ -926,7 +959,7 @@ Your configuration has been saved and Ogresync is ready to use!"""
             self._update_status(f"Vault analysis: {len(existing_files)} content files found")
             
             # Always ensure git user config is set first
-            self._safe_ogresync_call('ensure_git_user_config')
+            self._safe_github_setup_call('ensure_git_user_config')
             
             if has_existing_files or has_existing_git_history:
                 # Step 4.3: Commit existing files (if any changes to commit)
@@ -1048,7 +1081,7 @@ Your configuration has been saved and Ogresync is ready to use!"""
                         else:
                             # Fallback to async method if direct generation fails
                             self._update_status("Trying alternative SSH key generation...")
-                            async_result, async_error = self._safe_ogresync_call('generate_ssh_key_async', email.strip())
+                            async_result, async_error = self._safe_wizard_steps_call('generate_ssh_key_async', email.strip())
                             if async_error:
                                 return False, f"SSH key generation failed: {async_error}"
                             
@@ -1075,7 +1108,7 @@ Your configuration has been saved and Ogresync is ready to use!"""
     def _step_known_hosts(self):
         """Step 6: Add GitHub to known hosts."""
         try:
-            result, error = self._safe_ogresync_call('ensure_github_known_host')
+            result, error = self._safe_wizard_steps_call('ensure_github_known_host')
             if error:
                 # Fallback manual known_hosts setup
                 import subprocess
@@ -1100,7 +1133,7 @@ Your configuration has been saved and Ogresync is ready to use!"""
         """Step 7: Test SSH connection with better manual guidance."""
         try:
             # First try automatic SSH test
-            result, error = self._safe_ogresync_call('test_ssh_connection_sync')
+            result, error = self._safe_wizard_steps_call('test_ssh_connection_sync')
             if not error and result:
                 return True, "SSH connection successful"
             else:
@@ -1338,7 +1371,7 @@ Your configuration has been saved and Ogresync is ready to use!"""
                 subprocess.run(['git', 'branch', '-M', 'main'], cwd=vault_path, capture_output=True, text=True)
                 
                 # Ensure git user config
-                self._safe_ogresync_call('ensure_git_user_config')
+                self._safe_github_setup_call('ensure_git_user_config')
             
             # Check if remote already exists
             existing_remote_cmd = "git remote get-url origin"
