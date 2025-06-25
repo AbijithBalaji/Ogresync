@@ -17,8 +17,79 @@ import os
 import subprocess
 import threading
 import time
+import re
 from typing import Optional, Tuple
 
+
+# =============================================================================
+# SECURITY FUNCTIONS
+# =============================================================================
+
+def _validate_url(url: str) -> bool:
+    """
+    Validate that a URL is safe for use in git commands.
+    Returns True if the URL is considered safe, False otherwise.
+    """
+    if not url or not isinstance(url, str):
+        return False
+    
+    url = url.strip()
+    if not url:
+        return False
+    
+    # Allow common git URL patterns
+    # HTTPS: https://github.com/user/repo.git
+    # SSH: git@github.com:user/repo.git
+    # HTTP: http://example.com/repo.git (for testing)
+    https_pattern = r'^https://[a-zA-Z0-9.-]+[a-zA-Z0-9]/[a-zA-Z0-9._/-]+(?:\.git)?/?$'
+    ssh_pattern = r'^git@[a-zA-Z0-9.-]+:[a-zA-Z0-9._/-]+(?:\.git)?$'
+    http_pattern = r'^http://[a-zA-Z0-9.-]+[a-zA-Z0-9]/[a-zA-Z0-9._/-]+(?:\.git)?/?$'
+    
+    # Check for dangerous characters that could be used for command injection
+    dangerous_chars = r'[`$();&|<>"\']'
+    if re.search(dangerous_chars, url):
+        return False
+    
+    # Verify against allowed patterns
+    if (re.match(https_pattern, url) or 
+        re.match(ssh_pattern, url) or 
+        re.match(http_pattern, url)):
+        return True
+    
+    return False
+
+
+def _run_git_command_safe(command_parts: list, cwd: Optional[str] = None) -> Tuple[str, str, int]:
+    """
+    Run a git command safely using subprocess argument lists instead of shell strings.
+    This prevents command injection vulnerabilities.
+    
+    Args:
+        command_parts: List of command parts (e.g., ['git', 'remote', 'add', 'origin', url])
+        cwd: Working directory for the command
+        
+    Returns:
+        Tuple of (stdout, stderr, return_code)
+    """
+    try:
+        result = subprocess.run(
+            command_parts,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            shell=False,  # Important: do not use shell=True
+            timeout=30
+        )
+        return result.stdout, result.stderr, result.returncode
+    except subprocess.TimeoutExpired:
+        return "", "Command timed out", 1
+    except Exception as e:
+        return "", f"Command execution error: {e}", 1
+
+
+# =============================================================================
+# DEPENDENCY INJECTION AND UTILITY FUNCTIONS
+# =============================================================================
 
 # Dependency injection pattern - these will be set by the main module
 _ui_elements = None
@@ -61,12 +132,13 @@ def run_command(command, cwd=None, timeout=None):
 
 def safe_update_log(message, progress=None):
     """
-    Log function that uses the injected dependency or falls back to print
+    Safe logging function that uses the injected dependency.
+    Fallback to print if no logging function is available.
     """
     if _safe_update_log_func:
         _safe_update_log_func(message, progress)
     else:
-        print(f"LOG: {message}")
+        print(f"[LOG] {message}")
 
 
 # ------------------------------------------------
@@ -148,7 +220,14 @@ def set_github_remote(vault_path, ui_elements=None, config_data=None):
                 icon=getattr(ui_elements.Icons, 'LINK', None) if hasattr(ui_elements, 'Icons') else None
             )
             if repo_url:
-                out, err, rc = run_command(f"git remote add origin {repo_url}", cwd=vault_path)
+                # Validate the URL before using it
+                if not _validate_url(repo_url):
+                    safe_update_log("Invalid URL format. Please ensure it is a valid GitHub repository URL.", 30)
+                    if ui_elements:
+                        ui_elements.show_error_message("Invalid URL", "The provided URL is not valid. Please enter a valid GitHub repository URL.")
+                    return False
+                
+                out, err, rc = _run_git_command_safe(['git', 'remote', 'add', 'origin', repo_url], cwd=vault_path)
                 if rc == 0:
                     safe_update_log(f"Git remote added: {repo_url}", 30)
                     if config_data:
@@ -233,13 +312,19 @@ def configure_remote_url_for_vault(vault_path, ui_elements=None, config_data=Non
         
         if reuse_url:
             # Use the saved URL
-            safe_update_log(f"Using saved remote URL: {saved_url}", None)
-            out, err, rc = run_command(f"git remote add origin {saved_url}", cwd=vault_path)
-            if rc == 0:
-                safe_update_log(f"Git remote configured: {saved_url}", None)
-                return True
+            if not _validate_url(saved_url):
+                safe_update_log("❌ Saved URL is invalid. Please configure a new one.", None)
+                if ui_elements:
+                    ui_elements.show_error_message("Invalid Saved URL", "The saved repository URL is not valid. Please configure a new one.")
+                # Continue to ask for new URL
             else:
-                safe_update_log(f"❌ Failed to configure remote: {err}", None)
+                safe_update_log(f"Using saved remote URL: {saved_url}", None)
+                out, err, rc = _run_git_command_safe(['git', 'remote', 'add', 'origin', saved_url], cwd=vault_path)
+                if rc == 0:
+                    safe_update_log(f"Git remote configured: {saved_url}", None)
+                    return True
+                else:
+                    safe_update_log(f"❌ Failed to configure remote: {err}", None)
                 return False
         else:
             # User wants to use a different URL
@@ -256,7 +341,14 @@ def configure_remote_url_for_vault(vault_path, ui_elements=None, config_data=Non
         
         if repo_url and repo_url.strip():
             repo_url = repo_url.strip()
-            out, err, rc = run_command(f"git remote add origin {repo_url}", cwd=vault_path)
+            
+            # Validate the URL before using it
+            if not _validate_url(repo_url):
+                safe_update_log("Invalid URL format. Please ensure it is a valid GitHub repository URL.", None)
+                ui_elements.show_error_message("Invalid URL", "The provided URL is not valid. Please enter a valid GitHub repository URL.")
+                return False
+            
+            out, err, rc = _run_git_command_safe(['git', 'remote', 'add', 'origin', repo_url], cwd=vault_path)
             if rc == 0:
                 safe_update_log(f"Git remote configured: {repo_url}", None)
                 

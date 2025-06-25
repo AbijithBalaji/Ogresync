@@ -851,7 +851,14 @@ def auto_sync(use_threading=True):
             saved_url = config_data.get("GITHUB_REMOTE_URL", "").strip()
             if saved_url:
                 safe_update_log(f"Configuring remote with saved URL: {saved_url}", 5)
-                run_command(f"git remote add origin {saved_url}", cwd=vault_path)
+                # Validate URL before using in command
+                import re
+                if re.match(r'^https?://[^\s<>"{}|\\^`\[\]]+$', saved_url) or re.match(r'^git@[^\s<>"{}|\\^`\[\]]+$', saved_url):
+                    run_command(f"git remote add origin {saved_url}", cwd=vault_path)
+                else:
+                    safe_update_log(f"❌ Invalid URL format: {saved_url}", 5)
+                    safe_update_log("❌ Please check your GitHub remote URL configuration.", 5)
+                    return
             else:
                 safe_update_log("❌ No remote URL configured. Please run setup again.", 5)
                 return

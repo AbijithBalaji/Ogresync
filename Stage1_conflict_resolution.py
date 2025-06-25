@@ -213,6 +213,71 @@ class ConflictResolutionEngine:
         except Exception as e:
             return "", f"Unexpected error: {e}", 1
     
+    def _run_git_command_safe(self, command_parts: List[str], cwd: Optional[str] = None) -> Tuple[str, str, int]:
+        """Run a git command safely using argument list instead of shell string
+        
+        Args:
+            command_parts: List of command parts (e.g., ['git', 'commit', '-m', 'message'])
+            cwd: Working directory (defaults to vault_path)
+            
+        Returns:
+            Tuple of (stdout, stderr, return_code)
+        """
+        print(f"[DEBUG] _run_git_command_safe called with: {command_parts}")
+        try:
+            working_dir = cwd or self.vault_path
+            
+            # Always use argument list for maximum safety
+            result = subprocess.run(
+                command_parts,
+                cwd=working_dir,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            print(f"[DEBUG] Safe command executed. RC: {result.returncode}")
+            if result.returncode != 0:
+                print(f"[DEBUG] Command stderr: {result.stderr}")
+            
+            return result.stdout, result.stderr, result.returncode
+            
+        except subprocess.TimeoutExpired:
+            return "", f"Command timed out: {' '.join(command_parts)}", 1
+        except (OSError, FileNotFoundError, PermissionError) as e:
+            return "", f"System error executing command: {e}", 1
+        except Exception as e:
+            return "", f"Unexpected error: {e}", 1
+    
+    def _sanitize_commit_message(self, message: str) -> str:
+        """Sanitize commit message to prevent command injection
+        
+        Args:
+            message: Raw commit message
+            
+        Returns:
+            Sanitized commit message safe for use
+        """
+        import re
+        
+        # Remove null bytes and control characters except newlines and tabs
+        sanitized = re.sub(r'[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]', '', message)
+        
+        # Remove dangerous characters that could be used for command injection
+        sanitized = re.sub(r'[`$();&|<>]', '', sanitized)
+        
+        # Limit total length to prevent extremely long messages
+        sanitized = sanitized[:2000]
+        
+        # Remove leading/trailing whitespace
+        sanitized = sanitized.strip()
+        
+        # Ensure we have a non-empty message
+        if not sanitized:
+            sanitized = "Auto-generated commit"
+        
+        return sanitized
+    
     def _create_safety_backup(self, operation_name: str) -> str:
         """Create a safety backup using the backup manager"""
         if self.backup_manager and BACKUP_MANAGER_AVAILABLE and BackupReason:
@@ -624,10 +689,11 @@ class ConflictResolutionEngine:
                 if stage2_resolved_files:
                     commit_message += f"\n\nStage 2 resolutions applied to {len(stage2_resolved_files)} files:\n" + "\n".join([f"- {f}" for f in stage2_resolved_files])
                 
-                if platform.system() == "Windows":
-                    self._run_git_command(f'git commit -m "{commit_message}"')
-                else:
-                    self._run_git_command(f"git commit -m '{commit_message}'")
+                # Use safe command execution instead of shell interpolation
+                sanitized_message = self._sanitize_commit_message(commit_message)
+                stdout, stderr, rc = self._run_git_command_safe(['git', 'commit', '-m', sanitized_message])
+                if rc != 0:
+                    print(f"[DEBUG] Commit failed: {stderr}")
                 print("✅ Committed local changes and Stage 2 resolutions")
             
             # STEP 3: Fetch latest remote state
@@ -671,15 +737,15 @@ class ConflictResolutionEngine:
                 # Only perform git merge if no Stage 2 resolution occurred
                 print("Performing intelligent merge to combine all files...")
                 
-                # Try merge with allow-unrelated-histories
+                # Use safe merge command execution
                 merge_message = "Smart merge - combining all files from local and remote"
-                if platform.system() == "Windows":
-                    merge_command = f'git merge {remote_branch} --no-ff --allow-unrelated-histories -m "{merge_message}"'
-                else:
-                    merge_command = f"git merge {remote_branch} --no-ff --allow-unrelated-histories -m '{merge_message}'"
+                sanitized_merge_message = self._sanitize_commit_message(merge_message)
                 
-                print(f"[DEBUG] Executing merge command: {merge_command}")
-                stdout, stderr, rc = self._run_git_command(merge_command)
+                print(f"[DEBUG] Executing safe merge command with message: {sanitized_merge_message}")
+                stdout, stderr, rc = self._run_git_command_safe([
+                    'git', 'merge', remote_branch, '--no-ff', '--allow-unrelated-histories', 
+                    '-m', sanitized_merge_message
+                ])
                 
                 if rc != 0:
                     print(f"[DEBUG] Merge failed with error: {stderr}")
@@ -1329,19 +1395,22 @@ class ConflictResolutionEngine:
             print(f"[DEBUG] Creating merge commit with remote branch: {remote_branch}")
             
             # Use git commit with merge parents to create a proper merge commit
-            commit_message = f"Resolve conflicts using Stage 2 resolution\\n\\nResolved {len(stage2_result.resolved_files)} files using strategies:\\n"
+            commit_message = f"Resolve conflicts using Stage 2 resolution\n\nResolved {len(stage2_result.resolved_files)} files using strategies:\n"
             for file_path, strategy in stage2_result.resolution_strategies.items():
-                commit_message += f"- {file_path}: {strategy.value}\\n"
+                commit_message += f"- {file_path}: {strategy.value}\n"
             
-            # Create the merge commit properly
-            stdout, stderr, rc = self._run_git_command(f'git commit -m "{commit_message}"')
+            # Create the merge commit safely
+            sanitized_message = self._sanitize_commit_message(commit_message)
+            stdout, stderr, rc = self._run_git_command_safe(['git', 'commit', '-m', sanitized_message])
             if rc != 0:
                 print(f"[ERROR] Failed to commit resolutions: {stderr}")
                 return False
             
             # Now create a proper merge with the remote branch to include remote history
             # This ensures the commit has both local and remote as parents
-            merge_stdout, merge_stderr, merge_rc = self._run_git_command(f'git merge {remote_branch} --strategy=ours --no-edit')
+            merge_stdout, merge_stderr, merge_rc = self._run_git_command_safe([
+                'git', 'merge', remote_branch, '--strategy=ours', '--no-edit'
+            ])
             if merge_rc == 0:
                 print(f"[DEBUG] Successfully created merge commit with {remote_branch}")
             else:
@@ -1641,24 +1710,103 @@ class ConflictResolutionDialog:
         main_container = tk.Frame(analysis_frame, bg="#FEF3C7")
         main_container.pack(fill=tk.BOTH, expand=True)  # Fill both X and Y
         
-        # Three column layout for the three file categories - expanded
+        # Five column layout for all file categories - more comprehensive view
         columns_frame = tk.Frame(main_container, bg="#FEF3C7")
         columns_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         
-        # Column 1: Local Repository Files
+        # Column 1: Local Only Files (files that exist only in local repository)
+        local_only_files = [f for f in self.analysis.local_files if f not in self.analysis.remote_files]
+        local_only_col = tk.Frame(columns_frame, bg="#FEF3C7")
+        local_only_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 3))
+        
+        local_only_label = tk.Label(
+            local_only_col,
+            text=f"🏠 Local Only ({len(local_only_files)})",
+            font=("Arial", 10, "bold"),
+            bg="#FEF3C7",
+            fg="#92400E"
+        )
+        local_only_label.pack(anchor=tk.W, pady=(0, 5))
+        
+        # Create listbox frame with scrollbar for local-only files
+        local_only_frame = tk.Frame(local_only_col, bg="#FEF3C7", relief=tk.SUNKEN, borderwidth=1)
+
+        local_only_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
+        
+        local_only_scrollbar = tk.Scrollbar(local_only_frame, orient=tk.VERTICAL)
+        local_only_listbox = tk.Listbox(
+            local_only_frame,
+            font=("Courier", 9),
+            bg="#E6FFFA",  # Light cyan for local-only
+            fg="#0D9488",
+            selectmode=tk.SINGLE,
+            yscrollcommand=local_only_scrollbar.set
+        )
+        local_only_scrollbar.config(command=local_only_listbox.yview)
+        
+        local_only_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        local_only_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Register listbox for per-list scrolling
+        self.listboxes.append(local_only_listbox)
+        
+        # Add local-only files
+        for file in local_only_files:
+            local_only_listbox.insert(tk.END, f"📄 {file}")
+        
+        # Column 2: Remote Only Files (files that exist only in remote repository)  
+        remote_only_files = [f for f in self.analysis.remote_files if f not in self.analysis.local_files]
+        remote_only_col = tk.Frame(columns_frame, bg="#FEF3C7")
+        remote_only_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(3, 3))
+        
+        remote_only_label = tk.Label(
+            remote_only_col,
+            text=f"🌐 Remote Only ({len(remote_only_files)})",
+            font=("Arial", 10, "bold"),
+            bg="#FEF3C7",
+            fg="#92400E"
+        )
+        remote_only_label.pack(anchor=tk.W, pady=(0, 5))
+        
+        # Create listbox frame with scrollbar for remote-only files
+        remote_only_frame = tk.Frame(remote_only_col, bg="#FEF3C7", relief=tk.SUNKEN, borderwidth=1)
+        remote_only_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
+        
+        remote_only_scrollbar = tk.Scrollbar(remote_only_frame, orient=tk.VERTICAL)
+        remote_only_listbox = tk.Listbox(
+            remote_only_frame,
+            font=("Courier", 9),
+            bg="#FDF2F8",  # Light purple for remote-only
+            fg="#A21CAF",
+            selectmode=tk.SINGLE,
+            yscrollcommand=remote_only_scrollbar.set
+        )
+        remote_only_scrollbar.config(command=remote_only_listbox.yview)
+        
+        remote_only_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        remote_only_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Register listbox for per-list scrolling
+        self.listboxes.append(remote_only_listbox)
+        
+        # Add remote-only files
+        for file in remote_only_files:
+            remote_only_listbox.insert(tk.END, f"📄 {file}")
+        
+        # Column 3: All Local Files (for reference)
         local_col = tk.Frame(columns_frame, bg="#FEF3C7")
-        local_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
+        local_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(3, 3))
         
         local_label = tk.Label(
             local_col,
-            text=f"🏠 Local ({len(self.analysis.local_files)})",
+            text=f"🏠 All Local ({len(self.analysis.local_files)})",
             font=("Arial", 10, "bold"),
             bg="#FEF3C7",
             fg="#92400E"
         )
         local_label.pack(anchor=tk.W, pady=(0, 5))
         
-        # Expanded listbox frame with scrollbar for local files
+        # Listbox frame with scrollbar for all local files
         local_frame = tk.Frame(local_col, bg="#FEF3C7", relief=tk.SUNKEN, borderwidth=1)
         local_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
         
@@ -1680,24 +1828,24 @@ class ConflictResolutionDialog:
         # Register listbox for per-list scrolling
         self.listboxes.append(local_listbox)
         
-        # Add all local files (no limit)
+        # Add all local files
         for file in self.analysis.local_files:
             local_listbox.insert(tk.END, f"📄 {file}")
         
-        # Column 2: Remote Repository Files  
+        # Column 4: All Remote Files (for reference)  
         remote_col = tk.Frame(columns_frame, bg="#FEF3C7")
-        remote_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 5))
+        remote_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(3, 3))
         
         remote_label = tk.Label(
             remote_col,
-            text=f"🌐 Remote ({len(self.analysis.remote_files)})",
+            text=f"🌐 All Remote ({len(self.analysis.remote_files)})",
             font=("Arial", 10, "bold"),
             bg="#FEF3C7",
             fg="#92400E"
         )
         remote_label.pack(anchor=tk.W, pady=(0, 5))
         
-        # Expanded listbox frame with scrollbar for remote files
+        # Listbox frame with scrollbar for all remote files
         remote_frame = tk.Frame(remote_col, bg="#FEF3C7", relief=tk.SUNKEN, borderwidth=1)
         remote_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
         
@@ -1719,13 +1867,13 @@ class ConflictResolutionDialog:
         # Register listbox for per-list scrolling
         self.listboxes.append(remote_listbox)
         
-        # Add all remote files (no limit)
+        # Add all remote files
         for file in self.analysis.remote_files:
             remote_listbox.insert(tk.END, f"📄 {file}")
         
-        # Column 3: Common Files with conflict status
+        # Column 5: Common Files with conflict status
         common_col = tk.Frame(columns_frame, bg="#FEF3C7")
-        common_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 0))
+        common_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(3, 0))
         
         common_label = tk.Label(
             common_col,
@@ -1736,7 +1884,7 @@ class ConflictResolutionDialog:
         )
         common_label.pack(anchor=tk.W, pady=(0, 5))
         
-        # Expanded listbox frame with scrollbar for common files
+        # Listbox frame with scrollbar for common files
         common_frame = tk.Frame(common_col, bg="#FEF3C7", relief=tk.SUNKEN, borderwidth=1)
         common_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
         
