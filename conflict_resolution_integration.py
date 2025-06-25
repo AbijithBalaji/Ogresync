@@ -13,27 +13,33 @@ import os
 from typing import Optional
 from backup_manager import OgresyncBackupManager, BackupReason
 
-def create_keep_remote_only_backup(vault_path: str) -> Optional[str]:
+def create_keep_remote_only_backup(vault_path: str, local_files: Optional[list] = None) -> Optional[str]:
     """
     Create backup before 'Keep Remote Only' strategy
     
     This ensures user's local files are safely backed up before
-    being replaced with remote content.
+    being replaced with remote content. Only backs up local files that exist.
     
     Args:
         vault_path: Path to the vault
+        local_files: List of local files to backup (only local files)
         
     Returns:
         Backup ID if successful, None if failed
     """
     manager = OgresyncBackupManager(vault_path)
+    
+    # If specific local files are provided, only backup those
+    # Otherwise backup all meaningful local files
     backup_id = manager.create_backup(
         BackupReason.CONFLICT_RESOLUTION,
-        "Keep Remote Only - Local files backup before adopting remote content"
+        "Keep Remote Only - Local files backup before adopting remote content",
+        files_to_backup=local_files  # This will be None if not provided, backing up all files
     )
     
     if backup_id:
-        print(f"✅ Local files backed up before 'Keep Remote Only': {backup_id}")
+        file_count = len(local_files) if local_files else "all"
+        print(f"✅ Local files backed up before 'Keep Remote Only': {backup_id} ({file_count} files)")
         return backup_id
     else:
         print("❌ Failed to create backup for 'Keep Remote Only' strategy")

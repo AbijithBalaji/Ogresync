@@ -2,18 +2,17 @@
 Ogresync Backup Management System
 
 This module provides centralized backup management for all Ogresync operations:
-- Git branch-based backups (preferred)
-- File-based backups (when git branches aren't suitable)
+- File-based backups with clear naming and documentation
 - Automatic cleanup and expiration
 - Recovery instructions and restoration
 - Prevention of backup pollution in sync operations
 
 Key Principles:
 1. Backups are LOCAL ONLY - never synced to remote
-2. Git branches for version control backups
-3. Hidden .ogresync-backups/ folder for file backups
+2. File-based snapshots in hidden .ogresync-backups/ folder
+3. Clear, descriptive folder names for easy identification
 4. Automatic cleanup based on age and count
-5. User-friendly recovery interface
+5. User-friendly recovery interface with detailed READMEs
 
 Author: Ogresync Development Team
 Date: June 2025
@@ -22,7 +21,6 @@ Date: June 2025
 import os
 import json
 import time
-import subprocess
 import shutil
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple, Union
@@ -31,9 +29,7 @@ from enum import Enum
 
 class BackupType(Enum):
     """Types of backups supported"""
-    GIT_BRANCH = "git_branch"           # Git branch backup (preferred)
-    FILE_SNAPSHOT = "file_snapshot"     # File-based snapshot
-    MIXED = "mixed"                     # Both git branch and files
+    FILE_SNAPSHOT = "file_snapshot"     # File-based snapshot (only option)
 
 class BackupReason(Enum):
     """Reasons for creating backups"""
@@ -51,7 +47,6 @@ class BackupInfo:
     reason: BackupReason
     created_at: datetime
     description: str
-    git_branch_name: Optional[str] = None
     file_snapshot_path: Optional[str] = None
     files_backed_up: Optional[List[str]] = None
     size_bytes: int = 0
@@ -64,7 +59,6 @@ class OgresyncBackupManager:
         self.vault_path = vault_path
         self.backup_base_dir = os.path.join(vault_path, ".ogresync-backups")
         self.backup_metadata_file = os.path.join(self.backup_base_dir, "backup_registry.json")
-        self.git_available = self._check_git_availability()
         
         # Backup limits and cleanup settings
         self.max_backups_per_type = 10
@@ -73,15 +67,6 @@ class OgresyncBackupManager:
         
         # Ensure backup infrastructure exists
         self._ensure_backup_infrastructure()
-    
-    def _check_git_availability(self) -> bool:
-        """Check if git is available"""
-        try:
-            result = subprocess.run(['git', '--version'], 
-                                  capture_output=True, text=True, timeout=5)
-            return result.returncode == 0
-        except:
-            return False
     
     def _ensure_backup_infrastructure(self):
         """Ensure backup directory and gitignore are set up"""
@@ -114,7 +99,7 @@ class OgresyncBackupManager:
     def create_backup(self, reason: BackupReason, description: str, 
                      files_to_backup: Optional[List[str]] = None) -> Optional[str]:
         """
-        Create a backup using the most appropriate method
+        Create a file-based backup with clear naming and documentation
         
         Args:
             reason: Why the backup is being created
@@ -124,28 +109,11 @@ class OgresyncBackupManager:
         Returns:
             Backup ID if successful, None if failed
         """
-        backup_id = f"backup_{int(time.time())}_{reason.value}"
+        timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        backup_id = f"backup_{timestamp}_{reason.value}"
         
         try:
-            # Determine backup strategy
-            if self.git_available and self._has_git_repo():
-                # Try git branch backup first
-                git_branch_name = self._create_git_branch_backup(backup_id, description)
-                if git_branch_name:
-                    backup_info = BackupInfo(
-                        backup_id=backup_id,
-                        backup_type=BackupType.GIT_BRANCH,
-                        reason=reason,
-                        created_at=datetime.now(),
-                        description=description,
-                        git_branch_name=git_branch_name,
-                        files_backed_up=files_to_backup or []
-                    )
-                    self._register_backup(backup_info)
-                    self._create_recovery_instructions(backup_info)
-                    return backup_id
-            
-            # Fallback to file snapshot backup
+            # Create file snapshot backup with improved naming
             snapshot_path = self._create_file_snapshot_backup(backup_id, description, files_to_backup)
             if snapshot_path:
                 backup_info = BackupInfo(
@@ -167,56 +135,49 @@ class OgresyncBackupManager:
         
         return None
     
-    def _has_git_repo(self) -> bool:
-        """Check if current directory is a git repository"""
-        try:
-            result = subprocess.run(['git', 'rev-parse', '--git-dir'], 
-                                  cwd=self.vault_path, capture_output=True, text=True)
-            return result.returncode == 0
-        except:
-            return False
-    
-    def _create_git_branch_backup(self, backup_id: str, description: str) -> Optional[str]:
-        """Create a git branch backup"""
-        try:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            branch_name = f"ogresync-backup-{backup_id}-{timestamp}"
-            
-            # Ensure we have a clean state for backup
-            result = subprocess.run(['git', 'stash', 'push', '-m', f'Backup stash: {description}'], 
-                                  cwd=self.vault_path, capture_output=True, text=True)
-            
-            # Create backup branch
-            result = subprocess.run(['git', 'branch', branch_name], 
-                                  cwd=self.vault_path, capture_output=True, text=True)
-            
-            if result.returncode == 0:
-                print(f"✅ Git branch backup created: {branch_name}")
-                return branch_name
-            else:
-                print(f"❌ Failed to create git branch backup: {result.stderr}")
-                return None
-                
-        except Exception as e:
-            print(f"❌ Error creating git branch backup: {e}")
-            return None
-    
     def _create_file_snapshot_backup(self, backup_id: str, description: str, 
                                    files_to_backup: Optional[List[str]] = None) -> Optional[str]:
-        """Create a file-based snapshot backup"""
+        """Create a file-based snapshot backup with improved naming and documentation"""
         try:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            snapshot_dir = os.path.join(self.backup_base_dir, f"snapshot_{backup_id}_{timestamp}")
+            timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+            # Create a more descriptive folder name based on the description
+            reason_clean = backup_id.split('_')[-1]  # Extract reason from backup_id
+            
+            # Create user-friendly folder names based on the description
+            if "Keep Remote Only" in description:
+                folder_name = f"LOCAL_FILES_before_adopting_remote_{timestamp}"
+            elif "Keep Local Only" in description:
+                folder_name = f"REMOTE_FILES_before_keeping_local_{timestamp}"
+            elif "Smart Merge" in description or "conflict_resolution" in reason_clean:
+                folder_name = f"CONFLICT_BACKUP_before_merge_{timestamp}"
+            elif "setup" in reason_clean or "Setup" in description:
+                folder_name = f"SETUP_SAFETY_backup_{timestamp}"
+            else:
+                folder_name = f"{reason_clean.upper()}_backup_{timestamp}"
+            
+            snapshot_dir = os.path.join(self.backup_base_dir, folder_name)
             
             os.makedirs(snapshot_dir, exist_ok=True)
             
-            # Create backup manifest
+            # Create detailed backup manifest and README
             manifest = {
-                "backup_id": backup_id,
-                "created_at": datetime.now().isoformat(),
-                "description": description,
-                "files": []
+                "backup_info": {
+                    "backup_id": backup_id,
+                    "created_at": datetime.now().isoformat(),
+                    "description": description,
+                    "reason": reason_clean,
+                    "backup_folder": folder_name
+                },
+                "files_backed_up": [],
+                "backup_summary": {
+                    "total_files": 0,
+                    "total_size_bytes": 0,
+                    "backup_complete": False
+                }
             }
+            
+            total_size = 0
+            file_count = 0
             
             if files_to_backup:
                 # Backup specific files
@@ -226,7 +187,14 @@ class OgresyncBackupManager:
                         dst_path = os.path.join(snapshot_dir, file_path)
                         os.makedirs(os.path.dirname(dst_path), exist_ok=True)
                         shutil.copy2(src_path, dst_path)
-                        manifest["files"].append(file_path)
+                        file_size = os.path.getsize(src_path)
+                        manifest["files_backed_up"].append({
+                            "file_path": file_path,
+                            "size_bytes": file_size,
+                            "backed_up_at": datetime.now().isoformat()
+                        })
+                        total_size += file_size
+                        file_count += 1
             else:
                 # Backup all meaningful files
                 for root, dirs, files in os.walk(self.vault_path):
@@ -241,13 +209,113 @@ class OgresyncBackupManager:
                             dst_path = os.path.join(snapshot_dir, rel_path)
                             os.makedirs(os.path.dirname(dst_path), exist_ok=True)
                             shutil.copy2(src_path, dst_path)
-                            manifest["files"].append(rel_path)
-              # Save manifest
+                            file_size = os.path.getsize(src_path)
+                            manifest["files_backed_up"].append({
+                                "file_path": rel_path,
+                                "size_bytes": file_size,
+                                "backed_up_at": datetime.now().isoformat()
+                            })
+                            total_size += file_size
+                            file_count += 1
+            
+            # Update summary
+            manifest["backup_summary"]["total_files"] = file_count
+            manifest["backup_summary"]["total_size_bytes"] = total_size
+            manifest["backup_summary"]["backup_complete"] = True
+            
+            # Save detailed manifest
             manifest_path = os.path.join(snapshot_dir, "backup_manifest.json")
             with open(manifest_path, 'w', encoding='utf-8') as f:
-                json.dump(manifest, f, indent=2)
+                json.dump(manifest, f, indent=2, ensure_ascii=False)
+            
+            # Create user-friendly README
+            # Create user-friendly README
+            backup_purpose = ""
+            if "Keep Remote Only" in description:
+                backup_purpose = """
+📋 WHAT HAPPENED:
+You chose to "Keep Remote Only" during conflict resolution.
+This backup contains YOUR LOCAL FILES that were replaced with remote files.
+
+🔍 WHAT'S IN THIS BACKUP:
+All your local files exactly as they were before being replaced.
+Use this backup to recover any local work you want to keep.
+"""
+            elif "Keep Local Only" in description:
+                backup_purpose = """
+📋 WHAT HAPPENED:
+You chose to "Keep Local Only" during conflict resolution.
+This backup contains the REMOTE FILES that were not adopted.
+
+🔍 WHAT'S IN THIS BACKUP:
+All the remote files that were available but not used.
+Use this backup to see what was in the remote repository.
+"""
+            elif "Smart Merge" in description or "conflict" in description.lower():
+                backup_purpose = """
+📋 WHAT HAPPENED:
+A conflict resolution was performed using Smart Merge strategy.
+This backup contains files before any changes were made.
+
+🔍 WHAT'S IN THIS BACKUP:
+Your files exactly as they were before conflict resolution.
+Use this backup to compare or recover specific versions.
+"""
+            else:
+                backup_purpose = """
+📋 WHAT HAPPENED:
+A backup was created for safety during an Ogresync operation.
+
+🔍 WHAT'S IN THIS BACKUP:
+Your files exactly as they were before the operation.
+"""
+
+            readme_content = f"""
+OGRESYNC BACKUP - {folder_name.split('_', 3)[-1].replace('_', ' ').upper()}
+{'=' * 70}
+
+📅 Backup Created: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+📋 Description: {description}
+📂 Backup ID: {backup_id}
+📊 Files Backed Up: {file_count}
+💾 Total Size: {total_size / 1024:.1f} KB
+{backup_purpose}
+
+HOW TO RESTORE FILES:
+{'-' * 20}
+1. Browse the files in this folder - they're organized exactly like your vault
+2. Copy any files you want to restore back to your vault
+3. You can copy individual files or entire folders
+4. Overwrite existing files if you want to restore the old version
+
+FOLDER STRUCTURE:
+{'-' * 15}
+This backup preserves your exact folder structure.
+Each file is in the same relative location as it was in your vault.
+
+SAFETY NOTES:
+{'-' * 12}
+✅ This backup is LOCAL ONLY - it will NOT be synced to GitHub
+✅ Safe to delete this entire folder when you no longer need it
+✅ Automatic cleanup will delete this backup after 30 days
+✅ You can make copies of files you want to keep permanently
+
+TECHNICAL INFO:
+{'-' * 15}
+- Backup Type: File Snapshot
+- Manifest file: backup_manifest.json (contains detailed file list)
+- Original vault path: {self.vault_path}
+- Backup folder: {folder_name}
+
+Generated by Ogresync Backup Manager
+"""
+            
+            readme_path = os.path.join(snapshot_dir, "README.txt")
+            with open(readme_path, 'w', encoding='utf-8') as f:
+                f.write(readme_content)
             
             print(f"✅ File snapshot backup created: {snapshot_dir}")
+            print(f"   📊 {file_count} files backed up ({total_size / 1024:.1f} KB)")
             return snapshot_dir
             
         except Exception as e:
@@ -324,7 +392,7 @@ class OgresyncBackupManager:
     
     def _create_recovery_instructions(self, backup_info: BackupInfo):
         """Create user-friendly recovery instructions"""
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
         # Create recovery instructions in backup directory, not in the main vault
         backup_dir = os.path.join(self.vault_path, '.ogresync-backups')
         os.makedirs(backup_dir, exist_ok=True)
@@ -342,25 +410,7 @@ Description: {backup_info.description}
 RECOVERY OPTIONS:
 """
         
-        if backup_info.backup_type == BackupType.GIT_BRANCH:
-            instructions += f"""
-🌟 GIT BRANCH RECOVERY (Recommended):
-1. View backup content:
-   git checkout {backup_info.git_branch_name}
-   
-2. Create new branch from backup:
-   git checkout -b my-recovery-{backup_info.backup_id}
-   
-3. Return to main and merge if needed:
-   git checkout main
-   git merge my-recovery-{backup_info.backup_id}
-
-🗑️ DELETE BACKUP WHEN NO LONGER NEEDED:
-   git branch -D {backup_info.git_branch_name}
-"""
-        
-        elif backup_info.backup_type == BackupType.FILE_SNAPSHOT:
-            instructions += f"""
+        instructions += f"""
 📁 FILE SNAPSHOT RECOVERY:
 1. Browse backup files:
    Open: {backup_info.file_snapshot_path}
@@ -369,7 +419,7 @@ RECOVERY OPTIONS:
    Copy files from backup folder to your vault
    
 3. View backup manifest:
-   Open: {os.path.join(backup_info.file_snapshot_path, 'backup_manifest.json')}
+   Open: {os.path.join(backup_info.file_snapshot_path or '', 'backup_manifest.json')}
 
 🗑️ DELETE BACKUP WHEN NO LONGER NEEDED:
    Delete folder: {backup_info.file_snapshot_path}
@@ -460,16 +510,6 @@ Generated by Ogresync Backup Manager
     def _delete_backup(self, backup_info: BackupInfo) -> bool:
         """Delete a specific backup"""
         try:
-            if backup_info.backup_type == BackupType.GIT_BRANCH and backup_info.git_branch_name:
-                # Delete git branch
-                result = subprocess.run(['git', 'branch', '-D', backup_info.git_branch_name], 
-                                      cwd=self.vault_path, capture_output=True, text=True)
-                if result.returncode == 0:
-                    print(f"🗑️ Deleted git branch: {backup_info.git_branch_name}")
-                else:
-                    print(f"❌ Failed to delete git branch: {result.stderr}")
-                    return False
-            
             if backup_info.backup_type == BackupType.FILE_SNAPSHOT and backup_info.file_snapshot_path:
                 # Delete snapshot directory
                 if os.path.exists(backup_info.file_snapshot_path):

@@ -24,6 +24,14 @@ except ImportError:
     CONFLICT_RESOLUTION_AVAILABLE = False
 import setup_wizard # Import the new setup wizard module
 
+# Import offline sync manager
+try:
+    import offline_sync_manager
+    OFFLINE_SYNC_AVAILABLE = True
+except ImportError:
+    offline_sync_manager = None
+    OFFLINE_SYNC_AVAILABLE = False
+
 # ------------------------------------------------
 # CONFIG / GLOBALS
 # ------------------------------------------------
@@ -765,10 +773,52 @@ def auto_sync(use_threading=True):
         safe_update_log("🔄 Starting sync process...", 0)
         print("DEBUG: sync_thread started")
         
-        # Ensure immediate UI update
+        # OFFLINE SYNC INTEGRATION - Check network status and handle offline scenarios
+        if OFFLINE_SYNC_AVAILABLE and offline_sync_manager is not None:
+            try:
+                sync_manager = offline_sync_manager.OfflineSyncManager(vault_path, config_data)
+                
+                # Check network status
+                network_state = sync_manager.check_network_availability()
+                
+                # Check if we have offline sessions that need attention
+                summary = sync_manager.get_session_summary()
+                
+                if summary['offline_sessions'] > 0 and network_state.name == 'ONLINE':
+                    safe_update_log("📱 Detected previous offline session. Network restored - processing changes...", 5)
+                    
+                    # Check if we need conflict resolution
+                    if sync_manager.should_trigger_conflict_resolution():
+                        safe_update_log("⚠️ Offline changes may require conflict resolution. Will check after git operations...", 10)
+                    else:
+                        safe_update_log("🔄 Offline changes detected. Will sync after repository checks...", 10)
+                
+                elif network_state.name == 'OFFLINE':
+                    safe_update_log("📴 No network connectivity detected. Entering offline mode...", 10)
+                    # Start offline session
+                    session_id = sync_manager.start_sync_session(network_state)
+                    safe_update_log(f"� Started offline session: {session_id}", 15)
+                    # Continue with local-only operations (will be handled below)
+                    
+            except Exception as e:
+                safe_update_log(f"⚠️ Offline sync manager initialization failed: {e}", 5)
+                print(f"[DEBUG] Offline sync error: {e}")
+                # Continue with normal sync process
+        
+        # Ensure immediate UI update and responsiveness
         time.sleep(0.1)
         
+        # Add periodic UI updates throughout sync process
+        def ensure_ui_responsiveness():
+            if root:
+                try:
+                    root.update_idletasks()
+                    time.sleep(0.01)  # Small delay to prevent overwhelming UI
+                except tk.TclError:
+                    pass  # UI destroyed, ignore
+        
         # Step 0: Validate vault directory exists
+        ensure_ui_responsiveness()
         is_valid, should_continue, new_vault_path = github_setup.validate_vault_directory(vault_path, ui_elements)
         
         if not should_continue:
@@ -810,6 +860,7 @@ def auto_sync(use_threading=True):
         out, err, rc = run_command("git rev-parse HEAD", cwd=vault_path)
         if rc != 0:
             safe_update_log("No existing commits found in your vault. Verifying if the vault is empty...", 5)
+            ensure_ui_responsiveness()
             
             # Safely ensure placeholder file with error handling
             try:
@@ -819,6 +870,7 @@ def auto_sync(use_threading=True):
                 return
             
             safe_update_log("Creating an initial commit to initialize the repository...", 5)
+            ensure_ui_responsiveness()
             run_command("git add -A", cwd=vault_path)
             out_commit, err_commit, rc_commit = run_command('git commit -m "Initial commit (auto-sync)"', cwd=vault_path)
             if rc_commit == 0:
@@ -830,11 +882,85 @@ def auto_sync(use_threading=True):
             safe_update_log("Local repository already contains commits.", 5)
 
         # Step 2: Check network connectivity
+        ensure_ui_responsiveness()
         network_available = is_network_available()
         if not network_available:
             safe_update_log("No internet connection detected. Skipping remote sync operations and proceeding in offline mode.", 10)
         else:
             safe_update_log("Internet connection detected. Proceeding with remote synchronization.", 10)
+                  # OFFLINE SYNC: Check if we have pending offline changes that need immediate sync
+        conflict_resolution_completed = False  # Track if we just completed conflict resolution
+        if OFFLINE_SYNC_AVAILABLE and offline_sync_manager is not None:
+            try:
+                sync_manager = offline_sync_manager.OfflineSyncManager(vault_path, config_data)
+                summary = sync_manager.get_session_summary()
+                
+                if summary['offline_sessions'] > 0 or summary['unpushed_commits'] > 0:
+                    safe_update_log(f"📱 Detected {summary['offline_sessions']} offline session(s) with {summary['unpushed_commits']} unpushed commits", 12)
+                    safe_update_log("🔄 Processing offline changes before standard sync...", 13)
+                    
+                    # Check if conflict resolution is needed
+                    if sync_manager.should_trigger_conflict_resolution():
+                        safe_update_log("⚠️ Offline changes require conflict resolution", 14)
+                        
+                        # Trigger conflict resolution before continuing with sync
+                        if CONFLICT_RESOLUTION_AVAILABLE and conflict_resolution is not None:
+                            safe_update_log("🔧 Activating conflict resolution for offline changes...", 15)
+                            try:
+                                # Use the enhanced conflict resolution system
+                                resolver = conflict_resolution.ConflictResolver(vault_path)
+                                analysis = resolver.engine.analyze_conflicts(config_data.get("GITHUB_REMOTE_URL"))
+                                
+                                if analysis.has_conflicts:
+                                    # Show conflict resolution dialog
+                                    safe_update_log("Opening conflict resolution interface...", 16)
+                                    result = conflict_resolution.resolve_conflicts(vault_path, config_data.get("GITHUB_REMOTE_URL", ""), root)
+                                    
+                                    if result.success:
+                                        safe_update_log("✅ Offline conflicts resolved successfully", 17)
+                                        conflict_resolution_completed = True  # Mark that we completed conflict resolution
+                                        
+                                        # CRITICAL FIX: Immediately push conflict resolution results
+                                        if network_available:
+                                            safe_update_log("📤 Pushing conflict resolution results immediately...", 18)
+                                            push_out, push_err, push_rc = run_command("git push -u origin main", cwd=vault_path)
+                                            if push_rc == 0:
+                                                safe_update_log("✅ Conflict resolution results pushed to GitHub successfully", 19)
+                                            else:
+                                                safe_update_log(f"⚠️ Failed to push conflict resolution results: {push_err}", 19)
+                                                safe_update_log("Will retry push in normal sync flow...", 19)
+                                        
+                                        # Mark sessions as resolved and end them
+                                        for session in sync_manager.offline_state.offline_sessions:
+                                            sync_manager.mark_session_resolved(session.session_id)
+                                            # Properly end the session to allow cleanup
+                                            sync_manager.end_sync_session(session.session_id, 
+                                                                        sync_manager.check_network_availability(), 
+                                                                        sync_manager.get_unpushed_commits())
+                                    else:
+                                        safe_update_log("❌ Conflict resolution failed or cancelled", 17)
+                                        safe_update_log("Continuing with standard sync...", 17)
+                                else:
+                                    safe_update_log("✅ No conflicts detected, proceeding with sync", 16)
+                                    
+                            except Exception as e:
+                                safe_update_log(f"❌ Error during offline conflict resolution: {e}", 16)
+                                print(f"[DEBUG] Offline conflict resolution error: {e}")
+                    else:
+                        safe_update_log("✅ No conflicts detected for offline changes", 14)
+                    
+                    # Clean up resolved sessions (use aggressive cleanup after successful sync)
+                    sync_manager.cleanup_resolved_sessions(aggressive=True)
+                    
+                    # If we completed conflict resolution successfully, mark sessions as completed
+                    if conflict_resolution_completed:
+                        sync_manager.complete_successful_sync()
+                    
+            except Exception as e:
+                safe_update_log(f"⚠️ Error checking offline changes: {e}", 12)
+                print(f"[DEBUG] Offline sync check error: {e}")
+            
+            ensure_ui_responsiveness()
             # Verify remote branch 'main'
             ls_out, ls_err, ls_rc = run_command("git ls-remote --heads origin main", cwd=vault_path)
             if not ls_out.strip():
@@ -854,11 +980,11 @@ def auto_sync(use_threading=True):
                             safe_update_log("❌ Merge conflict detected during sync initialization.", 16)
                             safe_update_log("🔧 Activating 2-stage conflict resolution system...", 17)
                             
-                            try:                                # Create backup branch before conflict resolution
-                                timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-                                backup_branch = f"backup-local-before-sync-init-{timestamp}"
-                                run_command(f"git branch {backup_branch}", cwd=vault_path)
-                                safe_update_log(f"State backed up to: {backup_branch}", 17)
+                            try:
+                                # Create backup using backup manager
+                                backup_id = create_descriptive_backup_dir(vault_path, "before_sync_initialization")
+                                if backup_id:
+                                    safe_update_log(f"Local state backed up: {backup_id}", 17)
                                 
                                 # For sync initialization, we want remote content to take precedence
                                 # Use reset --hard to replace local with remote content (your preference)
@@ -867,10 +993,12 @@ def auto_sync(use_threading=True):
                                 
                                 if reset_rc == 0:
                                     safe_update_log("✅ Successfully synchronized with remote repository", 18)
-                                    safe_update_log(f"📝 Note: Previous local state preserved in backup branch: {backup_branch}", 18)
+                                    if backup_id:
+                                        safe_update_log(f"📝 Note: Previous local state preserved in backup: {backup_id}", 18)
                                 else:
                                     safe_update_log(f"❌ Failed to synchronize with remote: {reset_err}", 18)
-                                    safe_update_log(f"📝 Your local work is safe in backup branch: {backup_branch}", 18)
+                                    if backup_id:
+                                        safe_update_log(f"📝 Your local work is safe in backup: {backup_id}", 18)
                                     network_available = False
                                     
                             except Exception as e:
@@ -884,6 +1012,23 @@ def auto_sync(use_threading=True):
                         network_available = False
             else:
                 safe_update_log("Remote branch 'main' found. Proceeding to pull updates from GitHub...", 10)
+
+            # Ensure upstream tracking is set up to prevent unpushed commit detection issues
+            safe_update_log("Ensuring upstream tracking is configured...", 12)
+            current_branch_out, _, current_branch_rc = run_command("git branch --show-current", cwd=vault_path)
+            if current_branch_rc == 0 and current_branch_out.strip():
+                current_branch = current_branch_out.strip()
+                # Check if upstream is already set
+                upstream_out, _, upstream_rc = run_command(f"git rev-parse --abbrev-ref {current_branch}@{{upstream}}", cwd=vault_path)
+                if upstream_rc != 0:
+                    # Set upstream tracking
+                    set_upstream_out, set_upstream_err, set_upstream_rc = run_command(f"git branch --set-upstream-to=origin/{current_branch} {current_branch}", cwd=vault_path)
+                    if set_upstream_rc == 0:
+                        safe_update_log(f"✅ Configured upstream tracking: {current_branch} -> origin/{current_branch}", 13)
+                    else:
+                        safe_update_log(f"⚠️ Could not set upstream tracking: {set_upstream_err}", 13)
+                else:
+                    safe_update_log(f"✅ Upstream tracking already configured: {current_branch} -> {upstream_out.strip()}", 13)
 
         # Step 3: Stash local changes
         safe_update_log("Stashing any local changes...", 15)
@@ -941,12 +1086,6 @@ def auto_sync(use_threading=True):
                             safe_update_log(f"✅ Successfully replaced local content with {len(content_files)} remote files!", 25)
                             if backup_id:
                                 safe_update_log(f"📝 Note: Previous local state safely backed up: {backup_id}", 25)
-                            else:
-                                # Fallback: Create git branch backup
-                                timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-                                backup_branch = f"backup-local-before-initial-sync-{timestamp}"
-                                run_command(f"git branch {backup_branch}", cwd=vault_path)
-                                safe_update_log(f"📝 Note: Previous local state preserved in backup branch: {backup_branch}", 25)
                         else:
                             safe_update_log(f"❌ Error replacing local content with remote: {reset_err}", 22)
                             safe_update_log("Trying alternative download method...", 22)
@@ -1031,7 +1170,7 @@ def auto_sync(use_threading=True):
             
             # CRITICAL: This step should ONLY trigger for true recovery scenarios
             # In normal sync flows, local should already be up-to-date with remote after Step 4
-              # First, check if we're actually ahead after the pull operation
+            # First, check if we're actually ahead after the pull operation
             # ROBUST FIX: Ensure origin/main reference is fresh before checking ahead count
             safe_update_log("Ensuring remote references are up to date...", 31)
             fetch_out, fetch_err, fetch_rc = run_command("git fetch origin", cwd=vault_path)
@@ -1041,125 +1180,163 @@ def auto_sync(use_threading=True):
                 safe_update_log("⚠️ Could not fetch latest remote references. Skipping ahead check.", 32)
                 safe_update_log("✅ Proceeding with sync (assuming repositories are in sync).", 32)
             else:
-                # Now check ahead count with fresh remote references
-                rev_list_out, rev_list_err, rev_list_rc = run_command("git rev-list --count HEAD ^origin/main", cwd=vault_path)
-                print(f"[DEBUG] git rev-list --count HEAD ^origin/main: out='{rev_list_out}', err='{rev_list_err}', rc={rev_list_rc}")
-                
-                # Additional safety check: verify origin/main exists
+                # First, verify that origin/main tracking is properly set up
                 origin_check_out, origin_check_err, origin_check_rc = run_command("git rev-parse origin/main", cwd=vault_path)
                 print(f"[DEBUG] git rev-parse origin/main: out='{origin_check_out}', err='{origin_check_err}', rc={origin_check_rc}")
                 
                 if origin_check_rc != 0:
                     safe_update_log("⚠️ Remote reference origin/main not found. This may be normal for new repositories.", 32)
                     safe_update_log("✅ Proceeding with sync (assuming repositories are in sync).", 32)
-                elif rev_list_rc == 0 and rev_list_out.strip():
-                    try:
-                        ahead_count = int(rev_list_out.strip())
-                        print(f"[DEBUG] Parsed ahead_count: {ahead_count}")
-                        
-                        # ADDITIONAL SAFETY: Double-check by comparing commit hashes directly
-                        head_hash_out, _, head_hash_rc = run_command("git rev-parse HEAD", cwd=vault_path)
-                        origin_hash_out, _, origin_hash_rc = run_command("git rev-parse origin/main", cwd=vault_path)
-                        
-                        if head_hash_rc == 0 and origin_hash_rc == 0:
-                            head_hash = head_hash_out.strip()
-                            origin_hash = origin_hash_out.strip()
-                            print(f"[DEBUG] HEAD hash: {head_hash}")
-                            print(f"[DEBUG] origin/main hash: {origin_hash}")
-                            
-                            if head_hash == origin_hash:
-                                print(f"[DEBUG] Commit hashes match - repositories are actually in sync!")
-                                safe_update_log("✅ Local repository is in sync with remote (verified by commit hash)", 33)
-                                ahead_count = 0  # Override the incorrect count
-                        
-                        if ahead_count > 0:
-                            # We're ahead after pull - this should only happen in recovery scenarios
-                            # Be VERY strict about recovery detection to avoid false positives
-                            
-                            # 1. Check if the most recent commit message indicates recovery (within last 3 commits)
-                            is_recovery_commit = False
-                            recent_commits_out, recent_commits_err, recent_commits_rc = run_command("git log --oneline -3", cwd=vault_path)
-                            if recent_commits_rc == 0:
-                                commit_msgs = recent_commits_out.strip().lower()
-                                # Very specific recovery indicators
-                                recovery_indicators = ["ogresync recovery", "fix rebase", "fix merge", "restore after", "emergency fix", "manual git recovery"]
-                                is_recovery_commit = any(indicator in commit_msgs for indicator in recovery_indicators)
-                                print(f"[DEBUG] Recent commits check: is_recovery_commit={is_recovery_commit}")
-                            
-                            # 2. Check if we JUST resolved incomplete git operations (marker file must be recent)
-                            git_dir = os.path.join(vault_path, '.git')
-                            recovery_marker_file = os.path.join(git_dir, 'ogresync_recovery_flag')
-                            has_recent_recovery_marker = False
-                            if os.path.exists(recovery_marker_file):
-                                try:
-                                    # Check if marker is recent (created within last 5 minutes)
-                                    marker_age = time.time() - os.path.getmtime(recovery_marker_file)
-                                    has_recent_recovery_marker = marker_age < 300  # 5 minutes
-                                    print(f"[DEBUG] Recovery marker age: {marker_age:.1f}s, recent: {has_recent_recovery_marker}")
-                                    if not has_recent_recovery_marker:
-                                        # Remove stale marker
-                                        os.remove(recovery_marker_file)
-                                        print(f"[DEBUG] Removed stale recovery marker")
-                                except Exception as e:
-                                    print(f"[DEBUG] Error checking recovery marker: {e}")
-                                    has_recent_recovery_marker = False
-                            else:
-                                print(f"[DEBUG] No recovery marker file found")
-                            
-                            # 3. REMOVED: Don't check for backup branches as they can be old/stale
-                            # Old backup branches don't indicate current recovery scenarios
-                            
-                            # Only push if we have STRONG recent recovery indicators
-                            # Normal sync should never be ahead after successful pull
-                            if is_recovery_commit or has_recent_recovery_marker:
-                                safe_update_log(f"🔄 Local repository has {ahead_count} unpushed commit(s) from recovery operations", 33)
-                                safe_update_log("📤 Pushing recovery commits to remote before opening Obsidian...", 34)
-                                # Push the recovery commits
-                                push_out, push_err, push_rc = run_command("git push origin main", cwd=vault_path)
-                                
-                                if push_rc == 0:
-                                    safe_update_log("✅ Successfully pushed recovery commits to remote", 35)
-                                    # Clean up recovery marker if it exists
-                                    if has_recent_recovery_marker:
-                                        try:
-                                            os.remove(recovery_marker_file)
-                                        except:
-                                            pass
-                                else:
-                                    # Try force push if regular push fails
-                                    if "non-fast-forward" in push_err.lower() or "rejected" in push_err.lower():
-                                        safe_update_log("🔄 Attempting force push for recovery commits...", 34)
-                                        force_push_out, force_push_err, force_push_rc = run_command("git push --force-with-lease origin main", cwd=vault_path)
-                                        if force_push_rc == 0:
-                                            safe_update_log("✅ Successfully force-pushed recovery commits to remote", 35)
-                                            # Clean up recovery marker if it exists
-                                            if has_recent_recovery_marker:
-                                                try:
-                                                    os.remove(recovery_marker_file)
-                                                except:
-                                                    pass
-                                        else:
-                                            safe_update_log(f"❌ Force push failed: {force_push_err}", 35)
-                                            safe_update_log("📝 Recovery commits remain local. Continuing with sync...", 35)
-                                    else:
-                                        safe_update_log(f"❌ Push failed: {push_err}", 35)
-                                        safe_update_log("📝 Recovery commits remain local. Continuing with sync...", 35)
-                            else:
-                                # Local is ahead but this is NOT a recovery scenario
-                                # This is normal workflow - let Step 9 handle the push after Obsidian
-                                safe_update_log(f"📝 Local repository has {ahead_count} unpushed commit(s) from normal workflow", 33)
-                                safe_update_log("✅ This appears to be normal workflow, not recovery. Will push after Obsidian session.", 33)
-                                print(f"[DEBUG] Normal workflow detected: {ahead_count} commits ahead, but no recovery indicators")
-                        else:
-                            safe_update_log("✅ Local repository is in sync with remote", 33)
-                            print(f"[DEBUG] Repository in sync: ahead_count = {ahead_count}")
-                    except ValueError as ve:
-                        safe_update_log("⚠️ Could not determine local/remote status", 33)
-                        print(f"[DEBUG] ValueError parsing ahead_count from '{rev_list_out}': {ve}")
                 else:
-                    safe_update_log("✅ Local repository is in sync with remote", 33)
-                    print(f"[DEBUG] No output from rev-list command or command failed: rc={rev_list_rc}, out='{rev_list_out}'")
-                    print(f"[DEBUG] This is the expected case when local and remote are in sync")
+                    # origin/main exists, now safely check ahead count
+                    rev_list_out, rev_list_err, rev_list_rc = run_command("git rev-list --count HEAD ^origin/main", cwd=vault_path)
+                    print(f"[DEBUG] git rev-list --count HEAD ^origin/main: out='{rev_list_out}', err='{rev_list_err}', rc={rev_list_rc}")
+                    
+                    # Double-check: if rev-list fails or gives suspect results, verify with commit hash comparison
+                    if rev_list_rc != 0 or not rev_list_out.strip():
+                        # rev-list failed, assume in sync
+                        print(f"[DEBUG] rev-list command failed or returned empty. Assuming in sync.")
+                        safe_update_log("✅ Local repository is in sync with remote", 33)
+                    else:
+                        # Parse ahead count but verify with hash comparison for safety
+                        try:
+                            ahead_count = int(rev_list_out.strip())
+                            print(f"[DEBUG] Parsed ahead_count from rev-list: {ahead_count}")
+                            
+                            # SAFETY CHECK: Compare commit hashes to verify the count
+                            head_hash_out, _, head_hash_rc = run_command("git rev-parse HEAD", cwd=vault_path)
+                            origin_hash_out, _, origin_hash_rc = run_command("git rev-parse origin/main", cwd=vault_path)
+                            
+                            if head_hash_rc == 0 and origin_hash_rc == 0:
+                                head_hash = head_hash_out.strip()
+                                origin_hash = origin_hash_out.strip()
+                                print(f"[DEBUG] HEAD hash: {head_hash}")
+                                print(f"[DEBUG] origin/main hash: {origin_hash}")
+                                
+                                if head_hash == origin_hash:
+                                    print(f"[DEBUG] Commit hashes match - repositories are actually in sync! Overriding ahead_count.")
+                                    safe_update_log("✅ Local repository is in sync with remote (verified by commit hash)", 33)
+                                    ahead_count = 0  # Override the incorrect count
+                            
+                            if ahead_count > 0:
+                                # We're ahead after pull - this should only happen in recovery scenarios
+                                # Be VERY strict about recovery detection to avoid false positives
+                                
+                                # 1. Check if the most recent commit message indicates recovery or conflict resolution
+                                is_recovery_commit = False
+                                is_conflict_resolution_commit = False
+                                recent_commits_out, recent_commits_err, recent_commits_rc = run_command("git log --oneline -3", cwd=vault_path)
+                                if recent_commits_rc == 0:
+                                    commit_msgs = recent_commits_out.strip().lower()
+                                    # Very specific recovery indicators
+                                    recovery_indicators = ["ogresync recovery", "fix rebase", "fix merge", "restore after", "emergency fix", "manual git recovery"]
+                                    is_recovery_commit = any(indicator in commit_msgs for indicator in recovery_indicators)
+                                    
+                                    # Conflict resolution indicators
+                                    conflict_resolution_indicators = ["resolve conflicts using stage 2", "stage 2 resolution", "conflict resolution", "smart merge"]
+                                    is_conflict_resolution_commit = any(indicator in commit_msgs for indicator in conflict_resolution_indicators)
+                                    
+                                    print(f"[DEBUG] Recent commits check: is_recovery_commit={is_recovery_commit}, is_conflict_resolution_commit={is_conflict_resolution_commit}")
+                                    print(f"[DEBUG] Recent commit messages: {commit_msgs}")
+                                
+                                # 2. Check if we JUST resolved incomplete git operations (marker file must be recent)
+                                git_dir = os.path.join(vault_path, '.git')
+                                recovery_marker_file = os.path.join(git_dir, 'ogresync_recovery_flag')
+                                has_recent_recovery_marker = False
+                                if os.path.exists(recovery_marker_file):
+                                    try:
+                                        # Check if marker is recent (created within last 5 minutes)
+                                        marker_age = time.time() - os.path.getmtime(recovery_marker_file)
+                                        has_recent_recovery_marker = marker_age < 300  # 5 minutes
+                                        print(f"[DEBUG] Recovery marker age: {marker_age:.1f}s, recent: {has_recent_recovery_marker}")
+                                        if not has_recent_recovery_marker:
+                                            # Remove stale marker
+                                            os.remove(recovery_marker_file)
+                                            print(f"[DEBUG] Removed stale recovery marker")
+                                    except Exception as e:
+                                        print(f"[DEBUG] Error checking recovery marker: {e}")
+                                        has_recent_recovery_marker = False
+                                else:
+                                    print(f"[DEBUG] No recovery marker file found")
+                                
+                                # 3. REMOVED: Don't check for backup branches as they can be old/stale
+                                # Old backup branches don't indicate current recovery scenarios
+                                
+                                # Only push if we have STRONG recent recovery indicators OR conflict resolution
+                                # Normal sync should never be ahead after successful pull
+                                if is_recovery_commit or has_recent_recovery_marker or is_conflict_resolution_commit or conflict_resolution_completed:
+                                    if conflict_resolution_completed or is_conflict_resolution_commit:
+                                        safe_update_log(f"🔄 Local repository has {ahead_count} unpushed commit(s) from conflict resolution", 33)
+                                        safe_update_log("📤 Pushing conflict resolution commits to remote before opening Obsidian...", 34)
+                                    else:
+                                        safe_update_log(f"🔄 Local repository has {ahead_count} unpushed commit(s) from recovery operations", 33)
+                                        safe_update_log("📤 Pushing recovery commits to remote before opening Obsidian...", 34)
+                                    # Push the recovery commits
+                                    push_out, push_err, push_rc = run_command("git push -u origin main", cwd=vault_path)
+                                    
+                                    if push_rc == 0:
+                                        safe_update_log("✅ Successfully pushed recovery commits to remote", 35)
+                                        # Clean up recovery marker if it exists
+                                        if has_recent_recovery_marker:
+                                            try:
+                                                os.remove(recovery_marker_file)
+                                            except:
+                                                pass
+                                    else:
+                                        # Try force push if regular push fails
+                                        if "non-fast-forward" in push_err.lower() or "rejected" in push_err.lower():
+                                            safe_update_log("🔄 Attempting force push for recovery commits...", 34)
+                                            force_push_out, force_push_err, force_push_rc = run_command("git push --force-with-lease origin main", cwd=vault_path)
+                                            if force_push_rc == 0:
+                                                safe_update_log("✅ Successfully force-pushed recovery commits to remote", 35)
+                                                # Clean up recovery marker if it exists
+                                                if has_recent_recovery_marker:
+                                                    try:
+                                                        os.remove(recovery_marker_file)
+                                                    except:
+                                                        pass
+                                            else:
+                                                safe_update_log(f"❌ Force push failed: {force_push_err}", 35)
+                                                safe_update_log("📝 Recovery commits remain local. Continuing with sync...", 35)
+                                        else:
+                                            safe_update_log(f"❌ Push failed: {push_err}", 35)
+                                            safe_update_log("📝 Recovery commits remain local. Continuing with sync...", 35)
+                                else:
+                                    # Local is ahead but check if this is from conflict resolution or normal workflow
+                                    if conflict_resolution_completed:
+                                        # We just completed conflict resolution - push immediately
+                                        safe_update_log(f"🔄 Local repository has {ahead_count} unpushed commit(s) from conflict resolution", 33)
+                                        safe_update_log("📤 Pushing conflict resolution results immediately...", 34)
+                                        # Push the conflict resolution commits
+                                        push_out, push_err, push_rc = run_command("git push -u origin main", cwd=vault_path)
+                                        
+                                        if push_rc == 0:
+                                            safe_update_log("✅ Successfully pushed conflict resolution to remote", 35)
+                                        else:
+                                            # Try force push if regular push fails
+                                            if "non-fast-forward" in push_err.lower() or "rejected" in push_err.lower():
+                                                safe_update_log("🔄 Attempting force push for conflict resolution...", 34)
+                                                force_push_out, force_push_err, force_push_rc = run_command("git push --force-with-lease origin main", cwd=vault_path)
+                                                if force_push_rc == 0:
+                                                    safe_update_log("✅ Successfully force-pushed conflict resolution to remote", 35)
+                                                else:
+                                                    safe_update_log(f"❌ Force push failed: {force_push_err}", 35)
+                                                    safe_update_log("📝 Conflict resolution remains local. Continuing with sync...", 35)
+                                            else:
+                                                safe_update_log(f"❌ Push failed: {push_err}", 35)
+                                                safe_update_log("📝 Conflict resolution remains local. Continuing with sync...", 35)
+                                    else:
+                                        # This is normal workflow - let Step 9 handle the push after Obsidian
+                                        safe_update_log(f"📝 Local repository has {ahead_count} unpushed commit(s) from normal workflow", 33)
+                                        safe_update_log("✅ This appears to be normal workflow, not recovery. Will push after Obsidian session.", 33)
+                                        print(f"[DEBUG] Normal workflow detected: {ahead_count} commits ahead, but no recovery indicators")
+                            else:
+                                safe_update_log("✅ Local repository is in sync with remote", 33)
+                                print(f"[DEBUG] Repository in sync: ahead_count = {ahead_count}")
+                        except ValueError as ve:
+                            safe_update_log("⚠️ Could not determine local/remote status", 33)
+                            print(f"[DEBUG] ValueError parsing ahead_count from '{rev_list_out}': {ve}")
+            
                 
         # Step 5: Handle stashed changes - Always discard during initial sync (before Obsidian)
         # For initial sync phase, remote content always takes precedence to ensure clean state
@@ -1258,6 +1435,16 @@ def auto_sync(use_threading=True):
                     
                     if resolution_result.success:
                         safe_update_log("✅ Post-Obsidian session changes resolved successfully using 2-stage system", 65)
+                        
+                        # CRITICAL FIX: Immediately push post-Obsidian conflict resolution results
+                        safe_update_log("📤 Pushing post-Obsidian conflict resolution results immediately...", 66)
+                        push_out, push_err, push_rc = run_command("git push -u origin main", cwd=vault_path)
+                        if push_rc == 0:
+                            safe_update_log("✅ Post-Obsidian conflict resolution results pushed to GitHub successfully", 67)
+                        else:
+                            safe_update_log(f"⚠️ Failed to push post-Obsidian conflict resolution results: {push_err}", 67)
+                            safe_update_log("Will retry push in normal sync flow...", 67)
+                        
                         if backup_id:
                             safe_update_log(f"📝 Note: Safety backup available if needed: {backup_id}", 65)
                     else:
@@ -1321,6 +1508,16 @@ def auto_sync(use_threading=True):
                         
                         if resolution_result.success:
                             safe_update_log("✅ Fallback remote conflicts resolved successfully using 2-stage system", 55)
+                            
+                            # CRITICAL FIX: Immediately push fallback conflict resolution results
+                            safe_update_log("📤 Pushing fallback conflict resolution results immediately...", 56)
+                            push_out, push_err, push_rc = run_command("git push -u origin main", cwd=vault_path)
+                            if push_rc == 0:
+                                safe_update_log("✅ Fallback conflict resolution results pushed to GitHub successfully", 57)
+                            else:
+                                safe_update_log(f"⚠️ Failed to push fallback conflict resolution results: {push_err}", 57)
+                                safe_update_log("Will retry push in normal sync flow...", 57)
+                            
                             if backup_id:
                                 safe_update_log(f"📝 Note: Safety backup available if needed: {backup_id}", 55)
                         else:
@@ -1358,7 +1555,8 @@ def auto_sync(use_threading=True):
             unpushed = get_unpushed_commits(vault_path)
             if unpushed:
                 safe_update_log("Pushing all unpushed commits to GitHub...", 70)
-                out, err, rc = run_command("git push origin main", cwd=vault_path)
+                # Use -u flag to ensure upstream tracking is set/maintained
+                out, err, rc = run_command("git push -u origin main", cwd=vault_path)
                 if rc != 0:
                     if "Could not resolve hostname" in err or "network" in err.lower():
                         safe_update_log("❌ Unable to push changes due to network issues. Your changes remain locally committed and will be pushed once connectivity is restored.", 80)
@@ -1429,7 +1627,7 @@ def auto_sync(use_threading=True):
                                 safe_update_log("✅ Successfully integrated remote changes without conflicts.", 78)
                                 # Try push again
                                 safe_update_log("📤 Attempting push again...", 79)
-                                push2_out, push2_err, push2_rc = run_command("git push origin main", cwd=vault_path)
+                                push2_out, push2_err, push2_rc = run_command("git push -u origin main", cwd=vault_path)
                                 if push2_rc == 0:
                                     safe_update_log("✅ All changes have been successfully pushed to GitHub after integration.", 80)
                                 else:
@@ -1484,8 +1682,26 @@ def auto_sync(use_threading=True):
                         safe_update_log(f"❌ Push operation failed: {err}", 80)
                     return
                 safe_update_log("✅ All changes have been successfully pushed to GitHub.", 80)
+                
+                # Mark offline sessions as completed after successful push
+                if OFFLINE_SYNC_AVAILABLE and offline_sync_manager is not None:
+                    try:
+                        sync_manager = offline_sync_manager.OfflineSyncManager(vault_path, config_data)
+                        sync_manager.complete_successful_sync()
+                        # Immediately clean up completed sessions since sync was successful
+                        sync_manager.cleanup_resolved_sessions(aggressive=True)
+                    except Exception as e:
+                        print(f"[DEBUG] Error completing offline sync: {e}")
             else:
                 safe_update_log("No new commits to push.", 80)
+                
+                # Even when there are no new commits, clean up completed offline sessions
+                if OFFLINE_SYNC_AVAILABLE and offline_sync_manager is not None:
+                    try:
+                        sync_manager = offline_sync_manager.OfflineSyncManager(vault_path, config_data)
+                        sync_manager.cleanup_resolved_sessions(aggressive=True)
+                    except Exception as e:
+                        print(f"[DEBUG] Error cleaning up offline sessions: {e}")
         else:
             safe_update_log("Offline mode: Changes have been committed locally. They will be automatically pushed when an internet connection is available.", 80)
 
@@ -1496,6 +1712,14 @@ def auto_sync(use_threading=True):
             safe_update_log("🎉 Synchronization complete! Your local changes have been committed and pushed to GitHub.", 100)
         else:
             safe_update_log("🎉 Synchronization complete! No changes were made during this session.", 100)
+        
+        # Final cleanup: Remove any remaining completed offline sessions 
+        if OFFLINE_SYNC_AVAILABLE and offline_sync_manager is not None:
+            try:
+                sync_manager = offline_sync_manager.OfflineSyncManager(vault_path, config_data)
+                sync_manager.cleanup_resolved_sessions(aggressive=True)
+            except Exception as e:
+                print(f"[DEBUG] Error in final offline session cleanup: {e}")
         
         safe_update_log("You may now close this window.", 100)
 
@@ -1936,8 +2160,17 @@ def main():
         # If you truly want NO window at all, you can remove the UI entirely.
         # But let's provide a small log window for user feedback.
         print("DEBUG: Running in sync mode")
-        root, log_text, progress_bar = ui_elements.create_minimal_ui(auto_run=True)
-        auto_sync()
+        root, log_text, progress_bar = ui_elements.create_minimal_ui(auto_run=False)
+        
+        # Start auto_sync in a background thread to keep UI responsive
+        def start_sync_after_ui():
+            # Small delay to ensure UI is fully loaded
+            time.sleep(0.2)
+            auto_sync(use_threading=True)  # Ensure threading is enabled
+        
+        # Schedule sync to start after UI is ready
+        threading.Thread(target=start_sync_after_ui, daemon=True).start()
+        
         root.mainloop()
     else:
         # Not set up yet: run the progressive setup wizard

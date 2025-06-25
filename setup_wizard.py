@@ -2101,17 +2101,20 @@ Created: {time.strftime('%Y-%m-%d %H:%M:%S')}
                     if local_ahead_count > 0:
                         print(f"[DEBUG] SAFETY WARNING: Local branch is {local_ahead_count} commits ahead!")
                         # This is potentially dangerous - local commits would be lost
-                        # Create a backup branch
-                        backup_branch_name = f"backup-before-reset-{int(time.time())}"
-                        backup_result = subprocess.run(['git', 'branch', backup_branch_name], 
-                                                     cwd=vault_path, capture_output=True, text=True)
-                        if backup_result.returncode == 0:
-                            print(f"[DEBUG] Created backup branch: {backup_branch_name}")
-                            self._update_status(f"⚠️ Created backup branch '{backup_branch_name}' for local commits")
-                        else:
-                            print(f"[DEBUG] Failed to create backup branch: {backup_result.stderr}")
-                            # This is dangerous - abort reset
-                            return False, "Cannot safely reset: local branch has commits that would be lost and backup failed"
+                        # Create a backup using backup manager
+                        try:
+                            from backup_manager import create_setup_safety_backup
+                            backup_id = create_setup_safety_backup(vault_path, "before-reset-operation")
+                            if backup_id:
+                                print(f"[DEBUG] Created safety backup: {backup_id}")
+                                self._update_status(f"⚠️ Created safety backup '{backup_id}' for local commits")
+                            else:
+                                print(f"[DEBUG] Failed to create safety backup")
+                                # This is dangerous - abort reset
+                                return False, "Cannot safely reset: local branch has commits that would be lost and backup failed"
+                        except ImportError:
+                            print(f"[DEBUG] Backup manager not available - aborting dangerous reset")
+                            return False, "Cannot safely reset: local branch has commits that would be lost and backup system unavailable"
             
             # Safety check 3: Alternative approach - try checkout instead of reset for safety
             print(f"[DEBUG] Trying safer approach: git checkout instead of reset...")

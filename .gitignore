@@ -4,11 +4,12 @@ __pycache__/
 *.pyo
 *.pyd
 
-# Test files
-test_*.py
-validate_*.py
+# Test results and analysis files
+tests/ogresync_*_test_results.json
+tests/TEST_RESULTS_SUMMARY.md
+tests/*_ANALYSIS.md
 
-# Documentation and summary files
+# Documentation files that are generated/temporary
 *_SUMMARY.md
 *_FIXES.md
 *_COMPLETE.md

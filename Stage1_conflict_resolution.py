@@ -8,13 +8,13 @@ HISTORY PRESERVATION GUARANTEE:
 - ALL git history is preserved - no commits are ever lost
 - NO destructive operations (no force push, no reset --hard)
 - ALL strategies use merge-based approaches to preserve complete git history
-- Automatic backup branches are created for every operation
-- Users can always recover to any previous state
+- Automatic file-based backups are created for every operation
+- Users can always recover to any previous state via file backups
 
 Stage 1 - High-level Strategy:
 - Smart Merge: Combines files from both repositories intelligently using git merge
 - Keep Local Only: Preserves local files while merging remote history (non-destructive)
-- Keep Remote Only: Adopts remote files while preserving local history in backup branches
+- Keep Remote Only: Adopts remote files while preserving local files in backup folders
 
 Stage 2 - File-by-file Resolution (for Smart Merge conflicts):
 - Manual merge, auto merge, keep local, keep remote for individual files
@@ -213,7 +213,7 @@ class ConflictResolutionEngine:
         except Exception as e:
             return "", f"Unexpected error: {e}", 1
     
-    def _create_safety_backup_branch(self, operation_name: str) -> str:
+    def _create_safety_backup(self, operation_name: str) -> str:
         """Create a safety backup using the backup manager"""
         if self.backup_manager and BACKUP_MANAGER_AVAILABLE and BackupReason:
             backup_id = self.backup_manager.create_backup(
@@ -224,18 +224,10 @@ class ConflictResolutionEngine:
                 print(f"✅ Safety backup created: {backup_id}")
                 return backup_id
             else:
-                print("⚠️ Could not create backup using backup manager - falling back to legacy")
-        
-        # Fallback to legacy backup branch creation
-        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-        backup_branch_name = f"ogresync-backup-{operation_name}-{timestamp}"
-        
-        stdout, stderr, rc = self._run_git_command(f"git branch {backup_branch_name}")
-        if rc == 0:
-            print(f"✅ Safety backup created: {backup_branch_name}")
-            return backup_branch_name
+                print("❌ Could not create backup using backup manager")
+                return ""
         else:
-            print(f"⚠️ Could not create safety backup: {stderr}")
+            print("❌ Backup manager not available - cannot create safety backup")
             return ""
     
     def _ensure_git_config(self):
@@ -548,21 +540,21 @@ class ConflictResolutionEngine:
         print(f"[DEBUG] Applying strategy: {strategy.value}")
         
         # Create safety backup before any operation
-        backup_branch = self._create_safety_backup_branch(strategy.value)
+        backup_id = self._create_safety_backup(strategy.value)
         
         try:
             if strategy == ConflictStrategy.SMART_MERGE:
-                return self._apply_smart_merge(analysis, backup_branch)
+                return self._apply_smart_merge(analysis, backup_id)
             elif strategy == ConflictStrategy.KEEP_LOCAL_ONLY:
-                return self._apply_keep_local_only(analysis, backup_branch)
+                return self._apply_keep_local_only(analysis, backup_id)
             elif strategy == ConflictStrategy.KEEP_REMOTE_ONLY:
-                return self._apply_keep_remote_only(analysis, backup_branch)
+                return self._apply_keep_remote_only(analysis, backup_id)
             else:                return ResolutionResult(
                     success=False,
                     strategy=None,
                     message=f"Unknown strategy: {strategy}",
                     files_processed=[],
-                    backup_created=backup_branch
+                    backup_created=backup_id
                 )
         except Exception as e:
             print(f"[ERROR] Error applying strategy {strategy.value}: {e}")
@@ -571,10 +563,10 @@ class ConflictResolutionEngine:
                 strategy=strategy,
                 message=f"Error applying strategy: {e}",
                 files_processed=[],
-                backup_created=backup_branch
+                backup_created=backup_id
             )
 
-    def _apply_smart_merge(self, analysis: ConflictAnalysis, backup_branch: str) -> ResolutionResult:
+    def _apply_smart_merge(self, analysis: ConflictAnalysis, backup_id: str) -> ResolutionResult:
         """Apply smart merge strategy - combines all files from both repositories intelligently"""
         print("[DEBUG] Applying smart merge strategy with comprehensive file combination")
         
@@ -593,7 +585,7 @@ class ConflictResolutionEngine:
                         strategy=ConflictStrategy.SMART_MERGE,
                         message=f"Found {len(analysis.conflicted_files)} files with content conflicts but Stage 2 resolution not available. Please resolve conflicts manually.",
                         files_processed=files_processed,
-                        backup_created=backup_branch
+                        backup_created=backup_id
                     )
                 
                 # Initiate Stage 2 resolution for conflicted files
@@ -605,7 +597,7 @@ class ConflictResolutionEngine:
                         strategy=ConflictStrategy.SMART_MERGE,
                         message="Stage 2 conflict resolution failed or was cancelled",
                         files_processed=files_processed,
-                        backup_created=backup_branch
+                        backup_created=backup_id
                     )
                 
                 # Apply Stage 2 resolutions
@@ -616,7 +608,7 @@ class ConflictResolutionEngine:
                         strategy=ConflictStrategy.SMART_MERGE,
                         message="Failed to apply Stage 2 resolutions",
                         files_processed=files_processed,
-                        backup_created=backup_branch
+                        backup_created=backup_id
                     )
                 
                 print(f"✅ Stage 2 resolution completed for {len(stage2_result.resolved_files)} files")
@@ -646,7 +638,7 @@ class ConflictResolutionEngine:
                     strategy=ConflictStrategy.SMART_MERGE,
                     message=f"Failed to fetch remote changes: {stderr}",
                     files_processed=files_processed,
-                    backup_created=backup_branch
+                    backup_created=backup_id
                 )
             
             # STEP 4: Get the correct remote branch
@@ -697,7 +689,7 @@ class ConflictResolutionEngine:
                         strategy=ConflictStrategy.SMART_MERGE,
                         message=f"Automatic merge failed: {stderr}. This may require manual conflict resolution.",
                         files_processed=files_processed,
-                        backup_created=backup_branch
+                        backup_created=backup_id
                     )
                 
                 print("✅ Git merge completed")            # STEP 6: Ensure ALL files from both repositories are present (but be cautious if Stage 2 already ran)
@@ -764,7 +756,7 @@ class ConflictResolutionEngine:
                 strategy=ConflictStrategy.SMART_MERGE,
                 message=f"Smart merge completed successfully - {len(all_files)} files combined from both repositories",
                 files_processed=files_processed,
-                backup_created=backup_branch
+                backup_created=backup_id
             )
             
         except Exception as e:
@@ -773,10 +765,10 @@ class ConflictResolutionEngine:
                 strategy=ConflictStrategy.SMART_MERGE,
                 message=f"Error during smart merge: {e}",
                 files_processed=files_processed,
-                backup_created=backup_branch
+                backup_created=backup_id
             )
     
-    def _apply_keep_local_only(self, analysis: ConflictAnalysis, backup_branch: str) -> ResolutionResult:
+    def _apply_keep_local_only(self, analysis: ConflictAnalysis, backup_id: str) -> ResolutionResult:
         """Apply keep local strategy - ensure both local and remote repositories have local content"""
         print("[DEBUG] Applying keep local strategy - both repos will have local content")
         
@@ -785,11 +777,11 @@ class ConflictResolutionEngine:
         try:
             # FIRST: Create comprehensive backup of remote content using backup manager
             if backup_integration and BACKUP_MANAGER_AVAILABLE:
-                backup_id = backup_integration.create_keep_local_only_backup(self.vault_path)
-                if backup_id:
-                    print(f"✅ Created comprehensive backup of remote content: {backup_id}")
+                remote_backup_id = backup_integration.create_keep_local_only_backup(self.vault_path)
+                if remote_backup_id:
+                    print(f"✅ Created comprehensive backup of remote content: {remote_backup_id}")
                 else:
-                    print("⚠️ Remote content backup creation failed - proceeding with git branch backup only")
+                    print("⚠️ Remote content backup creation failed - conflict resolution may proceed without backup")
             
             # Commit any uncommitted local changes
             stdout, stderr, rc = self._run_git_command("git status --porcelain")
@@ -879,7 +871,7 @@ class ConflictResolutionEngine:
                 # Push the merged history to remote so both repos have local content
                 print("Pushing local content to remote repository...")
                 current_branch = self._get_current_branch()
-                stdout, stderr, push_rc = self._run_git_command(f"git push origin {current_branch}")
+                stdout, stderr, push_rc = self._run_git_command(f"git push -u origin {current_branch}")
                 
                 if push_rc == 0:
                     print("✅ Successfully pushed local content to remote - both repos now have local content")
@@ -893,7 +885,7 @@ class ConflictResolutionEngine:
                     strategy=ConflictStrategy.KEEP_LOCAL_ONLY,
                     message=message,
                     files_processed=files_processed,
-                    backup_created=backup_branch
+                    backup_created=backup_id
                 )
             else:
                 # Try alternative approach if merge fails
@@ -943,7 +935,7 @@ class ConflictResolutionEngine:
                         
                         # Try to push
                         current_branch = self._get_current_branch()
-                        stdout, stderr, push_rc = self._run_git_command(f"git push origin {current_branch}")
+                        stdout, stderr, push_rc = self._run_git_command(f"git push -u origin {current_branch}")
                         
                         if push_rc == 0:
                             message = f"Both repositories now have local content via reset approach ({len(files_processed)} files)"
@@ -955,7 +947,7 @@ class ConflictResolutionEngine:
                             strategy=ConflictStrategy.KEEP_LOCAL_ONLY,
                             message=message,
                             files_processed=files_processed,
-                            backup_created=backup_branch
+                            backup_created=backup_id
                         )
                 
                 # If all approaches fail, return error with detailed information
@@ -964,7 +956,7 @@ class ConflictResolutionEngine:
                     strategy=ConflictStrategy.KEEP_LOCAL_ONLY,
                     message=f"Could not merge remote history. Original error: {stderr}. Reset error: {reset_stderr if 'reset_stderr' in locals() else 'N/A'}",
                     files_processed=files_processed,
-                    backup_created=backup_branch
+                    backup_created=backup_id
                 )
         
         except Exception as e:
@@ -973,7 +965,7 @@ class ConflictResolutionEngine:
                 strategy=ConflictStrategy.KEEP_LOCAL_ONLY,
                 message=f"Error in keep local strategy: {e}",
                 files_processed=files_processed,
-                backup_created=backup_branch
+                backup_created=backup_id
             )
     
     def _get_current_branch(self) -> str:
@@ -992,7 +984,7 @@ class ConflictResolutionEngine:
         except:
             return "main"
     
-    def _apply_keep_remote_only(self, analysis: ConflictAnalysis, backup_branch: str) -> ResolutionResult:
+    def _apply_keep_remote_only(self, analysis: ConflictAnalysis, backup_id: str) -> ResolutionResult:
         """Apply keep remote strategy - adopt remote files while preserving local history in backup"""
         print("[DEBUG] Applying keep remote strategy with history preservation")
         
@@ -1001,11 +993,13 @@ class ConflictResolutionEngine:
         try:
             # FIRST: Create comprehensive backup of local files using backup manager
             if backup_integration and BACKUP_MANAGER_AVAILABLE:
-                backup_id = backup_integration.create_keep_remote_only_backup(self.vault_path)
-                if backup_id:
-                    print(f"✅ Created comprehensive backup: {backup_id}")
+                # Only backup local files that exist (not remote-only files)
+                local_files_to_backup = analysis.local_files if hasattr(analysis, 'local_files') else None
+                local_backup_id = backup_integration.create_keep_remote_only_backup(self.vault_path, local_files_to_backup)
+                if local_backup_id:
+                    print(f"✅ Created comprehensive backup: {local_backup_id}")
                 else:
-                    print("⚠️ Backup creation failed - proceeding with git branch backup only")
+                    print("⚠️ Backup creation failed - conflict resolution may proceed without backup")
             
             # Commit any uncommitted local changes to preserve them
             stdout, stderr, rc = self._run_git_command("git status --porcelain")
@@ -1014,10 +1008,9 @@ class ConflictResolutionEngine:
                 self._run_git_command('git commit -m "Backup local changes before adopting remote files"')
                 print("✅ Local changes backed up in git history")
             
-            # Update the backup branch to include any new commits
-            if backup_branch:
-                self._run_git_command(f"git branch -f {backup_branch}")
-                print(f"✅ Updated backup branch: {backup_branch}")
+            # Note: backup_id contains the backup ID from backup manager (not a git branch)
+            if local_backup_id:
+                print(f"✅ Backup created with ID: {local_backup_id}")
             
             # Fetch remote to get latest state
             stdout, stderr, rc = self._run_git_command("git fetch origin")
@@ -1027,7 +1020,7 @@ class ConflictResolutionEngine:
                     strategy=ConflictStrategy.KEEP_REMOTE_ONLY,
                     message=f"Failed to fetch remote: {stderr}",
                     files_processed=files_processed,
-                    backup_created=backup_branch
+                    backup_created=backup_id
                 )
             
             # CRITICAL: For true functional equivalence to reset --hard, we need to:
@@ -1106,7 +1099,8 @@ class ConflictResolutionEngine:
                     # Get current files after checkout to check for extras to remove
                     current_files = set()
                     for root, dirs, files in os.walk(self.vault_path):
-                        if '.git' in root:
+                        # Skip .git and backup directories to prevent deleting backups!
+                        if '.git' in root or '.ogresync-backups' in root:
                             continue
                         for file in files:
                             if not file.startswith('.'):
@@ -1114,10 +1108,21 @@ class ConflictResolutionEngine:
                                 current_files.add(rel_path.replace(os.sep, '/'))
                     
                     # Remove any local files that don't exist in remote (for true equivalence)
+                    # BUT preserve backup directories and other essential files
                     extra_local_files = current_files - remote_files
-                    if extra_local_files:
-                        print(f"Removing {len(extra_local_files)} extra local files for functional equivalence...")
-                        for file_path in extra_local_files:
+                    safe_to_delete = set()
+                    
+                    for file_path in extra_local_files:
+                        # Never delete backup-related files
+                        if ('.ogresync-backups' in file_path or 
+                            'OGRESYNC_RECOVERY_INSTRUCTIONS' in file_path or
+                            file_path.startswith('.ogresync-backups/')):
+                            continue
+                        safe_to_delete.add(file_path)
+                    
+                    if safe_to_delete:
+                        print(f"Removing {len(safe_to_delete)} extra local files for functional equivalence...")
+                        for file_path in safe_to_delete:
                             try:
                                 full_path = os.path.join(self.vault_path, file_path)
                                 if os.path.exists(full_path):
@@ -1125,6 +1130,8 @@ class ConflictResolutionEngine:
                                     print(f"  Removed: {file_path}")
                             except Exception as e:
                                 print(f"  Warning: Could not remove {file_path}: {e}")
+                    else:
+                        print("✅ No extra local files to remove - backups preserved")
                       # Commit any changes to maintain git state consistency
                     stdout_status, _, _ = self._run_git_command("git status --porcelain")
                     if stdout_status.strip():
@@ -1139,7 +1146,7 @@ class ConflictResolutionEngine:
                     strategy=ConflictStrategy.KEEP_REMOTE_ONLY,
                     message=f"Both repositories now have remote content ({len(analysis.remote_files)} files: {', '.join(analysis.remote_files[:3])}{'...' if len(analysis.remote_files) > 3 else ''})",
                     files_processed=files_processed,
-                    backup_created=backup_branch
+                    backup_created=backup_id
                 )
             else:
                 # If merge with theirs fails, use the backup-safe reset approach
@@ -1150,18 +1157,19 @@ class ConflictResolutionEngine:
                 stdout, stderr, rc = self._run_git_command(f"git reset --hard {remote_branch}")
                 
                 if rc == 0:
-                    print(f"✅ Remote files adopted successfully - local history preserved in {backup_branch}")
+                    print(f"✅ Remote files adopted successfully - local history preserved in backup")
                     files_processed = analysis.remote_files
                     
-                    # Create recovery instructions since we used reset --hard
-                    self._create_recovery_instructions(backup_branch)
+                    # Create recovery instructions if backup was created
+                    if 'local_backup_id' in locals() and local_backup_id:
+                        self._create_recovery_instructions(local_backup_id)
                     
                     return ResolutionResult(
                         success=True,
                         strategy=ConflictStrategy.KEEP_REMOTE_ONLY,
-                        message=f"Remote files adopted - local history safely preserved in backup branches",
+                        message=f"Remote files adopted - local files safely preserved in backup folder",
                         files_processed=files_processed,
-                        backup_created=backup_branch
+                        backup_created=backup_id
                     )
                 else:
                     return ResolutionResult(
@@ -1169,7 +1177,7 @@ class ConflictResolutionEngine:
                         strategy=ConflictStrategy.KEEP_REMOTE_ONLY,
                         message=f"Could not adopt remote files: {stderr}",
                         files_processed=files_processed,
-                        backup_created=backup_branch
+                        backup_created=backup_id
                     )
         
         except Exception as e:
@@ -1177,7 +1185,7 @@ class ConflictResolutionEngine:
                 strategy=ConflictStrategy.KEEP_REMOTE_ONLY,
                 message=f"Error in keep remote strategy: {e}",
                 files_processed=files_processed,
-                backup_created=backup_branch
+                backup_created=backup_id
             )
     
     def _initiate_stage2_resolution(self, analysis: ConflictAnalysis) -> Optional[Any]:
@@ -1370,7 +1378,7 @@ class ConflictResolutionEngine:
             print(f"[ERROR] Failed to get {version} version of {file_path}: {e}")
             return None
     
-    def _create_recovery_instructions(self, backup_branch: str):
+    def _create_recovery_instructions(self, backup_id: str):
         """Create recovery instructions for the user"""
         # Create recovery instructions in backup directory, not in the main vault
         backup_dir = os.path.join(self.vault_path, '.ogresync-backups')
@@ -1380,19 +1388,16 @@ class ConflictResolutionEngine:
 OGRESYNC RECOVERY INSTRUCTIONS
 ==============================
 
-A backup of your original state has been created in branch: {backup_branch}
+A backup of your original state has been created: {backup_id}
 
 To recover your original state if needed:
-1. Switch to the backup branch:
-   git checkout {backup_branch}
-
-2. Create a new branch from the backup:
-   git checkout -b my-recovery-branch
-
-3. Your original files are now available in this branch
+1. Navigate to the backup directory: {backup_dir}
+2. Look for the backup folder related to: {backup_id}
+3. Copy any files you need from the backup folder to your vault
+4. Check the README.txt file in the backup folder for detailed instructions
 
 Current state: The conflict resolution has been applied to your main branch.
-All git history has been preserved - no commits were lost.
+All file states have been preserved - no data was lost.
 
 Date: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 """
@@ -2143,15 +2148,16 @@ def resolve_conflicts(vault_path: str, remote_url: str, parent: Optional[tk.Tk] 
     return resolver.resolve_initial_setup_conflicts(remote_url)
 
 
-def create_recovery_instructions(vault_path: str, backup_branches: List[str]) -> str:
+def create_recovery_instructions(vault_path: str, backup_info: List[str]) -> str:
     """
     Create recovery instructions file for users
     
     Args:
         vault_path: Path to the vault
-        backup_branches: List of backup branch names
+        backup_info: List of backup IDs or descriptions
         
-    Returns:        Path to the recovery instructions file
+    Returns:
+        Path to the recovery instructions file
     """
     timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
     # Create recovery instructions in a backup directory, not in the main vault
@@ -2165,14 +2171,18 @@ def create_recovery_instructions(vault_path: str, backup_branches: List[str]) ->
 OGRESYNC RECOVERY INSTRUCTIONS
 ==============================
 
-Backup branches created: {', '.join(backup_branches)}
+Backups created: {', '.join(backup_info) if backup_info else 'None'}
 
 To recover any previous state:
-1. List all backup branches: git branch -a
-2. Switch to a backup branch: git checkout [backup_branch_name]
-3. Create a new branch from backup: git checkout -b my-recovery-branch
+1. Navigate to the backup directory: {backup_dir}
+2. Open the relevant backup folder 
+3. Copy files from the backup folder to your vault as needed
+4. Check the README.txt file in each backup folder for detailed instructions
 
-All git history has been preserved - no commits were lost.
+All file states have been preserved - no data was lost.
+
+Note: Backups are stored locally in .ogresync-backups/ folder
+They will be automatically cleaned up after 30 days.
 
 Date: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 """)

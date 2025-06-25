@@ -287,7 +287,7 @@ def perform_initial_commit_and_push(vault_path):
                 safe_update_log("Remote 'main' branch does not exist. Creating it...", 55)
             
             # Push to main
-            push_out, push_err, push_rc = run_command("git push origin main", cwd=vault_path)
+            push_out, push_err, push_rc = run_command("git push -u origin main", cwd=vault_path)
             if push_rc == 0:
                 safe_update_log("Initial commit pushed successfully to GitHub.", 70)
             else:
