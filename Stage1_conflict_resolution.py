@@ -711,7 +711,7 @@ class ConflictResolutionEngine:
                     # Checkout missing files from remote
                     for missing_file in missing_files:
                         print(f"[DEBUG] Checking out missing file: {missing_file}")
-                        checkout_stdout, checkout_stderr, checkout_rc = self._run_git_command(f"git checkout {remote_branch} -- \"{missing_file}\"")
+                        checkout_stdout, checkout_stderr, checkout_rc = self._run_git_command(f"git checkout {remote_branch} -- {missing_file}")
                         if checkout_rc == 0:
                             print(f"✅ Successfully checked out: {missing_file}")
                         else:
