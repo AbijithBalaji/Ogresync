@@ -897,57 +897,61 @@ def auto_sync(use_threading=True):
                 
                 if summary['offline_sessions'] > 0 or summary['unpushed_commits'] > 0:
                     safe_update_log(f"📱 Detected {summary['offline_sessions']} offline session(s) with {summary['unpushed_commits']} unpushed commits", 12)
-                    safe_update_log("🔄 Processing offline changes before standard sync...", 13)
                     
-                    # Check if conflict resolution is needed
-                    if sync_manager.should_trigger_conflict_resolution():
-                        safe_update_log("⚠️ Offline changes require conflict resolution", 14)
-                        
-                        # Trigger conflict resolution before continuing with sync
-                        if CONFLICT_RESOLUTION_AVAILABLE and conflict_resolution is not None:
-                            safe_update_log("🔧 Activating conflict resolution for offline changes...", 15)
-                            try:
-                                # Use the enhanced conflict resolution system
-                                resolver = conflict_resolution.ConflictResolver(vault_path)
-                                analysis = resolver.engine.analyze_conflicts(config_data.get("GITHUB_REMOTE_URL"))
-                                
-                                if analysis.has_conflicts:
-                                    # Show conflict resolution dialog
-                                    safe_update_log("Opening conflict resolution interface...", 16)
-                                    result = conflict_resolution.resolve_conflicts(vault_path, config_data.get("GITHUB_REMOTE_URL", ""), root)
+                    # Only process offline changes if we have network
+                    if network_available:
+                        safe_update_log("🔄 Processing offline changes before standard sync...", 13)
+                          # Check if conflict resolution is needed - only if we have network
+                        if sync_manager.should_trigger_conflict_resolution():
+                            safe_update_log("⚠️ Offline changes require conflict resolution", 14)
+                            
+                            # Trigger conflict resolution before continuing with sync
+                            if CONFLICT_RESOLUTION_AVAILABLE and conflict_resolution is not None:
+                                safe_update_log("🔧 Activating conflict resolution for offline changes...", 15)
+                                try:
+                                    # Use the enhanced conflict resolution system
+                                    resolver = conflict_resolution.ConflictResolver(vault_path)
+                                    analysis = resolver.engine.analyze_conflicts(config_data.get("GITHUB_REMOTE_URL"))
                                     
-                                    if result.success:
-                                        safe_update_log("✅ Offline conflicts resolved successfully", 17)
-                                        conflict_resolution_completed = True  # Mark that we completed conflict resolution
+                                    if analysis.has_conflicts:
+                                        # Show conflict resolution dialog
+                                        safe_update_log("Opening conflict resolution interface...", 16)
+                                        result = conflict_resolution.resolve_conflicts(vault_path, config_data.get("GITHUB_REMOTE_URL", ""), root)
                                         
-                                        # CRITICAL FIX: Immediately push conflict resolution results
-                                        if network_available:
-                                            safe_update_log("📤 Pushing conflict resolution results immediately...", 18)
-                                            push_out, push_err, push_rc = run_command("git push -u origin main", cwd=vault_path)
-                                            if push_rc == 0:
-                                                safe_update_log("✅ Conflict resolution results pushed to GitHub successfully", 19)
-                                            else:
-                                                safe_update_log(f"⚠️ Failed to push conflict resolution results: {push_err}", 19)
-                                                safe_update_log("Will retry push in normal sync flow...", 19)
-                                        
-                                        # Mark sessions as resolved and end them
-                                        for session in sync_manager.offline_state.offline_sessions:
-                                            sync_manager.mark_session_resolved(session.session_id)
-                                            # Properly end the session to allow cleanup
-                                            sync_manager.end_sync_session(session.session_id, 
-                                                                        sync_manager.check_network_availability(), 
-                                                                        sync_manager.get_unpushed_commits())
+                                        if result.success:
+                                            safe_update_log("✅ Offline conflicts resolved successfully", 17)
+                                            conflict_resolution_completed = True  # Mark that we completed conflict resolution
+                                            
+                                            # CRITICAL FIX: Immediately push conflict resolution results
+                                            if network_available:
+                                                safe_update_log("📤 Pushing conflict resolution results immediately...", 18)
+                                                push_out, push_err, push_rc = run_command("git push -u origin main", cwd=vault_path)
+                                                if push_rc == 0:
+                                                    safe_update_log("✅ Conflict resolution results pushed to GitHub successfully", 19)
+                                                else:
+                                                    safe_update_log(f"⚠️ Failed to push conflict resolution results: {push_err}", 19)
+                                                    safe_update_log("Will retry push in normal sync flow...", 19)
+                                            
+                                            # Mark sessions as resolved and end them
+                                            for session in sync_manager.offline_state.offline_sessions:
+                                                sync_manager.mark_session_resolved(session.session_id)
+                                                # Properly end the session to allow cleanup
+                                                sync_manager.end_sync_session(session.session_id, 
+                                                                            sync_manager.check_network_availability(), 
+                                                                            sync_manager.get_unpushed_commits())
+                                        else:
+                                            safe_update_log("❌ Conflict resolution failed or cancelled", 17)
+                                            safe_update_log("Continuing with standard sync...", 17)
                                     else:
-                                        safe_update_log("❌ Conflict resolution failed or cancelled", 17)
-                                        safe_update_log("Continuing with standard sync...", 17)
-                                else:
-                                    safe_update_log("✅ No conflicts detected, proceeding with sync", 16)
-                                    
-                            except Exception as e:
-                                safe_update_log(f"❌ Error during offline conflict resolution: {e}", 16)
-                                print(f"[DEBUG] Offline conflict resolution error: {e}")
+                                        safe_update_log("✅ No conflicts detected, proceeding with sync", 16)
+                                        
+                                except Exception as e:
+                                    safe_update_log(f"❌ Error during offline conflict resolution: {e}", 16)
+                                    print(f"[DEBUG] Offline conflict resolution error: {e}")
+                        else:
+                            safe_update_log("✅ No conflicts detected for offline changes", 14)
                     else:
-                        safe_update_log("✅ No conflicts detected for offline changes", 14)
+                        safe_update_log("📴 No network available - offline changes will be synced when connection is restored", 13)
                     
                     # Clean up resolved sessions (use aggressive cleanup after successful sync)
                     sync_manager.cleanup_resolved_sessions(aggressive=True)
@@ -1707,9 +1711,15 @@ def auto_sync(use_threading=True):
 
         # Step 10: Final message
         if remote_changes_detected and local_changes_committed:
-            safe_update_log("🎉 Synchronization complete! Remote changes were detected and resolved, your local changes have been committed and pushed.", 100)
+            if network_available:
+                safe_update_log("🎉 Synchronization complete! Remote changes were detected and resolved, your local changes have been committed and pushed.", 100)
+            else:
+                safe_update_log("🎉 Synchronization complete! Remote changes were detected and resolved, your local changes have been committed. Will push when online.", 100)
         elif local_changes_committed:
-            safe_update_log("🎉 Synchronization complete! Your local changes have been committed and pushed to GitHub.", 100)
+            if network_available:
+                safe_update_log("🎉 Synchronization complete! Your local changes have been committed and pushed to GitHub.", 100)
+            else:
+                safe_update_log("🎉 Synchronization complete! Your local changes have been committed locally. Will push when internet is available.", 100)
         else:
             safe_update_log("🎉 Synchronization complete! No changes were made during this session.", 100)
         
