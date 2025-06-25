@@ -1398,8 +1398,89 @@ def auto_sync(use_threading=True):
 
         # Step 8B: Now check if remote has advanced during Obsidian session
         safe_update_log("Checking for remote changes that occurred during your Obsidian session...", 55)
-        remote_changes_detected = False          # Re-check network connectivity before checking remote changes  
+        remote_changes_detected = False
+        
+        # CRITICAL FIX: Re-check network connectivity after Obsidian session
+        # Network might have come back online during the Obsidian session
+        network_was_available_before = network_available
         network_available = is_network_available()
+        
+        if not network_was_available_before and network_available:
+            safe_update_log("🌐 Network connection restored during Obsidian session!", 56)
+            
+            # Check if we have offline sessions that now need conflict resolution
+            if OFFLINE_SYNC_AVAILABLE and offline_sync_manager is not None:
+                try:
+                    sync_manager = offline_sync_manager.OfflineSyncManager(vault_path, config_data)
+                    summary = sync_manager.get_session_summary()
+                    
+                    if summary['offline_sessions'] > 0 or summary['unpushed_commits'] > 0:
+                        safe_update_log(f"📱 Detected {summary['offline_sessions']} offline session(s) with {summary['unpushed_commits']} unpushed commits", 57)
+                        
+                        # Check if conflict resolution is needed now that we have network
+                        if sync_manager.should_trigger_conflict_resolution():
+                            safe_update_log("🔧 Network restored - activating conflict resolution for offline changes...", 58)
+                            
+                            if CONFLICT_RESOLUTION_AVAILABLE and conflict_resolution is not None:
+                                try:
+                                    # Create backup before conflict resolution
+                                    backup_id = None
+                                    if 'backup_manager' in sys.modules:
+                                        try:
+                                            from backup_manager import create_conflict_resolution_backup
+                                            backup_id = create_conflict_resolution_backup(vault_path, "network-restored-conflict")
+                                            if backup_id:
+                                                safe_update_log(f"✅ Safety backup created: {backup_id}", 59)
+                                        except Exception as backup_err:
+                                            safe_update_log(f"⚠️ Could not create backup: {backup_err}", 59)
+                                    
+                                    # Use existing conflict resolution system
+                                    resolver = conflict_resolution.ConflictResolver(vault_path, root)
+                                    remote_url = config_data.get("GITHUB_REMOTE_URL", "")
+                                    
+                                    safe_update_log("📋 Starting conflict resolution for offline changes (network restored)...", 60)
+                                    resolution_result = resolver.resolve_initial_setup_conflicts(remote_url)
+                                    
+                                    if resolution_result.success:
+                                        safe_update_log("✅ Offline changes resolved successfully after network restoration!", 61)
+                                        conflict_resolution_completed = True
+                                        
+                                        # Immediately push conflict resolution results
+                                        safe_update_log("📤 Pushing conflict resolution results immediately...", 62)
+                                        push_out, push_err, push_rc = run_command("git push -u origin main", cwd=vault_path)
+                                        if push_rc == 0:
+                                            safe_update_log("✅ Conflict resolution results pushed to GitHub successfully", 63)
+                                        else:
+                                            safe_update_log(f"⚠️ Failed to push conflict resolution results: {push_err}", 63)
+                                        
+                                        # Mark sessions as resolved
+                                        for session in sync_manager.offline_state.offline_sessions:
+                                            sync_manager.mark_session_resolved(session.session_id)
+                                            sync_manager.end_sync_session(session.session_id, 
+                                                                        sync_manager.check_network_availability(), 
+                                                                        sync_manager.get_unpushed_commits())
+                                    else:
+                                        if "cancelled by user" in resolution_result.message.lower():
+                                            safe_update_log("❌ Conflict resolution cancelled by user", 61)
+                                            safe_update_log("📝 Your offline changes remain safe and can be resolved later", 61)
+                                        else:
+                                            safe_update_log(f"❌ Conflict resolution failed: {resolution_result.message}", 61)
+                                            if backup_id:
+                                                safe_update_log(f"📝 Your changes are safe in backup: {backup_id}", 61)
+                                        
+                                except Exception as e:
+                                    safe_update_log(f"❌ Error in network-restored conflict resolution: {e}", 61)
+                                    print(f"[DEBUG] Network-restored conflict resolution error: {e}")
+                            else:
+                                safe_update_log("❌ Conflict resolution system not available", 58)
+                        else:
+                            safe_update_log("✅ No conflicts detected for offline changes", 58)
+                    
+                except Exception as e:
+                    safe_update_log(f"⚠️ Error checking offline changes after network restoration: {e}", 57)
+                    print(f"[DEBUG] Network restoration offline check error: {e}")
+        
+        # Continue with normal remote change detection
         if network_available and remote_head_before_obsidian:
             has_remote_changes, new_remote_head, change_count = check_remote_changes_during_session(
                 vault_path, remote_head_before_obsidian
