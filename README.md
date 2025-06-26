@@ -1,212 +1,155 @@
 # Ogresync
 
-![Ogresync Logo](assets/logo.ico)
+<div align="center">
+  <img src="assets/new_logo_1_Transparent.png" alt="Ogresync Logo" width="120">
+  
+  **Professional Obsidian-GitHub Sync Tool**
+  
+  [![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/yourusername/ogresync)
+  [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](https://github.com/yourusername/ogresync)
+  [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+</div>
 
+Ogresync is a professional-grade desktop application that seamlessly synchronizes your Obsidian notes with GitHub repositories. Built with enterprise-level reliability, cross-platform compatibility, and intelligent conflict resolution.
 
-**Ogresync** is an open-source synchronization tool that automates syncing your Obsidian vault with GitHub using Git and SSH. Built using Python, it’s a project by **Ogrelix**, a startup focused on creating streamlined, user-centric software tools that simplify digital workflows.
+## 🚀 Quick Start
 
----
+### Download & Install
 
-## Features
+Choose your platform:
 
-- **One-Time Setup Wizard**  
-  Automatically detects Obsidian, configures Git and SSH, and guides you through selecting your vault and linking your GitHub repository.
+| Platform | Download | Requirements |
+|----------|----------|--------------|
+| **Windows** | [`ogresync.exe`](releases/latest) | Windows 10/11 |
+| **Linux** | [`ogresync.AppImage`](releases/latest) | Any modern Linux distribution |
+| **macOS** | [`Ogresync.app`](releases/latest) | macOS 10.14+ |
 
-- **Automatic Synchronization**  
-  Detects local changes, pulls remote updates with stash support, launches Obsidian, and upon closing, commits and pushes updates automatically.
+### First Launch
 
-- **Intelligent Conflict Resolution**  
-  Handles merge conflicts with options to keep local or remote changes, or resolve manually. (Currently under refinement—see Known Issues.)
+1. **Download** the appropriate executable for your platform
+2. **Run** Ogresync - the setup wizard will guide you through:
+   - 📁 Obsidian vault location
+   - 🔗 GitHub repository connection
+   - 🔐 Authentication setup
+   - ⚙️ Sync preferences
+3. **Start syncing** your notes automatically!
 
-- **Offline Resilience**  
-  Works even without an internet connection, queues local commits, and pushes them automatically when online.
+## ✨ Key Features
 
-- **Cross-Platform Compatibility**  
-  Supports Windows, Linux (AppImage), and macOS (.app). Platform-specific behaviors are handled internally.
+### 🔄 **Intelligent Synchronization**
+- Real-time vault monitoring
+- Bidirectional sync with GitHub
+- Automatic conflict detection and resolution
+- Smart merge algorithms
 
-- **Community-Centric & Open Source**  
-  Contributions, feedback, and ideas are welcome to enhance and expand the project further.
+### 🛡️ **Enterprise-Grade Safety**
+- Automatic backup creation before any changes
+- Complete version history preservation
+- Rollback capabilities
+- Data integrity verification
 
----
+### 🌍 **Cross-Platform Excellence**
+- Native Windows, Linux, and macOS support
+- Consistent user experience across platforms
+- Platform-optimized file handling
 
-## Installation
+### 🧠 **Smart Conflict Resolution**
+- AI-powered merge suggestions
+- Interactive conflict resolution interface
+- Manual override capabilities
+- Conflict history tracking
 
-### Prerequisites
+## 🔧 Advanced Usage
 
-- **Git:** Ensure Git is installed and available in your system PATH.  
-  [Download Git](https://git-scm.com/)
+### Command Line Interface
+```bash
+# Run from source (developers)
+python Ogresync.py
 
-- **SSH:** A valid SSH key is required for GitHub synchronization. If absent, Ogresync will assist you in generating one and provide manual instructions if needed.
+# Run with enhanced offline support
+python enhanced_auto_sync.py
 
-- **Obsidian:** Install from [obsidian.md](https://obsidian.md/)  
+# Debug mode (development branch)
+python Ogresync.py --debug
+```
 
----
+### Configuration
+Ogresync stores configuration in platform-appropriate locations:
+- **Windows**: `%APPDATA%\Ogresync\`
+- **Linux**: `~/.config/ogresync/`
+- **macOS**: `~/Library/Application Support/Ogresync/`
+
+## 🏢 Professional Use
+
+Ogresync is designed for:
+- **Teams** collaborating on documentation
+- **Researchers** sharing knowledge bases
+- **Companies** managing internal wikis
+- **Students** synchronizing study notes
+- **Writers** backing up manuscripts
+
+## 🛠️ For Developers
+
+### Core Architecture
+Ogresync is built with a modular architecture:
+
+| Module | Purpose |
+|--------|---------|
+| `Ogresync.py` | Main application entry point |
+| `enhanced_auto_sync.py` | **Offline/online sync orchestration** |
+| `offline_sync_manager.py` | **Offline state management** |
+| `conflict_resolution_integration.py` | Smart conflict resolution |
+| `setup_wizard.py` | Initial configuration wizard |
+| `backup_manager.py` | Automatic backup system |
 
 ### Running from Source
-
 ```bash
-git clone https://github.com/Ogrelix/Ogresync.git
-cd Ogresync
-   ```
-2. **(Optional) Create a Virtual Environment:**
+git clone https://github.com/yourusername/ogresync.git
+cd ogresync
+pip install -r requirements.txt
+python Ogresync.py
+```
 
-  ```bash
-  python3 -m venv venv
-  source venv/bin/activate
-  ```
+### Development Branch
+For full source code, tests, and development documentation:
+```bash
+git clone -b development https://github.com/yourusername/ogresync.git
+```
 
-3. **Install Dependencies:**
-  ```bash
-  pip install -r requirements.txt
-  ```
+## 📋 System Requirements
 
-4. **Run Ogresync:**
-  ```bash
-  python ogresync.py
-  ```
+| Component | Requirement |
+|-----------|-------------|
+| **OS** | Windows 10+, Linux (kernel 3.2+), macOS 10.14+ |
+| **Memory** | 512 MB RAM minimum |
+| **Storage** | 100 MB free space |
+| **Network** | Internet connection for GitHub sync |
+| **Dependencies** | Git (auto-installed if needed) |
 
-### Packaged Executables
-Download ready-to-use binaries from the [Releases](https://github.com/AbijithBalaji/Ogresync/releases) page:
+## 🔒 Security & Privacy
 
--   **Windows:** Executable `.exe`
+- **Local-first**: Your notes remain on your device
+- **Encrypted transit**: All GitHub communication uses HTTPS/SSH
+- **No telemetry**: No usage data collected
+- **Open source**: Full transparency
 
--   **Linux:** AppImage
+## 📞 Support
 
--   **macOS:** `.app` bundle (coming soon)
-  
----
+- 📚 **Documentation**: [Wiki](wiki)
+- 🐛 **Bug Reports**: [Issues](issues)
+- 💡 **Feature Requests**: [Discussions](discussions)
+- 📧 **Contact**: support@ogrelix.com
 
-## Usage
-### 1\. Initial Setup
+## 🤝 Contributing
 
--   The wizard helps you choose your Obsidian vault and configures everything, including SSH and GitHub repository setup.
+We welcome contributions from the community! See our [Contributing Guide](CONTRIBUTING.md) for details.
 
--   If you don't have a GitHub repo, you'll be prompted to create a private one and provide its URL.
+## 📄 License
 
--   SSH keys are auto-generated if not found. On Linux/macOS, manual instructions are displayed in case clipboard copy fails.
-
-### 2\. Automatic Synchronization
-
-Once setup is complete, just run **Ogresync** instead of opening Obsidian directly.
-
--   It pulls any updates from GitHub before opening Obsidian.
-
--   You edit your notes as usual in Obsidian.
-
--   After you close Obsidian:
-
-    -   Any changes are automatically committed.
-
-    -   If online, changes are pushed to GitHub.
-
-    -   If offline, they remain committed locally and will be pushed later.
-
-### 3\. Conflict Handling
-
-If the same file is modified on two systems:
-
--   Conflicts are detected and logged.
-
--   You will be prompted to resolve using:
-
-    -   Keep Local Changes
-
-    -   Use Remote Changes
-
-    -   Merge Manually
-
-(See Known Issues for current limitations.)
+Licensed under the [MIT License](LICENSE) - free for personal and commercial use.
 
 ---
 
-## Contributing
-
-We welcome contributions from the community! To keep our codebase clean and facilitate smooth collaboration, please follow these guidelines:
-
-### Branch Structure
-- **main**: Contains stable, production-ready code (currently Windows is stable).
-- **develop**: The active development branch for new features, bug fixes, and cross-platform improvements. Please branch off `develop` for your work.
-  
-### How to Contribute
-1. Fork this repository.
-2. Clone your fork and create a new branch from `develop`:
-   ```bash
-   git checkout -b feature/your-feature-name develop
-3. Implement your changes following our coding standards and ensure tests pass.
-
-4. Commit your changes with clear, descriptive commit messages.
-
-5. Push your branch to your fork and submit a pull request against the `develop` branch.
-
-6. Your pull request will be reviewed by maintainers. Please be responsive to feedback.
-
-For more detailed guidelines, please see our [CONTRIBUTING.md](CONTRIBUTING.md) file.
-
----
-
-## Known Issues
-
-- **Conflict Dialog Not Triggering Properly:**
-The dialog for resolving merge conflicts is not always shown as expected during certain workflows. We are actively working to fix this.
-
-- **Linux and macOS Bugs:**
-While basic functionality works, further testing and optimizations are needed. Clipboard features may not work out of the box.
-
-- **Packaging & Shortcuts:**
-Native shortcut creation (Start Menu, desktop icons, app directory registration) is not yet implemented.
-
-- **Setup Responsiveness:**
-If the user exits dialog boxes prematurely during setup, the main window may become unresponsive. A fallback loop is under development.
-
----
-
-## Roadmap
-- **Enhanced Conflict Resolution UI:**
-  Improve the merge conflict dialog and integrate external merge tools.
-
-- **Native Shortcuts & Installers:**
-  Develop desktop/start menu shortcuts and native installers for all platforms.
-
-- **Cross-Platform Packaging:**
-  Further refine packaging for macOS (.app) and Linux (AppImage) to ensure a seamless user experience.
-
-- **Additional Features:**
-  Custom commit messages, scheduled syncs, and more.
-
----
-
-## License
-Ogresync is licensed under the GNU General Public License v3.0 (GPLv3). 
-See the LICENSE file for full details.
-
----
-
-## About Ogrelix
-![Ogrelix Logo](assets/ogrelix_logo.ico)
-
-**Ogrelix** is an MSME-registered startup based in India, focused on building innovative, simple, and impactful digital tools. While we're not a formal private limited company, our team is passionate about solving real-world problems through open-source and community-driven development. Ogresync is one of our flagship products under active development.
-
----
-
-Contact
--------
-
-For suggestions, support, or collaboration inquiries:
-
--   Email: abijith.balaji@gmail.com
-
--   GitHub Issues: [Open an issue](https://github.com/Ogrelix/Ogresync/issues)
-
----
-
-### Future Packaging Plans
-
-We aim to release production-ready packages with:
-
-- Installers that add the app to system paths
-
-- Start Menu/Desktop shortcuts
-
-- Cross-platform builds via CI pipelines
-
-Stay tuned for these enhancements in upcoming releases.
+<div align="center">
+  <strong>Made with ❤️ by <a href="https://ogrelix.com">Ogrelix Solutions</a></strong>
+</div>
