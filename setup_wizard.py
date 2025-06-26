@@ -834,15 +834,29 @@ Your configuration has been saved and Ogresync is ready to use!"""
     def _step_git_check(self):
         """Step 2: Verify Git installation."""
         try:
+            # First try basic detection
             is_installed, error = self._safe_wizard_steps_call('is_git_installed')
             if error:
-                # Fallback check using subprocess
-                import subprocess
-                try:
-                    result = subprocess.run(['git', '--version'], capture_output=True, text=True)
-                    if result.returncode == 0:
-                        return True, "Git is installed and available"
-                    else:
+                # Try enhanced detection with path resolution
+                git_path, path_error = self._safe_wizard_steps_call('detect_git_path')
+                if path_error:
+                    # Fallback check using subprocess
+                    import subprocess
+                    try:
+                        result = subprocess.run(['git', '--version'], capture_output=True, text=True)
+                        if result.returncode == 0:
+                            return True, "Git is installed and available"
+                        else:
+                            # Git not installed - show installation guidance and offer retry
+                            self._show_git_installation_guidance()
+                            
+                            # Offer retry after installation guidance
+                            if self._offer_retry_after_installation("Git"):
+                                # Retry detection
+                                return self._step_git_check()
+                            else:
+                                return False, "Git is not installed. Please install Git and restart the wizard."
+                    except FileNotFoundError:
                         # Git not installed - show installation guidance and offer retry
                         self._show_git_installation_guidance()
                         
@@ -852,7 +866,18 @@ Your configuration has been saved and Ogresync is ready to use!"""
                             return self._step_git_check()
                         else:
                             return False, "Git is not installed. Please install Git and restart the wizard."
-                except FileNotFoundError:
+                elif git_path:
+                    return True, f"Git is installed at: {git_path}"
+                else:
+                    # User declined to install - return error
+                    return False, "Git installation is required. Please install Git and restart the wizard."
+            
+            if is_installed:
+                return True, "Git is installed and available"
+            else:
+                # Try enhanced detection with path resolution
+                git_path, path_error = self._safe_wizard_steps_call('detect_git_path')
+                if path_error:
                     # Git not installed - show installation guidance and offer retry
                     self._show_git_installation_guidance()
                     
@@ -862,19 +887,11 @@ Your configuration has been saved and Ogresync is ready to use!"""
                         return self._step_git_check()
                     else:
                         return False, "Git is not installed. Please install Git and restart the wizard."
-            
-            if is_installed:
-                return True, "Git is installed and available"
-            else:
-                # Git not installed - show installation guidance and offer retry
-                self._show_git_installation_guidance()
-                
-                # Offer retry after installation guidance
-                if self._offer_retry_after_installation("Git"):
-                    # Retry detection
-                    return self._step_git_check()
+                elif git_path:
+                    return True, f"Git is installed at: {git_path}"
                 else:
-                    return False, "Git is not installed. Please install Git and restart the wizard."
+                    # User declined to install - return error
+                    return False, "Git installation is required. Please install Git and restart the wizard."
         except Exception as e:
             return False, f"Error checking Git: {str(e)}"
     
@@ -1033,7 +1050,7 @@ Your configuration has been saved and Ogresync is ready to use!"""
         """Step 5: Generate or verify SSH key."""
         try:
             # Check if SSH key exists
-            ssh_key_path = os.path.expanduser("~/.ssh/id_rsa.pub")
+            ssh_key_path = os.path.expanduser(os.path.join("~", ".ssh", "id_rsa.pub"))
             if os.path.exists(ssh_key_path):
                 return True, "SSH key already exists"
             else:
@@ -1169,7 +1186,7 @@ Your configuration has been saved and Ogresync is ready to use!"""
         """Show enhanced manual SSH setup dialog with clear instructions and SSH key display."""
         try:
             # Read the SSH key
-            ssh_key_path = os.path.expanduser("~/.ssh/id_rsa.pub")
+            ssh_key_path = os.path.expanduser(os.path.join("~", ".ssh", "id_rsa.pub"))
             ssh_key_content = ""
             
             if os.path.exists(ssh_key_path):

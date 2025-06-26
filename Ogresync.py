@@ -27,7 +27,12 @@ import setup_wizard # Import the new setup wizard module
 # Import offline sync manager
 try:
     import offline_sync_manager
-    OFFLINE_SYNC_AVAILABLE = True
+    # Check if the module actually has the required class
+    if hasattr(offline_sync_manager, 'OfflineSyncManager'):
+        OFFLINE_SYNC_AVAILABLE = True
+    else:
+        OFFLINE_SYNC_AVAILABLE = False
+        offline_sync_manager = None
 except ImportError:
     offline_sync_manager = None
     OFFLINE_SYNC_AVAILABLE = False
@@ -44,7 +49,7 @@ config_data = {
     "SETUP_DONE": "0"
 }
 
-SSH_KEY_PATH = os.path.expanduser("~/.ssh/id_rsa.pub")
+SSH_KEY_PATH = os.path.expanduser(os.path.join("~", ".ssh", "id_rsa.pub"))
 
 root: Optional[tk.Tk] = None  # Will be created by ui_elements.create_main_window()
 log_text: Optional[scrolledtext.ScrolledText] = None # Will be created by ui_elements.create_main_window()
@@ -91,17 +96,65 @@ import github_setup
 
 def run_command(command, cwd=None, timeout=None):
     """
-    Runs a shell command, returning (stdout, stderr, return_code).
+    Runs a shell command safely across platforms, returning (stdout, stderr, return_code).
     Safe to call in a background thread.
+    
+    Args:
+        command: Command string to execute
+        cwd: Working directory for the command
+        timeout: Timeout in seconds
+        
+    Returns:
+        Tuple of (stdout, stderr, return_code)
     """
     try:
+        # For better cross-platform compatibility, try to avoid shell=True when possible
+        # but still support it for complex commands and commit messages
+        if isinstance(command, str):
+            # Check if this is a simple git command that can be safely split
+            # CRITICAL: Exclude git commit commands with -m messages as they contain quotes
+            is_simple_git = (command.strip().startswith('git ') and 
+                           ' && ' not in command and 
+                           ' || ' not in command and 
+                           ' | ' not in command and
+                           'git commit -m' not in command)  # Exclude commit messages
+            
+            if is_simple_git:
+                try:
+                    # Use shlex for proper argument splitting only for simple commands
+                    if platform.system() == "Windows":
+                        # On Windows, use posix=False for proper quote handling
+                        command_parts = shlex.split(command, posix=False)
+                    else:
+                        # On Unix-like systems, use standard splitting
+                        command_parts = shlex.split(command)
+                    
+                    result = subprocess.run(
+                        command_parts,
+                        cwd=cwd,
+                        capture_output=True,
+                        text=True,
+                        timeout=timeout,
+                        check=False
+                    )
+                    return result.stdout.strip(), result.stderr.strip(), result.returncode
+                except (ValueError, OSError):
+                    # Fall back to shell=True if splitting fails
+                    pass
+        
+        # Use shell=True for:
+        # - Complex commands with pipes, redirects, etc.
+        # - Git commit commands with messages (to preserve quotes)
+        # - When argument splitting fails
+        # - Non-string commands (already arrays)
         result = subprocess.run(
             command,
             cwd=cwd,
             shell=True,
             capture_output=True,
             text=True,
-            timeout=timeout
+            timeout=timeout,
+            check=False
         )
         return result.stdout.strip(), result.stderr.strip(), result.returncode
     except subprocess.TimeoutExpired as e:
@@ -329,15 +382,75 @@ def get_unpushed_commits(vault_path):
 
 def open_obsidian(obsidian_path):
     """
-    Launches Obsidian in a cross-platform manner.
-    On Linux, if obsidian_path is a command string (e.g., from Flatpak), it is split properly;
-    otherwise, it launches using shell=True.
+    Launches Obsidian in a cross-platform manner with improved handling.
+    Supports various installation methods including native, Snap, Flatpak, and App Store.
     """ 
-    if sys.platform.startswith("linux"):
-        cmd = shlex.split(obsidian_path)
-        subprocess.Popen(cmd)
-    else:
-        subprocess.Popen([obsidian_path], shell=True)
+    try:
+        if not obsidian_path:
+            print("Error: No Obsidian path configured")
+            return False
+        
+        if sys.platform.startswith("win"):
+            # Windows: Handle both executable paths and command strings
+            if obsidian_path.endswith('.exe') and os.path.exists(obsidian_path):
+                # Direct executable path
+                subprocess.Popen([obsidian_path], shell=False)
+            else:
+                # Fallback to shell execution for edge cases
+                subprocess.Popen(obsidian_path, shell=True)
+                
+        elif sys.platform.startswith("linux"):
+            # Linux: Handle various installation methods
+            if obsidian_path.startswith("flatpak "):
+                # Flatpak command string - split properly
+                cmd_parts = shlex.split(obsidian_path)
+                subprocess.Popen(cmd_parts)
+            elif obsidian_path.startswith("/snap/") or "snap" in obsidian_path:
+                # Snap installation
+                if os.path.exists(obsidian_path):
+                    subprocess.Popen([obsidian_path])
+                else:
+                    subprocess.Popen(["snap", "run", "obsidian"])
+            elif os.path.exists(obsidian_path):
+                # Direct executable path (AppImage, native binary, etc.)
+                subprocess.Popen([obsidian_path])
+            else:
+                # Command in PATH or complex command string
+                try:
+                    cmd_parts = shlex.split(obsidian_path)
+                    subprocess.Popen(cmd_parts)
+                except ValueError:
+                    # Fallback to shell if splitting fails
+                    subprocess.Popen(obsidian_path, shell=True)
+                    
+        elif sys.platform.startswith("darwin"):
+            # macOS: Handle app bundles and command paths
+            if obsidian_path.endswith('.app') or '/Applications/' in obsidian_path:
+                # App bundle - use 'open' command
+                if obsidian_path.endswith('.app'):
+                    subprocess.Popen(['open', '-a', obsidian_path])
+                else:
+                    # Path to executable inside app bundle
+                    subprocess.Popen([obsidian_path])
+            elif os.path.exists(obsidian_path):
+                # Direct executable path
+                subprocess.Popen([obsidian_path])
+            else:
+                # Command in PATH
+                subprocess.Popen([obsidian_path])
+        else:
+            # Other platforms - generic approach
+            if os.path.exists(obsidian_path):
+                subprocess.Popen([obsidian_path])
+            else:
+                subprocess.Popen(obsidian_path, shell=True)
+        
+        print(f"Launched Obsidian: {obsidian_path}")
+        return True
+        
+    except Exception as e:
+        print(f"Error launching Obsidian: {e}")
+        return False
 
 
 def conflict_resolution_dialog(conflict_files):
@@ -773,37 +886,10 @@ def auto_sync(use_threading=True):
         safe_update_log("🔄 Starting sync process...", 0)
         print("DEBUG: sync_thread started")
         
-        # OFFLINE SYNC INTEGRATION - Check network status and handle offline scenarios
-        if OFFLINE_SYNC_AVAILABLE and offline_sync_manager is not None:
-            try:
-                sync_manager = offline_sync_manager.OfflineSyncManager(vault_path, config_data)
-                
-                # Check network status
-                network_state = sync_manager.check_network_availability()
-                
-                # Check if we have offline sessions that need attention
-                summary = sync_manager.get_session_summary()
-                
-                if summary['offline_sessions'] > 0 and network_state.name == 'ONLINE':
-                    safe_update_log("📱 Detected previous offline session. Network restored - processing changes...", 5)
-                    
-                    # Check if we need conflict resolution
-                    if sync_manager.should_trigger_conflict_resolution():
-                        safe_update_log("⚠️ Offline changes may require conflict resolution. Will check after git operations...", 10)
-                    else:
-                        safe_update_log("🔄 Offline changes detected. Will sync after repository checks...", 10)
-                
-                elif network_state.name == 'OFFLINE':
-                    safe_update_log("📴 No network connectivity detected. Entering offline mode...", 10)
-                    # Start offline session
-                    session_id = sync_manager.start_sync_session(network_state)
-                    safe_update_log(f"� Started offline session: {session_id}", 15)
-                    # Continue with local-only operations (will be handled below)
-                    
-            except Exception as e:
-                safe_update_log(f"⚠️ Offline sync manager initialization failed: {e}", 5)
-                print(f"[DEBUG] Offline sync error: {e}")
-                # Continue with normal sync process
+        # OFFLINE SYNC INTEGRATION - TEMPORARILY DISABLED
+        # Offline sync functionality has been temporarily disabled due to incomplete module
+        # All sync operations will proceed with standard online/offline handling
+        safe_update_log("📱 Using standard sync mode (offline sync features disabled)", 2)
         
         # Ensure immediate UI update and responsiveness
         time.sleep(0.1)
@@ -897,7 +983,7 @@ def auto_sync(use_threading=True):
             safe_update_log("Internet connection detected. Proceeding with remote synchronization.", 10)
                   # OFFLINE SYNC: Check if we have pending offline changes that need immediate sync
         conflict_resolution_completed = False  # Track if we just completed conflict resolution
-        if OFFLINE_SYNC_AVAILABLE and offline_sync_manager is not None:
+        if OFFLINE_SYNC_AVAILABLE and offline_sync_manager is not None and hasattr(offline_sync_manager, 'OfflineSyncManager'):
             try:
                 sync_manager = offline_sync_manager.OfflineSyncManager(vault_path, config_data)
                 summary = sync_manager.get_session_summary()
@@ -940,12 +1026,13 @@ def auto_sync(use_threading=True):
                                                     safe_update_log("Will retry push in normal sync flow...", 19)
                                             
                                             # Mark sessions as resolved and end them
-                                            for session in sync_manager.offline_state.offline_sessions:
-                                                sync_manager.mark_session_resolved(session.session_id)
-                                                # Properly end the session to allow cleanup
-                                                sync_manager.end_sync_session(session.session_id, 
-                                                                            sync_manager.check_network_availability(), 
-                                                                            sync_manager.get_unpushed_commits())
+                                            # TODO: Re-enable when offline sync module is implemented
+                                            # for session in sync_manager.offline_state.offline_sessions:
+                                            #     sync_manager.mark_session_resolved(session.session_id)
+                                            #     # Properly end the session to allow cleanup
+                                            #     sync_manager.end_sync_session(session.session_id, 
+                                            #                                 sync_manager.check_network_availability(), 
+                                            #                                 sync_manager.get_unpushed_commits())
                                         else:
                                             safe_update_log("❌ Conflict resolution failed or cancelled", 17)
                                             safe_update_log("Continuing with standard sync...", 17)
@@ -1416,7 +1503,7 @@ def auto_sync(use_threading=True):
             safe_update_log("🌐 Network connection restored during Obsidian session!", 56)
             
             # Check if we have offline sessions that now need conflict resolution
-            if OFFLINE_SYNC_AVAILABLE and offline_sync_manager is not None:
+            if OFFLINE_SYNC_AVAILABLE and offline_sync_manager is not None and hasattr(offline_sync_manager, 'OfflineSyncManager'):
                 try:
                     sync_manager = offline_sync_manager.OfflineSyncManager(vault_path, config_data)
                     summary = sync_manager.get_session_summary()
@@ -1461,11 +1548,12 @@ def auto_sync(use_threading=True):
                                             safe_update_log(f"⚠️ Failed to push conflict resolution results: {push_err}", 63)
                                         
                                         # Mark sessions as resolved
-                                        for session in sync_manager.offline_state.offline_sessions:
-                                            sync_manager.mark_session_resolved(session.session_id)
-                                            sync_manager.end_sync_session(session.session_id, 
-                                                                        sync_manager.check_network_availability(), 
-                                                                        sync_manager.get_unpushed_commits())
+                                        # TODO: Re-enable when offline sync module is implemented
+                                        # for session in sync_manager.offline_state.offline_sessions:
+                                        #     sync_manager.mark_session_resolved(session.session_id)
+                                        #     sync_manager.end_sync_session(session.session_id, 
+                                        #                                 sync_manager.check_network_availability(), 
+                                        #                                 sync_manager.get_unpushed_commits())
                                     else:
                                         if "cancelled by user" in resolution_result.message.lower():
                                             safe_update_log("❌ Conflict resolution cancelled by user", 61)
@@ -1776,7 +1864,7 @@ def auto_sync(use_threading=True):
                 safe_update_log("✅ All changes have been successfully pushed to GitHub.", 80)
                 
                 # Mark offline sessions as completed after successful push
-                if OFFLINE_SYNC_AVAILABLE and offline_sync_manager is not None:
+                if OFFLINE_SYNC_AVAILABLE and offline_sync_manager is not None and hasattr(offline_sync_manager, 'OfflineSyncManager'):
                     try:
                         sync_manager = offline_sync_manager.OfflineSyncManager(vault_path, config_data)
                         sync_manager.complete_successful_sync()
@@ -1788,7 +1876,7 @@ def auto_sync(use_threading=True):
                 safe_update_log("No new commits to push.", 80)
                 
                 # Even when there are no new commits, clean up completed offline sessions
-                if OFFLINE_SYNC_AVAILABLE and offline_sync_manager is not None:
+                if OFFLINE_SYNC_AVAILABLE and offline_sync_manager is not None and hasattr(offline_sync_manager, 'OfflineSyncManager'):
                     try:
                         sync_manager = offline_sync_manager.OfflineSyncManager(vault_path, config_data)
                         sync_manager.cleanup_resolved_sessions(aggressive=True)
@@ -1812,7 +1900,7 @@ def auto_sync(use_threading=True):
             safe_update_log("🎉 Synchronization complete! No changes were made during this session.", 100)
         
         # Final cleanup: Remove any remaining completed offline sessions 
-        if OFFLINE_SYNC_AVAILABLE and offline_sync_manager is not None:
+        if OFFLINE_SYNC_AVAILABLE and offline_sync_manager is not None and hasattr(offline_sync_manager, 'OfflineSyncManager'):
             try:
                 sync_manager = offline_sync_manager.OfflineSyncManager(vault_path, config_data)
                 sync_manager.cleanup_resolved_sessions(aggressive=True)

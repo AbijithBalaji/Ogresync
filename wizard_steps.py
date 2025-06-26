@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import threading
 import time
+import platform
 import webbrowser
 import pyperclip
 from typing import Optional
@@ -117,6 +118,22 @@ def find_obsidian_path():
                 )
                 if selected_path:
                     return selected_path
+            else:
+                # User chose not to locate manually - offer download guidance
+                download_response = ui_elements.ask_yes_no(
+                    "Download Obsidian",
+                    "Obsidian is required for Ogresync to work.\n\n"
+                    "Would you like to go to the Obsidian download page now?\n"
+                    "After installation, you can restart the setup wizard."
+                )
+                if download_response:
+                    import webbrowser
+                    webbrowser.open("https://obsidian.md/download")
+                    ui_elements.show_info_message(
+                        "Download Started",
+                        "The Obsidian download page has been opened in your browser.\n\n"
+                        "Please install Obsidian and restart Ogresync to continue setup."
+                    )
         return None
 
     elif sys.platform.startswith("linux"):
@@ -186,6 +203,160 @@ def is_git_installed():
     """
     out, err, rc = run_command("git --version")
     return rc == 0
+
+
+def detect_git_path():
+    """
+    Attempts to detect Git installation path with OS-specific fallbacks.
+    Returns the path to git executable if found, None otherwise.
+    """
+    import platform
+    
+    # First try to find git in PATH
+    git_cmd = shutil.which("git")
+    if git_cmd:
+        return git_cmd
+    
+    # OS-specific common installation paths
+    if platform.system() == "Windows":
+        common_paths = [
+            "C:\\Program Files\\Git\\bin\\git.exe",
+            "C:\\Program Files (x86)\\Git\\bin\\git.exe",
+            "C:\\Users\\{}\\AppData\\Local\\Programs\\Git\\bin\\git.exe".format(os.getenv('USERNAME', '')),
+            "C:\\Program Files\\GitHub Desktop\\resources\\app\\git\\cmd\\git.exe",
+            "C:\\Program Files (x86)\\GitHub Desktop\\resources\\app\\git\\cmd\\git.exe"
+        ]
+        
+        for path in common_paths:
+            if os.path.exists(path):
+                return path
+                
+        # Check if user wants to locate manually on Windows
+        if _ui_elements:
+            response = _ui_elements.ask_yes_no(
+                "Git Not Found",
+                "Git was not detected in standard locations.\n\n"
+                "Would you like to locate the Git executable manually?\n"
+                "(Look for git.exe in your Git installation folder)"
+            )
+            if response:
+                selected_path = _ui_elements.ask_file_dialog(
+                    "Select Git Executable",
+                    filetypes=[("Git Executable", "git.exe"), ("All Files", "*.*")]
+                )
+                if selected_path and os.path.exists(selected_path):
+                    return selected_path
+            else:
+                # User chose not to locate manually - offer download guidance
+                download_response = _ui_elements.ask_yes_no(
+                    "Download Git",
+                    "Git is required for Ogresync to work with version control.\n\n"
+                    "Would you like to go to the Git download page now?\n"
+                    "After installation, you can restart the setup wizard."
+                )
+                if download_response:
+                    import webbrowser
+                    webbrowser.open("https://git-scm.com/download/win")
+                    _ui_elements.show_info_message(
+                        "Download Started",
+                        "The Git download page has been opened in your browser.\n\n"
+                        "Please install Git and restart Ogresync to continue setup.\n"
+                        "Tip: Use the default installation options for best compatibility."
+                    )
+        return None
+        
+    elif platform.system() == "Darwin":  # macOS
+        common_paths = [
+            "/usr/bin/git",
+            "/usr/local/bin/git",
+            "/opt/homebrew/bin/git",
+            "/Applications/GitHub Desktop.app/Contents/Resources/app/git/bin/git"
+        ]
+        
+        for path in common_paths:
+            if os.path.exists(path):
+                return path
+                
+        # Check if user wants to locate manually on macOS
+        if _ui_elements:
+            response = _ui_elements.ask_yes_no(
+                "Git Not Found",
+                "Git was not detected in standard locations.\n\n"
+                "Would you like to locate the Git executable manually?\n"
+                "(Usually found in /usr/bin/git or /usr/local/bin/git)"
+            )
+            if response:
+                selected_path = _ui_elements.ask_file_dialog(
+                    "Select Git Executable",
+                    filetypes=[("Git Executable", "git"), ("All Files", "*")]
+                )
+                if selected_path and os.path.exists(selected_path):
+                    return selected_path
+            else:
+                # User chose not to locate manually - offer download guidance
+                download_response = _ui_elements.ask_yes_no(
+                    "Install Git",
+                    "Git is required for Ogresync to work with version control.\n\n"
+                    "Would you like to install Git using Xcode Command Line Tools?\n"
+                    "This is the recommended method on macOS."
+                )
+                if download_response:
+                    _ui_elements.show_info_message(
+                        "Install Git",
+                        "To install Git on macOS:\n\n"
+                        "1. Open Terminal (Cmd+Space, type 'Terminal')\n"
+                        "2. Run: xcode-select --install\n"
+                        "3. Follow the installation prompts\n"
+                        "4. Restart Ogresync after installation\n\n"
+                        "Alternative: Visit git-scm.com/download/mac for other options."
+                    )
+        return None
+        
+    else:  # Linux and others
+        common_paths = [
+            "/usr/bin/git",
+            "/usr/local/bin/git",
+            "/bin/git"
+        ]
+        
+        for path in common_paths:
+            if os.path.exists(path):
+                return path
+                
+        # Check if user wants to locate manually on Linux
+        if _ui_elements:
+            response = _ui_elements.ask_yes_no(
+                "Git Not Found", 
+                "Git was not detected in standard locations.\n\n"
+                "Would you like to locate the Git executable manually?\n"
+                "(Usually found in /usr/bin/git)"
+            )
+            if response:
+                selected_path = _ui_elements.ask_file_dialog(
+                    "Select Git Executable",
+                    filetypes=[("Git Executable", "git"), ("All Files", "*")]
+                )
+                if selected_path and os.path.exists(selected_path):
+                    return selected_path
+            else:
+                # User chose not to locate manually - offer installation guidance
+                download_response = _ui_elements.ask_yes_no(
+                    "Install Git",
+                    "Git is required for Ogresync to work with version control.\n\n"
+                    "Would you like to see installation instructions for your system?"
+                )
+                if download_response:
+                    _ui_elements.show_info_message(
+                        "Install Git on Linux",
+                        "To install Git on Linux, use your package manager:\n\n"
+                        "• Ubuntu/Debian: sudo apt update && sudo apt install git\n"
+                        "• Fedora: sudo dnf install git\n"
+                        "• CentOS/RHEL: sudo yum install git\n"
+                        "• Arch Linux: sudo pacman -S git\n"
+                        "• openSUSE: sudo zypper install git\n\n"
+                        "After installation, restart Ogresync to continue setup."
+                    )
+        return None
 
 
 def test_ssh_connection_sync():
@@ -330,13 +501,34 @@ def generate_ssh_key_async(user_email):
       4) After the user closes the dialog, open GitHub's SSH settings in the browser.
     """
     ui_elements = _ui_elements
-    SSH_KEY_PATH = os.path.expanduser("~/.ssh/id_rsa.pub")
-    key_path_private = SSH_KEY_PATH.replace("id_rsa.pub", "id_rsa")
+    
+    # Cross-platform SSH key paths
+    ssh_dir = os.path.expanduser(os.path.join("~", ".ssh"))
+    SSH_KEY_PATH = os.path.join(ssh_dir, "id_rsa.pub")
+    key_path_private = os.path.join(ssh_dir, "id_rsa")
+    
+    # Ensure .ssh directory exists with proper permissions
+    if not os.path.exists(ssh_dir):
+        try:
+            os.makedirs(ssh_dir, mode=0o700)
+            safe_update_log("Created .ssh directory", 20)
+        except Exception as e:
+            safe_update_log(f"Failed to create .ssh directory: {e}", 25)
+            return
 
     # 1) Generate key if it doesn't exist
     if not os.path.exists(SSH_KEY_PATH):
         safe_update_log("Generating SSH key...", 25)
-        out, err, rc = run_command(f'ssh-keygen -t rsa -b 4096 -C "{user_email}" -f "{key_path_private}" -N ""')
+        
+        # Cross-platform SSH key generation command
+        if platform.system() == "Windows":
+            # On Windows, ensure proper quote handling
+            ssh_cmd = f'ssh-keygen -t rsa -b 4096 -C "{user_email}" -f "{key_path_private}" -N ""'
+        else:
+            # On Unix-like systems, use proper escaping
+            ssh_cmd = f"ssh-keygen -t rsa -b 4096 -C '{user_email}' -f '{key_path_private}' -N ''"
+        
+        out, err, rc = run_command(ssh_cmd)
         if rc != 0:
             safe_update_log(f"SSH key generation failed: {err}", 25)
             return
@@ -390,7 +582,7 @@ def copy_ssh_key():
     Copies the SSH key to clipboard and opens GitHub SSH settings.
     """
     ui_elements = _ui_elements
-    SSH_KEY_PATH = os.path.expanduser("~/.ssh/id_rsa.pub")
+    SSH_KEY_PATH = os.path.expanduser(os.path.join("~", ".ssh", "id_rsa.pub"))
     
     if os.path.exists(SSH_KEY_PATH):
         with open(SSH_KEY_PATH, "r", encoding="utf-8") as key_file:
