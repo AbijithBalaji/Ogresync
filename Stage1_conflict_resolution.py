@@ -544,7 +544,8 @@ class ConflictResolutionEngine:
             elif version == "remote":
                 # For remote files, we need to be careful about binary content
                 remote_branch = getattr(self, 'default_remote_branch', 'origin/main')
-                stdout, stderr, rc = self._run_git_command(f"git show {remote_branch}:{file_path}")
+                # Use safe command execution to properly handle filenames with special characters
+                stdout, stderr, rc = self._run_git_command_safe(['git', 'show', f"{remote_branch}:{file_path}"])
                 if rc == 0:
                     # Check if the stdout contains binary data
                     try:
@@ -737,6 +738,22 @@ class ConflictResolutionEngine:
                 # Only perform git merge if no Stage 2 resolution occurred
                 print("Performing intelligent merge to combine all files...")
                 
+                # STEP 5.1: Preserve local-only files before merge (they might be lost during merge)
+                local_only_files = list(set(analysis.local_files) - set(analysis.remote_files))
+                local_only_backup = {}
+                
+                if local_only_files:
+                    print(f"[DEBUG] Preserving {len(local_only_files)} local-only files before merge: {local_only_files}")
+                    for local_file in local_only_files:
+                        local_file_path = os.path.join(self.vault_path, local_file)
+                        if os.path.exists(local_file_path):
+                            try:
+                                with open(local_file_path, 'r', encoding='utf-8', errors='replace') as f:
+                                    local_only_backup[local_file] = f.read()
+                                print(f"[DEBUG] Backed up content for: {local_file}")
+                            except Exception as e:
+                                print(f"[DEBUG] Could not backup {local_file}: {e}")
+                
                 # Use safe merge command execution
                 merge_message = "Smart merge - combining all files from local and remote"
                 sanitized_merge_message = self._sanitize_commit_message(merge_message)
@@ -758,7 +775,42 @@ class ConflictResolutionEngine:
                         backup_created=backup_id
                     )
                 
-                print("✅ Git merge completed")            # STEP 6: Ensure ALL files from both repositories are present (but be cautious if Stage 2 already ran)
+                print("✅ Git merge completed")
+                
+                # STEP 5.2: Restore local-only files if they were lost during merge
+                if local_only_backup:
+                    current_files = self._get_current_working_files()
+                    for local_file, content in local_only_backup.items():
+                        local_file_path = os.path.join(self.vault_path, local_file)
+                        if not os.path.exists(local_file_path) or local_file not in current_files:
+                            print(f"[DEBUG] Restoring lost local-only file: {local_file}")
+                            try:
+                                # Ensure the directory exists
+                                local_file_dir = os.path.dirname(local_file_path)
+                                if local_file_dir:  # Only create directory if there is one
+                                    os.makedirs(local_file_dir, exist_ok=True)
+                                with open(local_file_path, 'w', encoding='utf-8') as f:
+                                    f.write(content)
+                                print(f"✅ Restored local-only file: {local_file}")
+                            except Exception as e:
+                                print(f"⚠️ Could not restore {local_file}: {e}")
+                    
+                    # Stage the restored files
+                    self._run_git_command("git add -A")
+                    
+                    # Check if we need to commit the restored files
+                    stdout, stderr, rc = self._run_git_command("git status --porcelain")
+                    if rc == 0 and stdout.strip():
+                        # Commit the restored local-only files
+                        restore_message = "Restore local-only files after smart merge"
+                        sanitized_restore_message = self._sanitize_commit_message(restore_message)
+                        commit_stdout, commit_stderr, commit_rc = self._run_git_command_safe(['git', 'commit', '-m', sanitized_restore_message])
+                        if commit_rc == 0:
+                            print("✅ Committed restored local-only files")
+                        else:
+                            print(f"⚠️ Could not commit restored files: {commit_stderr}")
+                
+            # STEP 6: Ensure ALL files from both repositories are present (but be cautious if Stage 2 already ran)
             if stage2_resolved_files:
                 print("✅ Stage 2 resolution handled file merging - skipping additional file checkout to avoid overwriting resolved content")
                 # Stage 2 has already created the final resolved content for all files
@@ -772,16 +824,34 @@ class ConflictResolutionEngine:
                 missing_files = expected_files - set(current_files)
                 
                 if missing_files:
-                    print(f"⚠️ Found {len(missing_files)} missing files after merge, checking them out from remote: {missing_files}")
+                    print(f"⚠️ Found {len(missing_files)} missing files after merge: {missing_files}")
                     
-                    # Checkout missing files from remote
-                    for missing_file in missing_files:
-                        print(f"[DEBUG] Checking out missing file: {missing_file}")
-                        checkout_stdout, checkout_stderr, checkout_rc = self._run_git_command(f"git checkout {remote_branch} -- {missing_file}")
-                        if checkout_rc == 0:
-                            print(f"✅ Successfully checked out: {missing_file}")
-                        else:
-                            print(f"⚠️ Could not checkout {missing_file}: {checkout_stderr}")
+                    # Only checkout files that actually exist on remote
+                    # Local-only files should not be checked out from remote as they don't exist there
+                    remote_available_files = set(analysis.remote_files + analysis.common_files)
+                    missing_remote_files = missing_files & remote_available_files
+                    missing_local_only_files = missing_files - remote_available_files
+                    
+                    if missing_local_only_files:
+                        print(f"⚠️ Warning: {len(missing_local_only_files)} local-only files appear to be missing: {missing_local_only_files}")
+                        print("   These files should already be present locally and won't be checked out from remote.")
+                    
+                    if missing_remote_files:
+                        print(f"   Checking out {len(missing_remote_files)} files from remote: {missing_remote_files}")
+                        
+                        # Checkout missing files from remote (only files that exist on remote)
+                        for missing_file in missing_remote_files:
+                            print(f"[DEBUG] Checking out missing file: {missing_file}")
+                            # Use safe command execution to properly handle filenames with special characters
+                            checkout_stdout, checkout_stderr, checkout_rc = self._run_git_command_safe([
+                                'git', 'checkout', remote_branch, '--', missing_file
+                            ])
+                            if checkout_rc == 0:
+                                print(f"✅ Successfully checked out: {missing_file}")
+                            else:
+                                print(f"⚠️ Could not checkout {missing_file}: {checkout_stderr}")
+                    else:
+                        print("   No remote files need to be checked out.")
                     
                     # Stage the newly checked out files
                     self._run_git_command("git add -A")
@@ -1152,8 +1222,10 @@ class ConflictResolutionEngine:
                     for file_path in remote_files:
                         try:
                             # Force checkout the file from remote (this overwrites local content)
-                            checkout_cmd = f"git checkout {remote_branch} -- {file_path}"
-                            stdout_co, stderr_co, rc_co = self._run_git_command(checkout_cmd)
+                            # Use safe command execution to properly handle filenames with special characters
+                            stdout_co, stderr_co, rc_co = self._run_git_command_safe([
+                                'git', 'checkout', remote_branch, '--', file_path
+                            ])
                             if rc_co == 0:
                                 print(f"  Replaced with remote version: {file_path}")
                                 files_processed.append(file_path)
@@ -1431,10 +1503,12 @@ class ConflictResolutionEngine:
         try:
             if version == "ours":
                 # Get the local version (HEAD)
-                stdout, stderr, rc = self._run_git_command(f"git show HEAD:{file_path}")
+                # Use safe command execution to properly handle filenames with special characters
+                stdout, stderr, rc = self._run_git_command_safe(['git', 'show', f"HEAD:{file_path}"])
             elif version == "theirs":
                 # Get the remote version (MERGE_HEAD or the other branch)
-                stdout, stderr, rc = self._run_git_command(f"git show MERGE_HEAD:{file_path}")
+                # Use safe command execution to properly handle filenames with special characters
+                stdout, stderr, rc = self._run_git_command_safe(['git', 'show', f"MERGE_HEAD:{file_path}"])
             else:
                 return None
             
