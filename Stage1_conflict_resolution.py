@@ -1412,8 +1412,8 @@ class ConflictResolutionEngine:
                 print(f"  - {f.file_path} (has_differences: {f.has_differences})")              # Show Stage 2 dialog and get user resolutions
             if STAGE2_AVAILABLE and stage2:
                 print("[DEBUG] Opening Stage 2 dialog...")
-                # Use the stored parent window for Stage 2 (crucial for sync mode)
-                stage2_result = stage2.show_stage2_resolution(self.parent, conflicted_files)
+                # Create a new root window for Stage 2 since Stage 1 window is closed
+                stage2_result = stage2.show_stage2_resolution(None, conflicted_files)
                 
                 # Store the conflicted files for later use in apply function
                 if stage2_result:
