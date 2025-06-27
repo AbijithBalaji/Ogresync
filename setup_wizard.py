@@ -197,6 +197,56 @@ class OgresyncSetupWizard:
             return True
         return False
     
+    def _set_window_icon(self):
+        """Set window icon for the dialog"""
+        if not self.dialog:
+            return
+            
+        try:
+            # Try to find icon files
+            icon_paths = []
+            
+            # Check if we're running from a PyInstaller bundle
+            if hasattr(sys, '_MEIPASS'):
+                # Running from PyInstaller bundle
+                bundle_dir = sys._MEIPASS
+                icon_paths.extend([
+                    os.path.join(bundle_dir, "assets", "new_logo_1.ico"),
+                    os.path.join(bundle_dir, "assets", "ogrelix_logo.ico"),
+                    os.path.join(bundle_dir, "assets", "new_logo_1.png")
+                ])
+            else:
+                # Running from source
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                icon_paths.extend([
+                    os.path.join(script_dir, "assets", "new_logo_1.ico"),
+                    os.path.join(script_dir, "assets", "ogrelix_logo.ico"),
+                    os.path.join(script_dir, "assets", "new_logo_1.png")
+                ])
+            
+            # Try to set icon from available files
+            for icon_path in icon_paths:
+                if os.path.exists(icon_path):
+                    try:
+                        if icon_path.lower().endswith('.ico'):
+                            self.dialog.iconbitmap(icon_path)
+                        elif icon_path.lower().endswith('.png'):
+                            # For PNG files, try to load as PhotoImage
+                            try:
+                                icon_image = tk.PhotoImage(file=icon_path)
+                                self.dialog.iconphoto(True, icon_image)
+                            except Exception:
+                                pass  # If PNG loading fails, continue to next icon
+                        print(f"[DEBUG] Successfully set window icon: {icon_path}")
+                        break
+                    except Exception as e:
+                        print(f"[DEBUG] Failed to set icon {icon_path}: {e}")
+                        continue
+                        
+        except Exception as e:
+            print(f"[DEBUG] Icon loading failed: {e}")
+            pass  # Icon is optional, don't break the dialog
+    
     def run_wizard(self) -> Tuple[bool, Dict[str, Any]]:
         """
         Runs the setup wizard and returns completion status and final state.
@@ -233,6 +283,9 @@ class OgresyncSetupWizard:
         self.dialog.configure(bg=ui_elements.Colors.BG_PRIMARY if ui_elements else "#FAFBFC")
         self.dialog.resizable(True, True)  # Allow resizing to accommodate content
         self.dialog.grab_set()
+        
+        # Set window icon
+        self._set_window_icon()
         
         # Center and size the dialog - increased size to accommodate all content
         width, height = 900, 700  # Increased from 900x700 to accommodate all UI elements
@@ -2535,9 +2588,28 @@ Created: {time.strftime('%Y-%m-%d %H:%M:%S')}
                         self._update_status("✅ Sync complete - remote content preserved as requested")
                         return True, "Synchronization complete - remote content preserved (no local push)"
                     elif conflict_strategy == ConflictStrategy.SMART_MERGE:
-                        print("[DEBUG] Final sync - SMART_MERGE strategy: sync already handled in Step 9")
-                        self._update_status("✅ Sync complete - repositories already merged")
-                        return True, "Synchronization complete - smart merge already applied"
+                        print("[DEBUG] Final sync - SMART_MERGE strategy: verifying push status")
+                        
+                        # Check if there are unpushed commits (in case push failed during conflict resolution)
+                        unpushed_result = subprocess.run(['git', 'log', 'origin/main..HEAD', '--oneline'], 
+                                                       cwd=vault_path, capture_output=True, text=True)
+                        
+                        if unpushed_result.returncode == 0 and unpushed_result.stdout.strip():
+                            print("[DEBUG] Final sync - Found unpushed commits after SMART_MERGE, attempting push")
+                            push_result = subprocess.run(['git', 'push', '-u', 'origin', 'main'], 
+                                                       cwd=vault_path, capture_output=True, text=True)
+                            if push_result.returncode == 0:
+                                print("[DEBUG] Final sync - Successfully pushed remaining commits")
+                                self._update_status("✅ Smart merge complete - all changes pushed to GitHub")
+                                return True, "Smart merge completed successfully - all changes synchronized with GitHub"
+                            else:
+                                print(f"[DEBUG] Final sync - Push failed: {push_result.stderr}")
+                                self._update_status("⚠️ Smart merge complete locally - manual push may be needed")
+                                return True, f"Smart merge completed - push failed: {push_result.stderr[:100]}"
+                        else:
+                            print("[DEBUG] Final sync - No unpushed commits found, smart merge already synchronized")
+                            self._update_status("✅ Smart merge complete - repositories already synchronized")
+                            return True, "Smart merge completed successfully - repositories already synchronized"
                 except ImportError:
                     print("[DEBUG] Final sync - Could not import ConflictStrategy, continuing")
             

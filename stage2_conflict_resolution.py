@@ -218,6 +218,56 @@ class Stage2ConflictResolutionDialog:
         # External editors
         self.available_editors = ExternalEditorManager.detect_available_editors()
     
+    def _set_window_icon(self):
+        """Set window icon for the dialog"""
+        if not self.dialog:
+            return
+            
+        try:
+            # Try to find icon files
+            icon_paths = []
+            
+            # Check if we're running from a PyInstaller bundle
+            if hasattr(sys, '_MEIPASS'):
+                # Running from PyInstaller bundle
+                bundle_dir = sys._MEIPASS
+                icon_paths.extend([
+                    os.path.join(bundle_dir, "assets", "new_logo_1.ico"),
+                    os.path.join(bundle_dir, "assets", "ogrelix_logo.ico"),
+                    os.path.join(bundle_dir, "assets", "new_logo_1.png")
+                ])
+            else:
+                # Running from source
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                icon_paths.extend([
+                    os.path.join(script_dir, "assets", "new_logo_1.ico"),
+                    os.path.join(script_dir, "assets", "ogrelix_logo.ico"),
+                    os.path.join(script_dir, "assets", "new_logo_1.png")
+                ])
+            
+            # Try to set icon from available files
+            for icon_path in icon_paths:
+                if os.path.exists(icon_path):
+                    try:
+                        if icon_path.lower().endswith('.ico'):
+                            self.dialog.iconbitmap(icon_path)
+                        elif icon_path.lower().endswith('.png'):
+                            # For PNG files, try to load as PhotoImage
+                            try:
+                                icon_image = tk.PhotoImage(file=icon_path)
+                                self.dialog.iconphoto(True, icon_image)
+                            except Exception:
+                                pass  # If PNG loading fails, continue to next icon
+                        print(f"[DEBUG] Successfully set window icon: {icon_path}")
+                        break
+                    except Exception as e:
+                        print(f"[DEBUG] Failed to set icon {icon_path}: {e}")
+                        continue
+                        
+        except Exception as e:
+            print(f"[DEBUG] Icon loading failed: {e}")
+            pass  # Icon is optional, don't break the dialog
+    
     def _maintain_focus(self):
         """Helper method to maintain proper window focus and layering"""
         if self.dialog:
@@ -255,15 +305,22 @@ class Stage2ConflictResolutionDialog:
         self._load_current_file()
           # Show dialog and wait for completion
         try:
-            if self.dialog:                # Ensure dialog is visible and on top
+            if self.dialog:
+                # Ensure dialog is visible and on top
                 self.dialog.deiconify()
                 self.dialog.lift()
                 self.dialog.focus_force()
-                  # Bring to front again after a brief delay to ensure visibility
+                
+                # Make sure we're not closing immediately
+                print("[DEBUG] Stage 2 dialog created, ensuring it stays visible...")
+                
+                # Bring to front again after a brief delay to ensure visibility
                 def bring_to_front():
                     try:
                         if self.dialog and hasattr(self.dialog, 'lift'):
                             self.dialog.lift()
+                            self.dialog.focus_force()
+                            print("[DEBUG] Stage 2 dialog brought to front")
                     except tk.TclError:
                         pass  # Dialog might be destroyed
                 
@@ -271,6 +328,7 @@ class Stage2ConflictResolutionDialog:
                     try:
                         if self.dialog and hasattr(self.dialog, 'focus_force'):
                             self.dialog.focus_force()
+                            print("[DEBUG] Stage 2 dialog focus forced")
                     except tk.TclError:
                         pass  # Dialog might be destroyed
                 
@@ -279,8 +337,45 @@ class Stage2ConflictResolutionDialog:
                 callback2 = self.dialog.after(200, force_focus)
                 self.scheduled_callbacks.extend([callback1, callback2])
                 
-                # Start the mainloop
-                self.dialog.mainloop()
+                # Add a callback to ensure dialog stays alive for at least a few seconds
+                def ensure_alive():
+                    try:
+                        if self.dialog and hasattr(self.dialog, 'winfo_exists'):
+                            print("[DEBUG] Stage 2 dialog still alive after 1 second")
+                    except tk.TclError:
+                        print("[DEBUG] Stage 2 dialog destroyed within 1 second")
+                
+                callback3 = self.dialog.after(1000, ensure_alive)
+                self.scheduled_callbacks.append(callback3)
+                
+                print("[DEBUG] Starting Stage 2 dialog - using modal approach...")
+                
+                # For threaded calls, use a different approach than mainloop()
+                # Make the dialog modal using grab_set and wait_window instead
+                try:
+                    # Make dialog modal
+                    self.dialog.grab_set()
+                    self.dialog.focus_set()
+                    
+                    # Wait for dialog to be destroyed instead of using mainloop
+                    print("[DEBUG] Waiting for Stage 2 dialog completion...")
+                    self.dialog.wait_window()
+                    print("[DEBUG] Stage 2 dialog completed")
+                    
+                except tk.TclError as tcl_err:
+                    print(f"[DEBUG] Tkinter error during Stage 2 wait: {tcl_err}")
+                    # Dialog might have been destroyed already
+                
+                except Exception as wait_err:
+                    print(f"[DEBUG] Error during Stage 2 wait: {wait_err}")
+                    
+                finally:
+                    # Ensure grab is released
+                    try:
+                        if self.dialog and hasattr(self.dialog, 'grab_release'):
+                            self.dialog.grab_release()
+                    except:
+                        pass
         except Exception as e:
             print(f"[ERROR] Dialog error: {e}")
             import traceback
@@ -290,17 +385,38 @@ class Stage2ConflictResolutionDialog:
     
     def _create_dialog(self):
         """Create the main dialog window"""
-        # Always create as a new independent window to ensure it's on top
-        self.dialog = tk.Tk()
+        # Create appropriate window type based on parent
+        if self.parent and hasattr(self.parent, 'winfo_exists'):
+            try:
+                # Check if parent still exists and is valid
+                if self.parent.winfo_exists():
+                    # Create as Toplevel with parent
+                    self.dialog = tk.Toplevel(self.parent)
+                    self.dialog.transient(self.parent)
+                    print("[DEBUG] Created Stage 2 as Toplevel with parent")
+                else:
+                    # Parent destroyed, create new Tk window
+                    self.dialog = tk.Tk()
+                    print("[DEBUG] Parent destroyed, created Stage 2 as new Tk window")
+            except (tk.TclError, AttributeError):
+                # Parent invalid, create new Tk window
+                self.dialog = tk.Tk()
+                print("[DEBUG] Parent invalid, created Stage 2 as new Tk window")
+        else:
+            # No parent or invalid parent, create new Tk window
+            self.dialog = tk.Tk()
+            print("[DEBUG] No parent, created Stage 2 as new Tk window")
         
-        # If we have a parent, store reference but don't make it transient
-        # This ensures the Stage 2 dialog is always on top and visible
+        # Store parent reference
         if self.parent:
             self._hidden_parent = self.parent
         
         self.dialog.title("Stage 2: File-by-File Conflict Resolution")
         self.dialog.configure(bg="#FAFBFC")
         self.dialog.resizable(True, True)
+        
+        # Set window icon
+        self._set_window_icon()
         
         # Initialize Tkinter variables after dialog window is created
         self.file_list_var = tk.StringVar()
@@ -343,26 +459,72 @@ class Stage2ConflictResolutionDialog:
     def _cleanup_and_destroy(self):
         """Safely cleanup and destroy the dialog"""
         try:
-            # Cancel any scheduled callbacks
+            print("[DEBUG] Stage 2 cleanup: Starting dialog cleanup")
+            
+            # Cancel any scheduled callbacks first to prevent callback errors
             if hasattr(self, 'scheduled_callbacks'):
+                print(f"[DEBUG] Stage 2 cleanup: Canceling {len(self.scheduled_callbacks)} scheduled callbacks")
                 for callback_id in self.scheduled_callbacks:
                     try:
-                        if self.dialog:
+                        if self.dialog and callback_id:
                             self.dialog.after_cancel(callback_id)
-                    except tk.TclError:
+                            print(f"[DEBUG] Stage 2 cleanup: Canceled callback {callback_id}")
+                    except (tk.TclError, AttributeError) as e:
+                        print(f"[DEBUG] Stage 2 cleanup: Callback {callback_id} already canceled or invalid: {e}")
                         pass  # Callback might already be executed or cancelled
                 self.scheduled_callbacks.clear()
+                print("[DEBUG] Stage 2 cleanup: All callbacks canceled")
             
-            # Destroy the dialog
+            # Clear any widget references to prevent orphan callbacks
+            self._clear_widget_references()
+            
+            # For wait_window() approach, we just need to destroy the dialog
             if self.dialog:
                 try:
+                    print("[DEBUG] Stage 2 cleanup: Destroying dialog")
+                    # Destroy the dialog - this will make wait_window() return
                     self.dialog.destroy()
-                except tk.TclError:
+                    print("[DEBUG] Stage 2 cleanup: Dialog destroyed successfully")
+                except tk.TclError as e:
+                    print(f"[DEBUG] Stage 2 cleanup: Dialog destroy failed: {e}")
                     pass  # Dialog might already be destroyed
+                
                 self.dialog = None
+                print("[DEBUG] Stage 2 cleanup: Dialog reference cleared")
+                
         except Exception as e:
-            print(f"[WARNING] Error during dialog cleanup: {e}")
+            print(f"[ERROR] Stage 2 cleanup: Error during dialog cleanup: {e}")
+            import traceback
+            traceback.print_exc()
     
+    def _clear_widget_references(self):
+        """Clear widget references to prevent orphan callbacks - only during final cleanup"""
+        try:
+            print("[DEBUG] Stage 2 cleanup: Clearing widget references")
+            # Clear all widget references that might have callbacks
+            # Only clear these during final cleanup to avoid interfering with ongoing operations
+            if hasattr(self, 'file_list_var'):
+                self.file_list_var = None
+            if hasattr(self, 'file_listbox'):
+                self.file_listbox = None
+            if hasattr(self, 'local_text'):
+                self.local_text = None
+            if hasattr(self, 'remote_text'):
+                self.remote_text = None
+            if hasattr(self, 'editor_text'):
+                self.editor_text = None
+            if hasattr(self, 'progress_label'):
+                self.progress_label = None
+            if hasattr(self, 'file_info_label'):
+                self.file_info_label = None
+            
+            # Note: Don't clear content_notebook here as it may still be needed
+            # It will be destroyed with the main dialog
+                
+            print("[DEBUG] Stage 2 cleanup: Widget references cleared")
+        except Exception as e:
+            print(f"[DEBUG] Stage 2 cleanup: Error clearing widget references: {e}")
+
     def _on_window_close(self):
         """Handle window close event (X button)"""
         self._cancel_resolution()

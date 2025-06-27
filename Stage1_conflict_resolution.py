@@ -124,8 +124,9 @@ class ResolutionResult:
 class ConflictResolutionEngine:
     """Core engine for analyzing and resolving repository conflicts"""
     
-    def __init__(self, vault_path: str):
+    def __init__(self, vault_path: str, parent: Optional[tk.Tk] = None):
         self.vault_path = vault_path
+        self.parent = parent  # Store parent window for Stage 2 dialogs
         self.git_available = self._check_git_availability()
         self.default_remote_branch = "origin/main"  # Default fallback
         
@@ -884,13 +885,22 @@ class ConflictResolutionEngine:
             all_files = list(expected_files)
             files_processed = all_files
             
-            # Note: Push operation is handled by the main sync function in Ogresync.py
-            print("✅ Smart merge resolution completed - ready for push by main sync process")
+            # CRITICAL FIX: Smart Merge should push changes to GitHub immediately
+            print("Pushing smart merge results to GitHub...")
+            current_branch = self._get_current_branch()
+            push_stdout, push_stderr, push_rc = self._run_git_command(f"git push -u origin {current_branch}")
+            
+            if push_rc == 0:
+                print("✅ Smart merge changes successfully pushed to GitHub")
+                message = f"Smart merge completed and pushed to GitHub - {len(all_files)} files combined from both repositories"
+            else:
+                print(f"⚠️ Smart merge completed locally but push failed: {push_stderr}")
+                message = f"Smart merge completed locally - {len(all_files)} files combined (push failed: {push_stderr[:100]})"
             
             return ResolutionResult(
                 success=True,
                 strategy=ConflictStrategy.SMART_MERGE,
-                message=f"Smart merge completed successfully - {len(all_files)} files combined from both repositories",
+                message=message,
                 files_processed=files_processed,
                 backup_created=backup_id
             )
@@ -1402,8 +1412,8 @@ class ConflictResolutionEngine:
                 print(f"  - {f.file_path} (has_differences: {f.has_differences})")              # Show Stage 2 dialog and get user resolutions
             if STAGE2_AVAILABLE and stage2:
                 print("[DEBUG] Opening Stage 2 dialog...")
-                # Create a new root window for Stage 2 since Stage 1 window is closed
-                stage2_result = stage2.show_stage2_resolution(None, conflicted_files)
+                # Use the stored parent window for Stage 2 (crucial for sync mode)
+                stage2_result = stage2.show_stage2_resolution(self.parent, conflicted_files)
                 
                 # Store the conflicted files for later use in apply function
                 if stage2_result:
@@ -1566,6 +1576,56 @@ class ConflictResolutionDialog:
         self.dialog: Optional[Union[tk.Tk, tk.Toplevel]] = None
         self.listboxes = []  # Initialize listboxes for per-list scrolling
         
+    def _set_window_icon(self):
+        """Set window icon for the dialog"""
+        if not self.dialog:
+            return
+            
+        try:
+            # Try to find icon files
+            icon_paths = []
+            
+            # Check if we're running from a PyInstaller bundle
+            if hasattr(sys, '_MEIPASS'):
+                # Running from PyInstaller bundle
+                bundle_dir = sys._MEIPASS
+                icon_paths.extend([
+                    os.path.join(bundle_dir, "assets", "new_logo_1.ico"),
+                    os.path.join(bundle_dir, "assets", "ogrelix_logo.ico"),
+                    os.path.join(bundle_dir, "assets", "new_logo_1.png")
+                ])
+            else:
+                # Running from source
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                icon_paths.extend([
+                    os.path.join(script_dir, "assets", "new_logo_1.ico"),
+                    os.path.join(script_dir, "assets", "ogrelix_logo.ico"),
+                    os.path.join(script_dir, "assets", "new_logo_1.png")
+                ])
+            
+            # Try to set icon from available files
+            for icon_path in icon_paths:
+                if os.path.exists(icon_path):
+                    try:
+                        if icon_path.lower().endswith('.ico'):
+                            self.dialog.iconbitmap(icon_path)
+                        elif icon_path.lower().endswith('.png'):
+                            # For PNG files, try to load as PhotoImage
+                            try:
+                                icon_image = tk.PhotoImage(file=icon_path)
+                                self.dialog.iconphoto(True, icon_image)
+                            except Exception:
+                                pass  # If PNG loading fails, continue to next icon
+                        print(f"[DEBUG] Successfully set window icon: {icon_path}")
+                        break
+                    except Exception as e:
+                        print(f"[DEBUG] Failed to set icon {icon_path}: {e}")
+                        continue
+                        
+        except Exception as e:
+            print(f"[DEBUG] Icon loading failed: {e}")
+            pass  # Icon is optional, don't break the dialog
+        
     def show(self) -> Optional[ConflictStrategy]:
         """Show the dialog and return the selected strategy"""
         print("[DEBUG] Starting Stage 1 show() method")
@@ -1575,6 +1635,9 @@ class ConflictResolutionDialog:
         
         self.dialog.title("Repository Conflict Resolution - Enhanced with History Preservation")
         print("[DEBUG] Set title")
+        
+        # Set window icon
+        self._set_window_icon()
         
         # Configure dialog
         self.dialog.configure(bg="#FAFBFC")
@@ -2262,7 +2325,7 @@ class ConflictResolver:
     def __init__(self, vault_path: str, parent: Optional[tk.Tk] = None):
         self.vault_path = vault_path
         self.parent = parent
-        self.engine = ConflictResolutionEngine(vault_path)
+        self.engine = ConflictResolutionEngine(vault_path, parent)  # Pass parent to engine
         
         # Initialize backup manager if available
         if BACKUP_MANAGER_AVAILABLE and OgresyncBackupManager:
