@@ -36,6 +36,17 @@ import tempfile
 import stat
 from pathlib import Path
 
+# Import safe subprocess handling
+try:
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from packaging_utils import run_subprocess_safe, is_packaged_app
+    PACKAGING_UTILS_AVAILABLE = True
+except ImportError:
+    PACKAGING_UTILS_AVAILABLE = False
+    # Fallback to regular subprocess for build scripts
+    def run_subprocess_safe(*args, **kwargs):
+        return subprocess.run(*args, **kwargs)
+
 
 class Colors:
     """ANSI color codes for terminal output"""
@@ -80,7 +91,7 @@ def run_command(cmd, cwd=None, check=True, capture_output=True):
     """Run a command and return the result"""
     print(f"  Running: {cmd}")
     try:
-        result = subprocess.run(
+        result = run_subprocess_safe(
             cmd,
             shell=True,
             cwd=cwd,
@@ -176,23 +187,18 @@ def clean_build_directories():
     """Clean previous build artifacts"""
     print_step("Cleaning build directories")
     
-    dirs_to_clean = ["build", "dist", "linux-packaging/AppDir", "linux-packaging/*.AppImage"]
+    dirs_to_clean = ["build", "dist", "linux-packaging/AppDir"]
+    files_to_clean = ["linux-packaging/Ogresync-x86_64.AppImage"]
     
-    for dir_pattern in dirs_to_clean:
-        if "*" in dir_pattern:
-            # Handle glob patterns
-            import glob
-            for path in glob.glob(dir_pattern):
-                if os.path.exists(path):
-                    if os.path.isdir(path):
-                        shutil.rmtree(path)
-                    else:
-                        os.remove(path)
-                    print_success(f"Removed: {path}")
-        else:
-            if os.path.exists(dir_pattern):
-                shutil.rmtree(dir_pattern)
-                print_success(f"Removed: {dir_pattern}")
+    for dir_name in dirs_to_clean:
+        if os.path.exists(dir_name):
+            shutil.rmtree(dir_name)
+            print_success(f"Removed: {dir_name}")
+    
+    for file_name in files_to_clean:
+        if os.path.exists(file_name):
+            os.remove(file_name)
+            print_success(f"Removed: {file_name}")
 
 
 def create_linux_spec_file():
@@ -217,7 +223,8 @@ import os
 import sys
 
 # Get the directory containing this spec file
-SPEC_DIR = os.path.dirname(os.path.abspath(__name__))
+SPEC_DIR = os.path.dirname(os.path.abspath(SPECPATH))
+PROJECT_ROOT = os.path.dirname(SPEC_DIR)
 
 block_cipher = None
 
@@ -271,7 +278,7 @@ excludes = [
 
 a = Analysis(
     ['Ogresync.py'],
-    pathex=[SPEC_DIR],
+    pathex=[],
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,
@@ -323,23 +330,119 @@ def build_executable(verbose=False):
     """Build the executable using PyInstaller"""
     print_step("Building executable with PyInstaller")
     
-    spec_file = create_linux_spec_file()
+    # Use a simple, working spec file approach
+    spec_content = '''# -*- mode: python ; coding: utf-8 -*-
+
+block_cipher = None
+
+a = Analysis(
+    ['../Ogresync.py'],
+    pathex=['/home/gloup/Personal/Development/Ogresync'],
+    binaries=[],
+    datas=[('../assets', 'assets')],
+    hiddenimports=[
+        'tkinter',
+        'tkinter.ttk',
+        'tkinter.scrolledtext',
+        'tkinter.filedialog',
+        'tkinter.messagebox',
+        'tkinter.simpledialog',
+        'subprocess',
+        'threading',
+        'psutil',
+        'pyperclip',
+        'requests',
+        'shlex',
+        'platform',
+        'webbrowser',
+        'packaging_utils',
+        'ui_elements',
+        'wizard_steps',
+        'github_setup',
+        'setup_wizard',
+        'Stage1_conflict_resolution',
+        'stage2_conflict_resolution',
+        'backup_manager',
+        'conflict_resolution_integration',
+        'offline_sync_manager',
+        'enhanced_auto_sync',
+    ],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[
+        'matplotlib',
+        'numpy',
+        'pandas',
+        'scipy',
+        'PIL',
+        'PyQt5',
+        'PyQt6',
+        'PySide2',
+        'PySide6',
+        'wx',
+    ],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    [],
+    name='Ogresync',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=True,
+    disable_windowed_traceback=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon=None,
+)
+'''
     
-    cmd = f"pyinstaller --clean {'--debug all' if verbose else ''} {spec_file}"
+    spec_path = Path("linux-packaging") / "Ogresync-working.spec"
+    with open(spec_path, "w") as f:
+        f.write(spec_content)
     
-    result = run_command(cmd, capture_output=not verbose)
+    print_success(f"Created working spec file: {spec_path}")
     
-    if not result:
-        return False
+    # Change to linux-packaging directory to run PyInstaller
+    original_cwd = os.getcwd()
+    linux_packaging_dir = os.path.join(os.getcwd(), "linux-packaging")
+    os.chdir(linux_packaging_dir)
     
-    # Check if executable was created
-    exe_path = Path("dist") / "Ogresync"
-    if not exe_path.exists():
-        print_error(f"Executable not found at: {exe_path}")
-        return False
-    
-    print_success(f"Executable created: {exe_path}")
-    return True
+    try:
+        cmd = f"pyinstaller --clean {'--debug all' if verbose else ''} Ogresync-working.spec"
+        
+        result = run_command(cmd, capture_output=not verbose)
+        
+        if not result:
+            return False
+        
+        # Check if executable was created
+        exe_path = Path("dist") / "Ogresync"
+        if not exe_path.exists():
+            print_error(f"Executable not found at: {exe_path}")
+            return False
+        
+        print_success(f"Executable created: {exe_path}")
+        return True
+    finally:
+        # Always return to original directory
+        os.chdir(original_cwd)
 
 
 def create_appdir_structure():
@@ -349,8 +452,8 @@ def create_appdir_structure():
     appdir = Path("linux-packaging") / "AppDir"
     appdir.mkdir(exist_ok=True)
     
-    # Copy the built executable
-    exe_src = Path("dist") / "Ogresync"
+    # Copy the built executable from linux-packaging/dist/
+    exe_src = Path("linux-packaging") / "dist" / "Ogresync"
     exe_dst = appdir / "usr" / "bin"
     exe_dst.mkdir(parents=True, exist_ok=True)
     
@@ -468,7 +571,7 @@ def verify_appimage(appimage_path):
     try:
         # Test with --help or --version if your app supports it
         # For now, we'll just check if it starts without immediate crash
-        result = subprocess.run(
+        result = run_subprocess_safe(
             [str(appimage_path), "--help"],
             capture_output=True,
             text=True,

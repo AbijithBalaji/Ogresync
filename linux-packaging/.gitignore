@@ -1,0 +1,28 @@
+# Build artifacts
+linux-packaging/dist/
+linux-packaging/build/
+linux-packaging/AppDir/
+linux-packaging/*.AppImage
+linux-packaging/appimagetool-*.AppImage
+linux-packaging/Ogresync-linux.spec
+linux-packaging/Ogresync-simple.spec
+
+# PyInstaller build directories
+build/
+dist/
+*.spec
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
