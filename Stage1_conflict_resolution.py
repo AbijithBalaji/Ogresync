@@ -907,13 +907,22 @@ class ConflictResolutionEngine:
             all_files = list(expected_files)
             files_processed = all_files
             
-            # Note: Push operation is handled by the main sync function in Ogresync.py
-            print("✅ Smart merge resolution completed - ready for push by main sync process")
+            # CRITICAL FIX: Smart Merge should push changes to GitHub immediately
+            print("Pushing smart merge results to GitHub...")
+            current_branch = self._get_current_branch()
+            push_stdout, push_stderr, push_rc = self._run_git_command(f"git push -u origin {current_branch}")
+            
+            if push_rc == 0:
+                print("✅ Smart merge changes successfully pushed to GitHub")
+                message = f"Smart merge completed and pushed to GitHub - {len(all_files)} files combined from both repositories"
+            else:
+                print(f"⚠️ Smart merge completed locally but push failed: {push_stderr}")
+                message = f"Smart merge completed locally - {len(all_files)} files combined (push failed: {push_stderr[:100]})"
             
             return ResolutionResult(
                 success=True,
                 strategy=ConflictStrategy.SMART_MERGE,
-                message=f"Smart merge completed successfully - {len(all_files)} files combined from both repositories",
+                message=message,
                 files_processed=files_processed,
                 backup_created=backup_id
             )
