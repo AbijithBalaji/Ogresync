@@ -38,6 +38,16 @@ from typing import Dict, List, Tuple, Optional, Any, Set, Union
 from dataclasses import dataclass, asdict
 from enum import Enum
 
+# Import packaging utilities for safe subprocess calls
+try:
+    from packaging_utils import run_subprocess_safe, is_packaged_app
+    PACKAGING_UTILS_AVAILABLE = True
+except ImportError:
+    PACKAGING_UTILS_AVAILABLE = False
+    # Fallback to regular subprocess
+    def run_subprocess_safe(*args, **kwargs):
+        return subprocess.run(*args, **kwargs)
+
 # Import Stage 2 module
 try:
     import stage2_conflict_resolution as stage2
@@ -138,8 +148,8 @@ class ConflictResolutionEngine:
     def _check_git_availability(self) -> bool:
         """Check if git is available in the system"""
         try:
-            result = subprocess.run(['git', '--version'], 
-                                  capture_output=True, text=True, timeout=5)
+            result = run_subprocess_safe(['git', '--version'], 
+                                       capture_output=True, text=True, timeout=5)
             return result.returncode == 0
         except:
             return False
@@ -159,7 +169,7 @@ class ConflictResolutionEngine:
                     command_parts = shlex.split(command, posix=False)  # posix=False for Windows
                     print(f"[DEBUG] Windows command parts: {command_parts}")
                     
-                    result = subprocess.run(
+                    result = run_subprocess_safe(
                         command_parts,
                         cwd=working_dir,
                         capture_output=True,
@@ -169,7 +179,7 @@ class ConflictResolutionEngine:
                 except (ValueError, OSError) as e:
                     # If splitting fails, fall back to shell=True but escape the command properly
                     print(f"[DEBUG] Command splitting failed ({e}), using shell=True fallback")
-                    result = subprocess.run(
+                    result = run_subprocess_safe(
                         command,
                         shell=True,
                         cwd=working_dir,
@@ -182,7 +192,7 @@ class ConflictResolutionEngine:
                 try:
                     # Use shlex.split for proper argument parsing
                     command_parts = shlex.split(command)
-                    result = subprocess.run(
+                    result = run_subprocess_safe(
                         command_parts,
                         cwd=working_dir,
                         capture_output=True,
@@ -192,7 +202,7 @@ class ConflictResolutionEngine:
                 except (ValueError, OSError) as e:
                     # If shlex.split fails or command not found, fall back to shell=True
                     print(f"[DEBUG] shlex.split failed ({e}), using shell=True")
-                    result = subprocess.run(
+                    result = run_subprocess_safe(
                         command,
                         shell=True,
                         cwd=working_dir,
@@ -228,7 +238,7 @@ class ConflictResolutionEngine:
             working_dir = cwd or self.vault_path
             
             # Always use argument list for maximum safety
-            result = subprocess.run(
+            result = run_subprocess_safe(
                 command_parts,
                 cwd=working_dir,
                 capture_output=True,

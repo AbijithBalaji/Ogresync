@@ -117,6 +117,31 @@ def get_subprocess_startupinfo():
     return None
 
 
+def run_subprocess_safe(*args, **kwargs):
+    """
+    Safe subprocess.run wrapper that hides console windows in packaged applications.
+    
+    This function automatically adds the appropriate startupinfo for Windows
+    when running as a packaged application.
+    
+    Args:
+        *args: Arguments to pass to subprocess.run
+        **kwargs: Keyword arguments to pass to subprocess.run
+        
+    Returns:
+        CompletedProcess object from subprocess.run
+    """
+    import subprocess
+    
+    # Add startupinfo for Windows packaged apps if not already provided
+    if 'startupinfo' not in kwargs:
+        startupinfo = get_subprocess_startupinfo()
+        if startupinfo:
+            kwargs['startupinfo'] = startupinfo
+    
+    return subprocess.run(*args, **kwargs)
+
+
 def safe_print(message: str, use_unicode: bool = True):
     """
     Safely print messages, handling Unicode issues in packaged applications.

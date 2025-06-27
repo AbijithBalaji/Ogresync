@@ -23,6 +23,13 @@ from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, asdict
 from enum import Enum
 
+# Import packaging utilities for safe subprocess calls
+try:
+    import packaging_utils
+    PACKAGING_UTILS_AVAILABLE = True
+except ImportError:
+    PACKAGING_UTILS_AVAILABLE = False
+
 # Import existing modules
 try:
     from backup_manager import OgresyncBackupManager, BackupReason
@@ -216,9 +223,13 @@ class OfflineSyncManager:
     def get_unpushed_commits(self) -> List[str]:
         """Get list of unpushed commits"""
         try:
-            import subprocess
-            result = subprocess.run(['git', 'log', 'origin/main..HEAD', '--oneline'], 
-                                  cwd=self.vault_path, capture_output=True, text=True, timeout=10)
+            if PACKAGING_UTILS_AVAILABLE:
+                result = packaging_utils.run_subprocess_safe(['git', 'log', 'origin/main..HEAD', '--oneline'], 
+                                      cwd=self.vault_path, capture_output=True, text=True, timeout=10)
+            else:
+                import subprocess
+                result = subprocess.run(['git', 'log', 'origin/main..HEAD', '--oneline'], 
+                                      cwd=self.vault_path, capture_output=True, text=True, timeout=10)
             
             if result.returncode == 0:
                 commits = [line.strip() for line in result.stdout.splitlines() if line.strip()]
@@ -532,13 +543,22 @@ def run_offline_sync(vault_path: str, config_data: Dict[str, str],
     try:
         # Use the existing open_obsidian function
         # This would need to be imported or passed as a parameter
-        import subprocess
         
         # Simple Obsidian launch - adjust based on platform
         if os.name == 'nt':  # Windows
-            subprocess.Popen([obsidian_path], cwd=vault_path)
+            if PACKAGING_UTILS_AVAILABLE:
+                import subprocess
+                subprocess.Popen([obsidian_path], cwd=vault_path)
+            else:
+                import subprocess
+                subprocess.Popen([obsidian_path], cwd=vault_path)
         else:  # Linux/Mac
-            subprocess.Popen([obsidian_path], cwd=vault_path)
+            if PACKAGING_UTILS_AVAILABLE:
+                import subprocess
+                subprocess.Popen([obsidian_path], cwd=vault_path)
+            else:
+                import subprocess
+                subprocess.Popen([obsidian_path], cwd=vault_path)
         
         safe_update_log_func("✅ Obsidian launched. Make your edits and close when finished.")
         
@@ -556,15 +576,24 @@ def run_offline_sync(vault_path: str, config_data: Dict[str, str],
     safe_update_log_func("💾 Committing local changes...")
     
     try:
-        import subprocess
-        
-        # Add all changes
-        subprocess.run(['git', 'add', '.'], cwd=vault_path, check=True)
-        
-        # Commit with offline indicator
-        commit_msg = f"Offline sync commit - {session_id}"
-        result = subprocess.run(['git', 'commit', '-m', commit_msg], 
-                              cwd=vault_path, capture_output=True, text=True)
+        if PACKAGING_UTILS_AVAILABLE:
+            # Add all changes
+            packaging_utils.run_subprocess_safe(['git', 'add', '.'], cwd=vault_path, check=True)
+            
+            # Commit with offline indicator
+            commit_msg = f"Offline sync commit - {session_id}"
+            result = packaging_utils.run_subprocess_safe(['git', 'commit', '-m', commit_msg], 
+                                  cwd=vault_path, capture_output=True, text=True)
+        else:
+            import subprocess
+            
+            # Add all changes
+            subprocess.run(['git', 'add', '.'], cwd=vault_path, check=True)
+            
+            # Commit with offline indicator
+            commit_msg = f"Offline sync commit - {session_id}"
+            result = subprocess.run(['git', 'commit', '-m', commit_msg], 
+                                  cwd=vault_path, capture_output=True, text=True)
         
         local_commits = []
         if result.returncode == 0:

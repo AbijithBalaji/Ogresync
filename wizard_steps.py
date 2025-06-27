@@ -18,6 +18,16 @@ import shutil
 import subprocess
 import threading
 import time
+
+# Import packaging utilities for safe subprocess calls
+try:
+    import packaging_utils
+    PACKAGING_UTILS_AVAILABLE = True
+except ImportError:
+    PACKAGING_UTILS_AVAILABLE = False
+    # Fallback to regular subprocess
+    def run_subprocess_safe(*args, **kwargs):
+        return subprocess.run(*args, **kwargs)
 import platform
 import webbrowser
 import pyperclip
@@ -57,25 +67,25 @@ def run_command(command, cwd=None, timeout=None):
     else:
         # Fallback implementation with Windows console hiding
         try:
-            # Determine if we're running as a packaged executable
-            is_packaged = getattr(sys, 'frozen', False)
-            
-            # On Windows, hide console windows when packaged
-            startupinfo = None
-            if platform.system() == "Windows" and is_packaged:
-                startupinfo = subprocess.STARTUPINFO()
-                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                startupinfo.wShowWindow = subprocess.SW_HIDE
-            
-            result = subprocess.run(
-                command,
-                shell=True,
-                cwd=cwd,
-                timeout=timeout,
-                capture_output=True,
-                text=True,
-                startupinfo=startupinfo
-            )
+            # Use safe subprocess call that handles packaging automatically
+            if PACKAGING_UTILS_AVAILABLE:
+                result = packaging_utils.run_subprocess_safe(
+                    command,
+                    shell=True,
+                    cwd=cwd,
+                    timeout=timeout,
+                    capture_output=True,
+                    text=True
+                )
+            else:
+                result = subprocess.run(
+                    command,
+                    shell=True,
+                    cwd=cwd,
+                    timeout=timeout,
+                    capture_output=True,
+                    text=True
+                )
             return result.stdout, result.stderr, result.returncode
         except subprocess.TimeoutExpired:
             return "", "Command timed out", 1

@@ -22,6 +22,16 @@ import time
 import re
 from typing import Optional, Tuple
 
+# Import packaging utilities for safe subprocess calls
+try:
+    import packaging_utils
+    PACKAGING_UTILS_AVAILABLE = True
+except ImportError:
+    PACKAGING_UTILS_AVAILABLE = False
+    # Fallback to regular subprocess
+    def run_subprocess_safe(*args, **kwargs):
+        return subprocess.run(*args, **kwargs)
+
 
 # =============================================================================
 # SECURITY FUNCTIONS
@@ -77,22 +87,25 @@ def _run_git_command_safe(command_parts: list, cwd: Optional[str] = None) -> Tup
         # Determine if we're running as a packaged executable
         is_packaged = getattr(sys, 'frozen', False)
         
-        # On Windows, hide console windows when packaged
-        startupinfo = None
-        if platform.system() == "Windows" and is_packaged:
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = subprocess.SW_HIDE
-        
-        result = subprocess.run(
-            command_parts,
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            shell=False,  # Important: do not use shell=True
-            timeout=30,
-            startupinfo=startupinfo
-        )
+        # Use safe subprocess call that handles packaging automatically
+        if PACKAGING_UTILS_AVAILABLE:
+            result = packaging_utils.run_subprocess_safe(
+                command_parts,
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                shell=False,  # Important: do not use shell=True
+                timeout=30
+            )
+        else:
+            result = subprocess.run(
+                command_parts,
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                shell=False,  # Important: do not use shell=True
+                timeout=30
+            )
         return result.stdout, result.stderr, result.returncode
     except subprocess.TimeoutExpired:
         return "", "Command timed out", 1
@@ -131,22 +144,25 @@ def run_command(command, cwd=None, timeout=None):
         # Determine if we're running as a packaged executable
         is_packaged = getattr(sys, 'frozen', False)
         
-        # On Windows, hide console windows when packaged
-        startupinfo = None
-        if platform.system() == "Windows" and is_packaged:
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = subprocess.SW_HIDE
-        
-        result = subprocess.run(
-            command,
-            cwd=cwd,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            startupinfo=startupinfo
-        )
+        # Use safe subprocess call that handles packaging automatically
+        if PACKAGING_UTILS_AVAILABLE:
+            result = packaging_utils.run_subprocess_safe(
+                command,
+                cwd=cwd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=timeout
+            )
+        else:
+            result = subprocess.run(
+                command,
+                cwd=cwd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=timeout
+            )
         return result.stdout.strip(), result.stderr.strip(), result.returncode
     except subprocess.TimeoutExpired as e:
         return "", str(e), 1

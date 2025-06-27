@@ -20,10 +20,18 @@ Author: Ogresync Development Team
 Date: June 2025
 """
 
+import subprocess
 import threading
 import time
 from datetime import datetime
 from typing import Optional, Callable, Any
+
+# Import packaging utilities for safe subprocess calls
+try:
+    import packaging_utils
+    PACKAGING_UTILS_AVAILABLE = True
+except ImportError:
+    PACKAGING_UTILS_AVAILABLE = False
 
 # Import our new offline manager
 try:
@@ -229,15 +237,30 @@ def run_enhanced_offline_sync(vault_path: str,
     
     try:
         # Use existing open_obsidian function if available, or implement simple launch
-        import subprocess
         import platform
         
         if platform.system() == "Windows":
-            subprocess.Popen([obsidian_path], cwd=vault_path)
+            if PACKAGING_UTILS_AVAILABLE:
+                # For Popen, we need to use subprocess directly but with safe handling
+                import subprocess
+                subprocess.Popen([obsidian_path], cwd=vault_path)
+            else:
+                import subprocess
+                subprocess.Popen([obsidian_path], cwd=vault_path)
         elif platform.system() == "Darwin":  # macOS
-            subprocess.Popen(["open", obsidian_path], cwd=vault_path)
+            if PACKAGING_UTILS_AVAILABLE:
+                import subprocess
+                subprocess.Popen(["open", obsidian_path], cwd=vault_path)
+            else:
+                import subprocess
+                subprocess.Popen(["open", obsidian_path], cwd=vault_path)
         else:  # Linux
-            subprocess.Popen([obsidian_path], cwd=vault_path)
+            if PACKAGING_UTILS_AVAILABLE:
+                import subprocess
+                subprocess.Popen([obsidian_path], cwd=vault_path)
+            else:
+                import subprocess
+                subprocess.Popen([obsidian_path], cwd=vault_path)
         
         safe_update_log_func("✅ Obsidian launched successfully")
         safe_update_log_func("📝 Make your edits and close Obsidian when finished")
@@ -290,16 +313,25 @@ def run_enhanced_offline_sync(vault_path: str,
             else:
                 safe_update_log_func(f"⚠️ Error staging files: {add_err}")
         else:
-            # Fallback to subprocess
-            import subprocess
-            
-            # Add all changes
-            subprocess.run(['git', 'add', '-A'], cwd=vault_path, check=True)
-            
-            # Commit with offline indicator
-            commit_msg = f"Offline sync commit - {session_id} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-            result = subprocess.run(['git', 'commit', '-m', commit_msg], 
-                                  cwd=vault_path, capture_output=True, text=True)
+            # Fallback to subprocess with safe handling
+            if PACKAGING_UTILS_AVAILABLE:
+                # Add all changes
+                packaging_utils.run_subprocess_safe(['git', 'add', '-A'], cwd=vault_path, check=True)
+                
+                # Commit with offline indicator
+                commit_msg = f"Offline sync commit - {session_id} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                result = packaging_utils.run_subprocess_safe(['git', 'commit', '-m', commit_msg], 
+                                      cwd=vault_path, capture_output=True, text=True)
+            else:
+                import subprocess
+                
+                # Add all changes
+                subprocess.run(['git', 'add', '-A'], cwd=vault_path, check=True)
+                
+                # Commit with offline indicator
+                commit_msg = f"Offline sync commit - {session_id} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                result = subprocess.run(['git', 'commit', '-m', commit_msg], 
+                                      cwd=vault_path, capture_output=True, text=True)
             
             if result.returncode == 0:
                 safe_update_log_func("✅ Local changes committed successfully")

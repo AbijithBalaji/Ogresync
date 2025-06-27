@@ -28,6 +28,13 @@ from typing import Dict, List, Tuple, Optional, Any, Set, Union
 from dataclasses import dataclass
 from enum import Enum
 import threading
+
+# Import packaging utilities for safe subprocess calls
+try:
+    import packaging_utils
+    PACKAGING_UTILS_AVAILABLE = True
+except ImportError:
+    PACKAGING_UTILS_AVAILABLE = False
 import queue
 import time
 
@@ -150,20 +157,31 @@ class ExternalEditorManager:
                 else:
                     # Test if command is available in PATH
                     try:
-                        result = subprocess.run([commands[0], "--version"], 
-                                              capture_output=True, timeout=3, 
-                                              stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+                        if PACKAGING_UTILS_AVAILABLE:
+                            result = packaging_utils.run_subprocess_safe([commands[0], "--version"], 
+                                                      capture_output=True, timeout=3, 
+                                                      stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+                        else:
+                            result = subprocess.run([commands[0], "--version"], 
+                                                  capture_output=True, timeout=3, 
+                                                  stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
                         return result.returncode == 0
                     except:
                         # If --version fails, try "which" or "where" command
                         test_cmd = ["where" if platform.system() == "Windows" else "which", commands[0]]
-                        result = subprocess.run(test_cmd, capture_output=True, timeout=3)
+                        if PACKAGING_UTILS_AVAILABLE:
+                            result = packaging_utils.run_subprocess_safe(test_cmd, capture_output=True, timeout=3)
+                        else:
+                            result = subprocess.run(test_cmd, capture_output=True, timeout=3)
                         return result.returncode == 0
             else:
                 # For multi-part commands, just test if first part exists
                 first_command = commands[0]
                 test_cmd = ["where" if platform.system() == "Windows" else "which", first_command]
-                result = subprocess.run(test_cmd, capture_output=True, timeout=3)
+                if PACKAGING_UTILS_AVAILABLE:
+                    result = packaging_utils.run_subprocess_safe(test_cmd, capture_output=True, timeout=3)
+                else:
+                    result = subprocess.run(test_cmd, capture_output=True, timeout=3)
                 return result.returncode == 0
                 
         except Exception as e:

@@ -238,25 +238,25 @@ def run_command(command, cwd=None, timeout=None):
                         # On Unix-like systems, use standard splitting
                         command_parts = shlex.split(command)
                     
-                    # Determine if we're running as a packaged executable
-                    is_packaged = getattr(sys, 'frozen', False)
-                    
-                    # On Windows, hide console windows when packaged
-                    startupinfo = None
-                    if platform.system() == "Windows" and is_packaged:
-                        startupinfo = subprocess.STARTUPINFO()
-                        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                        startupinfo.wShowWindow = subprocess.SW_HIDE
-                    
-                    result = subprocess.run(
-                        command_parts,
-                        cwd=cwd,
-                        capture_output=True,
-                        text=True,
-                        timeout=timeout,
-                        check=False,
-                        startupinfo=startupinfo
-                    )
+                    # Use safe subprocess call that handles packaging automatically
+                    if PACKAGING_UTILS_AVAILABLE:
+                        result = packaging_utils.run_subprocess_safe(
+                            command_parts,
+                            cwd=cwd,
+                            capture_output=True,
+                            text=True,
+                            timeout=timeout,
+                            check=False
+                        )
+                    else:
+                        result = subprocess.run(
+                            command_parts,
+                            cwd=cwd,
+                            capture_output=True,
+                            text=True,
+                            timeout=timeout,
+                            check=False
+                        )
                     return result.stdout.strip(), result.stderr.strip(), result.returncode
                 except (ValueError, OSError):
                     # Fall back to shell=True if splitting fails
@@ -268,26 +268,27 @@ def run_command(command, cwd=None, timeout=None):
         # - When argument splitting fails
         # - Non-string commands (already arrays)
         
-        # Determine if we're running as a packaged executable
-        is_packaged = getattr(sys, 'frozen', False)
-        
-        # On Windows, hide console windows when packaged
-        startupinfo = None
-        if platform.system() == "Windows" and is_packaged:
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = subprocess.SW_HIDE
-        
-        result = subprocess.run(
-            command,
-            cwd=cwd,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-            startupinfo=startupinfo
-        )
+        # Use safe subprocess call that handles packaging automatically
+        if PACKAGING_UTILS_AVAILABLE:
+            result = packaging_utils.run_subprocess_safe(
+                command,
+                cwd=cwd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False
+            )
+        else:
+            result = subprocess.run(
+                command,
+                cwd=cwd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False
+            )
         return result.stdout.strip(), result.stderr.strip(), result.returncode
     except subprocess.TimeoutExpired as e:
         return "", str(e), 1
@@ -1098,14 +1099,20 @@ def restart_to_sync_mode():
         # Enhanced fallback with complete isolation
         try:
             print("Entering isolated console fallback mode...")
-            # Use subprocess to run sync in complete isolation
-            import subprocess
+            # Use safe subprocess call for isolated console fallback
             current_dir = os.path.dirname(os.path.abspath(__file__))
-            result = subprocess.run([
-                sys.executable, 
-                os.path.join(current_dir, "Ogresync.py"),
-                "--console-sync"  # Special flag for console-only sync
-            ], cwd=current_dir)
+            if PACKAGING_UTILS_AVAILABLE:
+                result = packaging_utils.run_subprocess_safe([
+                    sys.executable, 
+                    os.path.join(current_dir, "Ogresync.py"),
+                    "--console-sync"  # Special flag for console-only sync
+                ], cwd=current_dir)
+            else:
+                result = subprocess.run([
+                    sys.executable, 
+                    os.path.join(current_dir, "Ogresync.py"),
+                    "--console-sync"  # Special flag for console-only sync
+                ], cwd=current_dir)
             
         except Exception as fallback_error:
             print(f"Isolated console fallback failed: {fallback_error}")
