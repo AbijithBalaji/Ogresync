@@ -692,6 +692,40 @@ class OgresyncSetupWizard:
         completion_dialog.resizable(True, True)
         completion_dialog.configure(bg="#FAFBFC")
         
+        # Set window icon to match main application
+        try:
+            # Check if we're running from PyInstaller bundle
+            if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+                # Try different icon files in order of preference
+                icon_files = ["new_logo_1.ico", "ogrelix_logo.ico", "new_logo_1.png"]
+                icon_path = None
+                for icon_file in icon_files:
+                    test_path = os.path.join(sys._MEIPASS, "assets", icon_file)  # type: ignore
+                    if os.path.exists(test_path):
+                        icon_path = test_path
+                        break
+            else:
+                # Try different icon files in order of preference
+                icon_files = ["new_logo_1.ico", "ogrelix_logo.ico", "new_logo_1.png"]
+                icon_path = None
+                for icon_file in icon_files:
+                    test_path = os.path.join("assets", icon_file)
+                    if os.path.exists(test_path):
+                        icon_path = test_path
+                        break
+            
+            if icon_path:
+                if icon_path.endswith('.ico'):
+                    # Use iconbitmap for .ico files (works better on Windows)
+                    completion_dialog.iconbitmap(icon_path)
+                else:
+                    # Use iconphoto for .png files
+                    img = tk.PhotoImage(file=icon_path)
+                    completion_dialog.iconphoto(True, img)
+        except Exception as e:
+            print(f"[DEBUG] Could not set setup completion dialog icon: {e}")
+            pass
+        
         # Center and size the dialog appropriately - significantly increased size for better text display
         completion_dialog.update_idletasks()
         width, height = 850, 750  # Increased from 750x650 to provide much more space

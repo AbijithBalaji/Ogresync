@@ -2059,7 +2059,7 @@ def auto_sync(use_threading=True):
                         fetch_out, fetch_err, fetch_rc = run_command("git fetch origin", cwd=vault_path)
                         if fetch_rc != 0:
                             safe_update_log(f"❌ Failed to fetch remote changes: {fetch_err}", 75)
-                            safe_update_log(f"❌ Push operation failed: {err}", 80)
+                            safe_update_log(f"❌ Push operation failed: {err}", 100)
                             return
                           # Check if we need to merge or if we can force push safely
                         # First, check what the difference is between local and remote
@@ -2103,10 +2103,10 @@ def auto_sync(use_threading=True):
                             safe_update_log("✅ Local repository is ahead of remote. Force pushing resolved conflicts...", 77)
                             force_push_out, force_push_err, force_push_rc = run_command("git push --force-with-lease origin main", cwd=vault_path)
                             if force_push_rc == 0:
-                                safe_update_log("✅ All changes have been successfully pushed to GitHub using force-with-lease.", 80)
+                                safe_update_log("✅ All changes have been successfully pushed to GitHub using force-with-lease.", 100)
                             else:
-                                safe_update_log(f"❌ Force push failed: {force_push_err}", 80)
-                                safe_update_log("📝 Your resolved conflicts are committed locally. Manual intervention may be required.", 80)
+                                safe_update_log(f"❌ Force push failed: {force_push_err}", 100)
+                                safe_update_log("📝 Your resolved conflicts are committed locally. Manual intervention may be required.", 100)
                         else:
                             # Both local and remote have changes - need to merge
                             safe_update_log("🔄 Both local and remote have changes. Attempting to integrate remote changes...", 76)
@@ -2118,10 +2118,10 @@ def auto_sync(use_threading=True):
                                 safe_update_log("📤 Attempting push again...", 79)
                                 push2_out, push2_err, push2_rc = run_command("git push -u origin main", cwd=vault_path)
                                 if push2_rc == 0:
-                                    safe_update_log("✅ All changes have been successfully pushed to GitHub after integration.", 80)
+                                    safe_update_log("✅ All changes have been successfully pushed to GitHub after integration.", 100)
                                 else:
-                                    safe_update_log(f"❌ Push failed again after integration: {push2_err}", 80)
-                                    safe_update_log("📝 Your changes are committed locally. Manual intervention may be required.", 80)
+                                    safe_update_log(f"❌ Push failed again after integration: {push2_err}", 100)
+                                    safe_update_log("📝 Your changes are committed locally. Manual intervention may be required.", 100)
                             else:
                                 # Merge failed - likely due to conflicts. Trigger 2-stage conflict resolution
                                 safe_update_log("⚠️ Merge conflicts detected during push integration.", 78)
@@ -2156,21 +2156,21 @@ def auto_sync(use_threading=True):
                                         # Try to push the resolved changes
                                         final_push_out, final_push_err, final_push_rc = run_command("git push --force-with-lease origin main", cwd=vault_path)
                                         if final_push_rc == 0:
-                                            safe_update_log("✅ Successfully pushed conflict resolution to remote repository.", 85)
+                                            safe_update_log("✅ Successfully pushed conflict resolution to remote repository.", 100)
                                         else:
-                                            safe_update_log(f"⚠️ Push after conflict resolution failed: {final_push_err}", 85)
-                                            safe_update_log("� Your conflict resolution is committed locally and can be pushed manually.", 85)
+                                            safe_update_log(f"⚠️ Push after conflict resolution failed: {final_push_err}", 100)
+                                            safe_update_log("📝 Your conflict resolution is committed locally and can be pushed manually.", 100)
                                     else:
-                                        safe_update_log("❌ Conflict resolution was cancelled or failed.", 82)
-                                        safe_update_log("📝 Your local changes remain committed. Manual resolution may be required.", 82)
+                                        safe_update_log("❌ Conflict resolution was cancelled or failed.", 100)
+                                        safe_update_log("📝 Your local changes remain committed. Manual resolution may be required.", 100)
                                         
                                 except Exception as e:
                                     safe_update_log(f"❌ Error during conflict resolution: {e}", 80)
                                     safe_update_log("📝 Your local changes are safely committed. Manual resolution required.", 80)
                     else:
-                        safe_update_log(f"❌ Push operation failed: {err}", 80)
+                        safe_update_log(f"❌ Push operation failed: {err}", 100)
                     return
-                safe_update_log("✅ All changes have been successfully pushed to GitHub.", 80)
+                safe_update_log("✅ All changes have been successfully pushed to GitHub.", 100)
                 
                 # Mark offline sessions as completed after successful push
                 if OFFLINE_SYNC_AVAILABLE and offline_sync_manager is not None and hasattr(offline_sync_manager, 'OfflineSyncManager'):
@@ -2182,7 +2182,7 @@ def auto_sync(use_threading=True):
                     except Exception as e:
                         print(f"[DEBUG] Error completing offline sync: {e}")
             else:
-                safe_update_log("No new commits to push.", 80)
+                safe_update_log("No new commits to push.", 100)
                 
                 # Even when there are no new commits, clean up completed offline sessions
                 if OFFLINE_SYNC_AVAILABLE and offline_sync_manager is not None and hasattr(offline_sync_manager, 'OfflineSyncManager'):
@@ -2192,7 +2192,7 @@ def auto_sync(use_threading=True):
                     except Exception as e:
                         print(f"[DEBUG] Error cleaning up offline sessions: {e}")
         else:
-            safe_update_log("Offline mode: Changes have been committed locally. They will be automatically pushed when an internet connection is available.", 80)
+            safe_update_log("Offline mode: Changes have been committed locally. They will be automatically pushed when an internet connection is available.", 100)
 
         # Step 10: Final message
         if remote_changes_detected and local_changes_committed:
