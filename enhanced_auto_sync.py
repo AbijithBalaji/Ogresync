@@ -30,8 +30,25 @@ from typing import Optional, Callable, Any
 try:
     import packaging_utils
     PACKAGING_UTILS_AVAILABLE = True
+    run_subprocess_safe = packaging_utils.run_subprocess_safe
 except ImportError:
     PACKAGING_UTILS_AVAILABLE = False
+    # Fallback to regular subprocess with safe handling for packaged apps
+    def run_subprocess_safe(*args, **kwargs):
+        import subprocess
+        import sys
+        
+        # Check if we're running as a packaged executable
+        is_packaged = getattr(sys, 'frozen', False)
+        
+        # On Windows, hide console windows when packaged
+        if sys.platform == "win32" and is_packaged:
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+            kwargs['startupinfo'] = startupinfo
+        
+        return subprocess.run(*args, **kwargs)
 
 # Import our new offline manager
 try:
@@ -326,11 +343,11 @@ def run_enhanced_offline_sync(vault_path: str,
                 import subprocess
                 
                 # Add all changes
-                subprocess.run(['git', 'add', '-A'], cwd=vault_path, check=True)
+                run_subprocess_safe(['git', 'add', '-A'], cwd=vault_path, check=True)
                 
                 # Commit with offline indicator
                 commit_msg = f"Offline sync commit - {session_id} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-                result = subprocess.run(['git', 'commit', '-m', commit_msg], 
+                result = run_subprocess_safe(['git', 'commit', '-m', commit_msg], 
                                       cwd=vault_path, capture_output=True, text=True)
             
             if result.returncode == 0:

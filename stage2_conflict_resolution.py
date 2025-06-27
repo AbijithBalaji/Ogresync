@@ -33,8 +33,25 @@ import threading
 try:
     import packaging_utils
     PACKAGING_UTILS_AVAILABLE = True
+    run_subprocess_safe = packaging_utils.run_subprocess_safe
 except ImportError:
     PACKAGING_UTILS_AVAILABLE = False
+    # Fallback to regular subprocess with safe handling for packaged apps
+    def run_subprocess_safe(*args, **kwargs):
+        import subprocess
+        import sys
+        
+        # Check if we're running as a packaged executable
+        is_packaged = getattr(sys, 'frozen', False)
+        
+        # On Windows, hide console windows when packaged
+        if sys.platform == "win32" and is_packaged:
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+            kwargs['startupinfo'] = startupinfo
+        
+        return subprocess.run(*args, **kwargs)
 import queue
 import time
 
@@ -162,9 +179,19 @@ class ExternalEditorManager:
                                                       capture_output=True, timeout=3, 
                                                       stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
                         else:
-                            result = subprocess.run([commands[0], "--version"], 
+                            # Safe subprocess call for packaged apps
+                            import sys
+                            is_packaged = getattr(sys, 'frozen', False)
+                            startupinfo = None
+                            if sys.platform == "win32" and is_packaged:
+                                startupinfo = subprocess.STARTUPINFO()
+                                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                                startupinfo.wShowWindow = subprocess.SW_HIDE
+                            
+                            result = run_subprocess_safe([commands[0], "--version"], 
                                                   capture_output=True, timeout=3, 
-                                                  stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+                                                  stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                                  startupinfo=startupinfo)
                         return result.returncode == 0
                     except:
                         # If --version fails, try "which" or "where" command
@@ -172,7 +199,16 @@ class ExternalEditorManager:
                         if PACKAGING_UTILS_AVAILABLE:
                             result = packaging_utils.run_subprocess_safe(test_cmd, capture_output=True, timeout=3)
                         else:
-                            result = subprocess.run(test_cmd, capture_output=True, timeout=3)
+                            # Safe subprocess call for packaged apps
+                            import sys
+                            is_packaged = getattr(sys, 'frozen', False)
+                            startupinfo = None
+                            if sys.platform == "win32" and is_packaged:
+                                startupinfo = subprocess.STARTUPINFO()
+                                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                                startupinfo.wShowWindow = subprocess.SW_HIDE
+                            
+                            result = run_subprocess_safe(test_cmd, capture_output=True, timeout=3, startupinfo=startupinfo)
                         return result.returncode == 0
             else:
                 # For multi-part commands, just test if first part exists
@@ -181,7 +217,16 @@ class ExternalEditorManager:
                 if PACKAGING_UTILS_AVAILABLE:
                     result = packaging_utils.run_subprocess_safe(test_cmd, capture_output=True, timeout=3)
                 else:
-                    result = subprocess.run(test_cmd, capture_output=True, timeout=3)
+                    # Safe subprocess call for packaged apps
+                    import sys
+                    is_packaged = getattr(sys, 'frozen', False)
+                    startupinfo = None
+                    if sys.platform == "win32" and is_packaged:
+                        startupinfo = subprocess.STARTUPINFO()
+                        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                        startupinfo.wShowWindow = subprocess.SW_HIDE
+                    
+                    result = run_subprocess_safe(test_cmd, capture_output=True, timeout=3, startupinfo=startupinfo)
                 return result.returncode == 0
                 
         except Exception as e:

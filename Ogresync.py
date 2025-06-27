@@ -21,8 +21,25 @@ try:
     import packaging_utils
     packaging_utils.init_packaging_compatibility()
     PACKAGING_UTILS_AVAILABLE = True
+    run_subprocess_safe = packaging_utils.run_subprocess_safe
 except ImportError:
     PACKAGING_UTILS_AVAILABLE = False
+    # Fallback to regular subprocess with safe handling for packaged apps
+    def run_subprocess_safe(*args, **kwargs):
+        import subprocess
+        import sys
+        
+        # Check if we're running as a packaged executable
+        is_packaged = getattr(sys, 'frozen', False)
+        
+        # On Windows, hide console windows when packaged
+        if sys.platform == "win32" and is_packaged:
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+            kwargs['startupinfo'] = startupinfo
+        
+        return subprocess.run(*args, **kwargs)
 
 import ui_elements # Import the new UI module
 try:
@@ -249,7 +266,7 @@ def run_command(command, cwd=None, timeout=None):
                             check=False
                         )
                     else:
-                        result = subprocess.run(
+                        result = run_subprocess_safe(
                             command_parts,
                             cwd=cwd,
                             capture_output=True,
@@ -280,7 +297,7 @@ def run_command(command, cwd=None, timeout=None):
                 check=False
             )
         else:
-            result = subprocess.run(
+            result = run_subprocess_safe(
                 command,
                 cwd=cwd,
                 shell=True,
@@ -1108,7 +1125,7 @@ def restart_to_sync_mode():
                     "--console-sync"  # Special flag for console-only sync
                 ], cwd=current_dir)
             else:
-                result = subprocess.run([
+                result = run_subprocess_safe([
                     sys.executable, 
                     os.path.join(current_dir, "Ogresync.py"),
                     "--console-sync"  # Special flag for console-only sync

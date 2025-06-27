@@ -44,8 +44,21 @@ try:
     PACKAGING_UTILS_AVAILABLE = True
 except ImportError:
     PACKAGING_UTILS_AVAILABLE = False
-    # Fallback to regular subprocess
+    # Fallback to regular subprocess with safe handling for packaged apps
     def run_subprocess_safe(*args, **kwargs):
+        import subprocess
+        import sys
+        
+        # Check if we're running as a packaged executable
+        is_packaged = getattr(sys, 'frozen', False)
+        
+        # On Windows, hide console windows when packaged
+        if sys.platform == "win32" and is_packaged:
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+            kwargs['startupinfo'] = startupinfo
+        
         return subprocess.run(*args, **kwargs)
 
 # Import Stage 2 module
