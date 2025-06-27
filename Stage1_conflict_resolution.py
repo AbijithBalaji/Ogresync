@@ -1613,8 +1613,6 @@ class ConflictResolutionEngine:
             import traceback
             traceback.print_exc()
             return False
-            traceback.print_exc()
-            return False
 
     def _get_conflict_version(self, file_path: str, version: str) -> Optional[str]:
         """Get a specific version of a conflicted file from git"""

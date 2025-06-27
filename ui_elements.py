@@ -552,6 +552,13 @@ class PremiumDialog:
         y = (dialog.winfo_screenheight() // 2) - (height // 2)
         dialog.geometry(f"{width}x{height}+{x}+{y}")
         
+        # Ensure dialog appears on top and gets focus (Windows Z-order fix)
+        dialog.update()
+        dialog.lift()
+        dialog.focus_force()
+        dialog.attributes('-topmost', True)  # Temporarily make topmost
+        dialog.after(100, lambda: dialog.attributes('-topmost', False))  # Remove topmost after showing
+        
         # Main container with padding
         main_frame = tk.Frame(dialog, bg=Colors.BG_PRIMARY)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=Spacing.XL, pady=Spacing.XL)
