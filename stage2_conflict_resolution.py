@@ -342,8 +342,34 @@ class Stage2ConflictResolutionDialog:
                 callback2 = self.dialog.after(200, force_focus)
                 self.scheduled_callbacks.extend([callback1, callback2])
                 
-                # Start the mainloop
-                self.dialog.mainloop()
+                print("[DEBUG] Starting Stage 2 dialog - using modal approach...")
+                
+                # For threaded calls, use a different approach than mainloop()
+                # Make the dialog modal using grab_set and wait_window instead
+                try:
+                    # Make dialog modal
+                    self.dialog.grab_set()
+                    self.dialog.focus_set()
+                    
+                    # Wait for dialog to be destroyed instead of using mainloop
+                    print("[DEBUG] Waiting for Stage 2 dialog completion...")
+                    self.dialog.wait_window()
+                    print("[DEBUG] Stage 2 dialog completed")
+                    
+                except tk.TclError as tcl_err:
+                    print(f"[DEBUG] Tkinter error during Stage 2 wait: {tcl_err}")
+                    # Dialog might have been destroyed already
+                
+                except Exception as wait_err:
+                    print(f"[DEBUG] Error during Stage 2 wait: {wait_err}")
+                    
+                finally:
+                    # Ensure grab is released
+                    try:
+                        if self.dialog and hasattr(self.dialog, 'grab_release'):
+                            self.dialog.grab_release()
+                    except:
+                        pass
         except Exception as e:
             print(f"[ERROR] Dialog error: {e}")
             import traceback
@@ -459,34 +485,15 @@ class Stage2ConflictResolutionDialog:
             # Clear any widget references to prevent orphan callbacks
             self._clear_widget_references()
             
-            # Exit the mainloop first before destroying
+            # For wait_window() approach, we just need to destroy the dialog
             if self.dialog:
                 try:
-                    print("[DEBUG] Stage 2 cleanup: Quitting mainloop")
-                    # Quit the mainloop to return control to Stage 1
-                    self.dialog.quit()
-                    print("[DEBUG] Stage 2 cleanup: Mainloop quit successful")
-                except tk.TclError as e:
-                    print(f"[DEBUG] Stage 2 cleanup: Mainloop quit failed (expected): {e}")
-                    pass  # Mainloop might not be running
-                
-                # Small delay to ensure mainloop fully exits
-                try:
-                    self.dialog.update()
-                except tk.TclError:
-                    pass
-                
-                try:
                     print("[DEBUG] Stage 2 cleanup: Destroying dialog")
-                    # Now destroy the dialog
+                    # Destroy the dialog - this will make wait_window() return
                     self.dialog.destroy()
-                    print("[DEBUG] Stage 2 cleanup: Dialog destroyed successfully")
-                except tk.TclError as e:
-                    print(f"[DEBUG] Stage 2 cleanup: Dialog destroy failed: {e}")
+                except tk.TclError:
                     pass  # Dialog might already be destroyed
-                
                 self.dialog = None
-                print("[DEBUG] Stage 2 cleanup: Dialog reference cleared")
                 
         except Exception as e:
             print(f"[ERROR] Stage 2 cleanup: Error during dialog cleanup: {e}")
@@ -494,25 +501,33 @@ class Stage2ConflictResolutionDialog:
             traceback.print_exc()
     
     def _clear_widget_references(self):
-        """Clear widget references to prevent orphan callbacks"""
+        """Clear widget references to prevent orphan callbacks - only during final cleanup"""
         try:
             print("[DEBUG] Stage 2 cleanup: Clearing widget references")
             # Clear all widget references that might have callbacks
-            self.file_list_var = None
-            self.file_listbox = None
-            self.local_text = None
-            self.remote_text = None
-            self.editor_text = None
-            self.progress_label = None
-            self.file_info_label = None
-            
-            # Clear any notebook references
-            if hasattr(self, 'content_notebook'):
-                self.content_notebook = None
-                
+            # Only clear these during final cleanup to avoid interfering with ongoing operations
+            if hasattr(self, 'file_list_var'):
+                self.file_list_var = None
+            if hasattr(self, 'file_listbox'):
+                self.file_listbox = None
+            if hasattr(self, 'local_text'):
+                self.local_text = None
+            if hasattr(self, 'remote_text'):
+                self.remote_text = None
+            if hasattr(self, 'editor_text'):
+                self.editor_text = None
+            if hasattr(self, 'progress_label'):
+                self.progress_label = None
+            if hasattr(self, 'file_info_label'):
+                self.file_info_label = None
+
+            # Note: Don't clear content_notebook here as it may still be needed
+            # It will be destroyed with the main dialog
+
             print("[DEBUG] Stage 2 cleanup: Widget references cleared")
         except Exception as e:
             print(f"[DEBUG] Stage 2 cleanup: Error clearing widget references: {e}")
+
     
     def _on_window_close(self):
         """Handle window close event (X button)"""
@@ -1421,7 +1436,7 @@ class Stage2ConflictResolutionDialog:
     
     def _activate_manual_merge(self):
         """Activate manual merge tab and load current file content"""
-        if hasattr(self, 'content_notebook') and self.content_notebook:
+        if hasattr(self, 'content_notebook'):
             # Switch to manual merge tab
             self.content_notebook.select(1)  # Manual merge is tab index 1
         
