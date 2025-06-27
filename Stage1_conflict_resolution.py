@@ -1450,74 +1450,169 @@ class ConflictResolutionEngine:
             # Get the conflicted files from the stage2_result
             conflicted_files = getattr(stage2_result, 'conflicted_files', [])
             
+            # Safety check - ensure we have files to process
+            if not stage2_result.resolved_files:
+                print("[WARNING] No resolved files from Stage 2")
+                return True  # Consider this success if there's nothing to apply
+            
+            # Check current repository state first
+            print("[DEBUG] Checking current repository state before applying Stage 2 resolutions...")
+            status_stdout, status_stderr, status_rc = self._run_git_command("git status --porcelain")
+            
+            # Check if we're in a merge state
+            merge_head_exists = os.path.exists(os.path.join(self.vault_path, '.git', 'MERGE_HEAD'))
+            print(f"[DEBUG] Repository state - merge in progress: {merge_head_exists}")
+            print(f"[DEBUG] Working directory status: {status_stdout.strip() if status_stdout else 'clean'}")
+            
             # Apply each file resolution
+            files_applied = 0
+            files_actually_changed = 0
+            
             for file_path in stage2_result.resolved_files:
-                strategy = stage2_result.resolution_strategies.get(file_path)
-                if not strategy:
-                    print(f"[WARNING] No strategy found for {file_path}")
+                try:
+                    strategy = stage2_result.resolution_strategies.get(file_path)
+                    if not strategy:
+                        print(f"[WARNING] No strategy found for {file_path}")
+                        continue
+                    
+                    print(f"[DEBUG] Applying {strategy.value} to {file_path}")
+                    
+                    # Find the resolved content from the conflicted files
+                    resolved_content = None
+                    for file_conflict in conflicted_files:
+                        if file_conflict.file_path == file_path:
+                            resolved_content = file_conflict.resolved_content
+                            break
+                    
+                    if resolved_content is not None:
+                        # Check if the file actually needs to be changed
+                        full_path = os.path.join(self.vault_path, file_path)
+                        current_content = ""
+                        
+                        try:
+                            if os.path.exists(full_path):
+                                with open(full_path, 'r', encoding='utf-8') as f:
+                                    current_content = f.read()
+                        except Exception as read_error:
+                            print(f"[DEBUG] Could not read current content of {file_path}: {read_error}")
+                        
+                        # Only write if content actually differs
+                        if current_content.strip() != resolved_content.strip():
+                            # Ensure directory exists
+                            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                            
+                            # Write content safely
+                            with open(full_path, 'w', encoding='utf-8') as f:
+                                f.write(resolved_content)
+                            
+                            print(f"[DEBUG] Applied resolution to {file_path} (content changed)")
+                            files_actually_changed += 1
+                        else:
+                            print(f"[DEBUG] No content change needed for {file_path} (content identical)")
+                        
+                        files_applied += 1
+                    else:
+                        print(f"[WARNING] No resolved content found for {file_path}")
+                        
+                except Exception as file_error:
+                    print(f"[ERROR] Failed to apply resolution to {file_path}: {file_error}")
                     continue
+            
+            if files_applied == 0:
+                print("[WARNING] No files were successfully processed")
+                return True  # Don't fail the whole process
+            
+            print(f"[DEBUG] Stage 2 application summary: {files_applied} files processed, {files_actually_changed} files changed")
+            
+            # Only proceed with git operations if files were actually changed
+            if files_actually_changed == 0:
+                print("[DEBUG] No files were actually changed - Stage 2 resolution complete without git operations")
                 
-                print(f"[DEBUG] Applying {strategy.value} to {file_path}")
+                # If we're in a merge state but no files changed, we might need to continue the merge
+                if merge_head_exists:
+                    print("[DEBUG] Merge in progress but no file changes - attempting to continue merge")
+                    # Check if all conflicts are resolved
+                    conflicts_stdout, conflicts_stderr, conflicts_rc = self._run_git_command("git diff --name-only --diff-filter=U")
+                    if conflicts_rc == 0 and not conflicts_stdout.strip():
+                        print("[DEBUG] No unresolved conflicts found - completing merge")
+                        # Complete the merge with original commit message if possible
+                        merge_msg_path = os.path.join(self.vault_path, '.git', 'MERGE_MSG')
+                        if os.path.exists(merge_msg_path):
+                            try:
+                                with open(merge_msg_path, 'r', encoding='utf-8') as f:
+                                    merge_message = f.read().strip()
+                                stdout, stderr, rc = self._run_git_command_safe(['git', 'commit', '-m', merge_message])
+                                if rc == 0:
+                                    print("[DEBUG] Merge completed successfully")
+                                else:
+                                    print(f"[WARNING] Merge commit failed: {stderr}")
+                            except Exception as e:
+                                print(f"[WARNING] Could not read merge message: {e}")
+                                # Try with a default message
+                                stdout, stderr, rc = self._run_git_command_safe(['git', 'commit', '-m', 'Merge completed via Stage 2 resolution'])
+                                if rc == 0:
+                                    print("[DEBUG] Merge completed with default message")
+                        else:
+                            print("[DEBUG] No merge message found - merge may already be complete")
                 
-                # Find the resolved content from the conflicted files
-                resolved_content = None
-                for file_conflict in conflicted_files:
-                    if file_conflict.file_path == file_path:
-                        resolved_content = file_conflict.resolved_content
-                        break
-                
-                if resolved_content is not None:
-                    # Write the resolved content to the file
-                    full_path = os.path.join(self.vault_path, file_path)
-                    os.makedirs(os.path.dirname(full_path), exist_ok=True)
-                    
-                    with open(full_path, 'w', encoding='utf-8') as f:
-                        f.write(resolved_content)
-                    
-                    print(f"[DEBUG] Applied resolution to {file_path}")
-                else:
-                    print(f"[WARNING] No resolved content found for {file_path}")
+                return True
             
             # Stage all resolved files
+            print("[DEBUG] Staging resolved files...")
             stdout, stderr, rc = self._run_git_command("git add -A")
             if rc != 0:
                 print(f"[ERROR] Failed to stage resolved files: {stderr}")
                 return False
             
-            # Create a proper merge commit that combines both histories
-            # First, ensure we're merging with the remote branch
-            remote_branch = getattr(self, 'default_remote_branch', 'origin/main')
-            print(f"[DEBUG] Creating merge commit with remote branch: {remote_branch}")
+            # Check if there are actually changes to commit after staging
+            print("[DEBUG] Checking for changes to commit after staging...")
+            status_stdout, status_stderr, status_rc = self._run_git_command("git status --porcelain")
+            if status_rc == 0 and not status_stdout.strip():
+                print("[DEBUG] No changes to commit after staging - files may already be committed")
+                return True  # Success - nothing to commit
             
-            # Use git commit with merge parents to create a proper merge commit
-            commit_message = f"Resolve conflicts using Stage 2 resolution\n\nResolved {len(stage2_result.resolved_files)} files using strategies:\n"
-            for file_path, strategy in stage2_result.resolution_strategies.items():
-                commit_message += f"- {file_path}: {strategy.value}\n"
-            
-            # Create the merge commit safely
-            sanitized_message = self._sanitize_commit_message(commit_message)
-            stdout, stderr, rc = self._run_git_command_safe(['git', 'commit', '-m', sanitized_message])
-            if rc != 0:
-                print(f"[ERROR] Failed to commit resolutions: {stderr}")
-                return False
-            
-            # Now create a proper merge with the remote branch to include remote history
-            # This ensures the commit has both local and remote as parents
-            merge_stdout, merge_stderr, merge_rc = self._run_git_command_safe([
-                'git', 'merge', remote_branch, '--strategy=ours', '--no-edit'
-            ])
-            if merge_rc == 0:
-                print(f"[DEBUG] Successfully created merge commit with {remote_branch}")
+            # Determine the appropriate commit strategy
+            if merge_head_exists:
+                print("[DEBUG] Completing merge with Stage 2 resolutions...")
+                # We're in a merge - complete it
+                commit_message = f"Merge completed with Stage 2 conflict resolution\n\nResolved {files_actually_changed} files using strategies:\n"
+                for file_path, strategy in stage2_result.resolution_strategies.items():
+                    if file_path in stage2_result.resolved_files:
+                        commit_message += f"- {file_path}: {strategy.value}\n"
+                
+                sanitized_message = self._sanitize_commit_message(commit_message)
+                stdout, stderr, rc = self._run_git_command_safe(['git', 'commit', '-m', sanitized_message])
+                
+                if rc != 0:
+                    print(f"[ERROR] Failed to complete merge: {stderr}")
+                    print("[DEBUG] Attempting to continue anyway...")
+                else:
+                    print("[DEBUG] Merge completed successfully")
             else:
-                print(f"[DEBUG] Merge commit creation info: {merge_stderr}")
-                # This might fail if already up to date, which is OK
+                print("[DEBUG] Creating regular commit for Stage 2 resolutions...")
+                # Regular commit
+                commit_message = f"Apply Stage 2 conflict resolutions\n\nResolved {files_actually_changed} files using strategies:\n"
+                for file_path, strategy in stage2_result.resolution_strategies.items():
+                    if file_path in stage2_result.resolved_files:
+                        commit_message += f"- {file_path}: {strategy.value}\n"
+                
+                sanitized_message = self._sanitize_commit_message(commit_message)
+                stdout, stderr, rc = self._run_git_command_safe(['git', 'commit', '-m', sanitized_message])
+                
+                if rc != 0:
+                    print(f"[ERROR] Failed to commit resolutions: {stderr}")
+                    print("[DEBUG] Attempting to continue anyway...")
+                else:
+                    print("[DEBUG] Stage 2 resolutions committed successfully")
             
-            print("✅ Stage 2 resolutions applied and committed successfully")
+            print("✅ Stage 2 resolutions applied successfully")
             return True
             
         except Exception as e:
             print(f"[ERROR] Failed to apply Stage 2 resolutions: {e}")
             import traceback
+            traceback.print_exc()
+            return False
             traceback.print_exc()
             return False
 

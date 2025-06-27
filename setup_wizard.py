@@ -247,6 +247,40 @@ class OgresyncSetupWizard:
         self.dialog.resizable(True, True)  # Allow resizing to accommodate content
         self.dialog.grab_set()
         
+        # Set window icon to match main application
+        try:
+            # Check if we're running from PyInstaller bundle
+            if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+                # Try different icon files in order of preference
+                icon_files = ["new_logo_1.ico", "ogrelix_logo.ico", "new_logo_1.png"]
+                icon_path = None
+                for icon_file in icon_files:
+                    test_path = os.path.join(sys._MEIPASS, "assets", icon_file)  # type: ignore
+                    if os.path.exists(test_path):
+                        icon_path = test_path
+                        break
+            else:
+                # Try different icon files in order of preference
+                icon_files = ["new_logo_1.ico", "ogrelix_logo.ico", "new_logo_1.png"]
+                icon_path = None
+                for icon_file in icon_files:
+                    test_path = os.path.join("assets", icon_file)
+                    if os.path.exists(test_path):
+                        icon_path = test_path
+                        break
+            
+            if icon_path:
+                if icon_path.endswith('.ico'):
+                    # Use iconbitmap for .ico files (works better on Windows)
+                    self.dialog.iconbitmap(icon_path)
+                else:
+                    # Use iconphoto for .png files
+                    img = tk.PhotoImage(file=icon_path)
+                    self.dialog.iconphoto(True, img)
+        except Exception as e:
+            print(f"[DEBUG] Could not set setup wizard icon: {e}")
+            pass
+        
         # Center and size the dialog - increased size to accommodate all content
         width, height = 900, 700  # Increased from 900x700 to accommodate all UI elements
         self.dialog.minsize(900, 700)  # Set minimum size constraints
@@ -2511,12 +2545,12 @@ Created: {time.strftime('%Y-%m-%d %H:%M:%S')}
     
     def _step_final_sync(self):
         """
-        Step 10: Final synchronization - minimal and robust approach
+        Step 10: Final synchronization - enhanced to handle Stage 2 resolution results
         
-        Essential functions only:
+        Essential functions:
         1. Commit any uncommitted changes
-        2. Push ONLY if local_has_files_remote_empty scenario (empty remote)
-        3. Respect user's conflict resolution choices (never override)
+        2. Push commits appropriately based on conflict resolution strategy
+        3. Respect user's conflict resolution choices but ensure commits are pushed when needed
         4. Verify final sync status
         """
         try:
@@ -2526,24 +2560,7 @@ Created: {time.strftime('%Y-%m-%d %H:%M:%S')}
             
             self._update_status("🔄 Finalizing repository synchronization...")
             
-            
-            # CRITICAL: Check and respect user's conflict resolution choice
-            conflict_strategy = self.wizard_state.get("conflict_resolution_strategy")
-            if conflict_strategy:
-                try:
-                    from Stage1_conflict_resolution import ConflictStrategy
-                    if conflict_strategy == ConflictStrategy.KEEP_REMOTE_ONLY:
-                        print("[DEBUG] Final sync - KEEP_REMOTE_ONLY strategy: NO push allowed")
-                        self._update_status("✅ Sync complete - remote content preserved as requested")
-                        return True, "Synchronization complete - remote content preserved (no local push)"
-                    elif conflict_strategy == ConflictStrategy.SMART_MERGE:
-                        print("[DEBUG] Final sync - SMART_MERGE strategy: sync already handled in Step 9")
-                        self._update_status("✅ Sync complete - repositories already merged")
-                        return True, "Synchronization complete - smart merge already applied"
-                except ImportError:
-                    print("[DEBUG] Final sync - Could not import ConflictStrategy, continuing")
-            
-            # STEP 1: Always commit any uncommitted changes
+            # STEP 1: Always commit any uncommitted changes first
             status_result = run_command_safe(['git', 'status', '--porcelain'], 
                                          cwd=vault_path, capture_output=True, text=True)
             
@@ -2561,7 +2578,7 @@ Created: {time.strftime('%Y-%m-%d %H:%M:%S')}
                 else:
                     print(f"[DEBUG] Final sync - Commit failed: {commit_result.stderr}")
             
-            # STEP 2: Check if we need to push (ONLY for empty remote scenario)
+            # STEP 2: Check current repository state
             current_branch_result = run_command_safe(['git', 'branch', '--show-current'], 
                                                  cwd=vault_path, capture_output=True, text=True)
             current_branch = current_branch_result.stdout.strip() if current_branch_result.returncode == 0 else "main"
@@ -2569,9 +2586,12 @@ Created: {time.strftime('%Y-%m-%d %H:%M:%S')}
             # Fetch latest remote state
             run_command_safe(['git', 'fetch', 'origin'], cwd=vault_path, capture_output=True, text=True)
             
-            # Check if remote branch exists - this is the key indicator
+            # Check if remote branch exists
             remote_branch_exists = run_command_safe(['git', 'rev-parse', '--verify', f'origin/{current_branch}'], 
                                                 cwd=vault_path, capture_output=True, text=True)
+            
+            # Check our conflict resolution strategy
+            conflict_strategy = self.wizard_state.get("conflict_resolution_strategy")
             
             if remote_branch_exists.returncode != 0:
                 # Remote branch doesn't exist = empty remote scenario
@@ -2597,38 +2617,103 @@ Created: {time.strftime('%Y-%m-%d %H:%M:%S')}
                     else:
                         return False, f"Failed to push to empty remote repository.\nError: {push_error}"
             
-            # STEP 3: For existing remotes, just verify sync status (don't force push)
+            # STEP 3: For existing remotes, handle based on conflict resolution strategy
             else:
-                print("[DEBUG] Final sync - Remote branch exists, verifying sync status")
+                print("[DEBUG] Final sync - Remote branch exists, handling based on conflict resolution strategy")
                 
                 # Check if we're ahead of remote (have unpushed commits)
                 ahead_result = run_command_safe(['git', 'rev-list', '--count', f'origin/{current_branch}..HEAD'], 
                                             cwd=vault_path, capture_output=True, text=True)
                 
+                commits_ahead = 0
                 if ahead_result.returncode == 0:
                     try:
                         commits_ahead = int(ahead_result.stdout.strip() or 0)
                         print(f"[DEBUG] Final sync - Commits ahead of remote: {commits_ahead}")
-                        
-                        if commits_ahead > 0:
-                            # Conservative approach: don't auto-push to existing remotes
-                            # Let the user decide later or handle in normal workflow
-                            print("[DEBUG] Final sync - Have unpushed commits, but respecting existing remote")
-                            self._update_status("✅ Repository synchronized (local commits preserved)")
-                            return True, f"Synchronization complete - {commits_ahead} local commit(s) ready for manual sync"
-                        else:
-                            print("[DEBUG] Final sync - No commits ahead, repositories are in sync")
-                            self._update_status("✅ Repository already synchronized")
-                            return True, "Synchronization complete - repositories are in sync"
-                    
                     except ValueError:
                         print("[DEBUG] Final sync - Could not parse ahead count")
-                        self._update_status("✅ Repository synchronization completed")
-                        return True, "Synchronization complete"
+                
+                # Handle different conflict resolution strategies
+                if conflict_strategy:
+                    try:
+                        from Stage1_conflict_resolution import ConflictStrategy
+                        
+                        if conflict_strategy == ConflictStrategy.KEEP_REMOTE_ONLY:
+                            print("[DEBUG] Final sync - KEEP_REMOTE_ONLY strategy: repositories should already be synchronized")
+                            if commits_ahead > 0:
+                                print(f"[WARNING] Final sync - Unexpected commits ahead ({commits_ahead}) with KEEP_REMOTE_ONLY strategy")
+                            self._update_status("✅ Sync complete - remote content preserved as requested")
+                            return True, "Synchronization complete - remote content preserved"
+                            
+                        elif conflict_strategy == ConflictStrategy.KEEP_LOCAL_ONLY:
+                            print("[DEBUG] Final sync - KEEP_LOCAL_ONLY strategy: should push local commits")
+                            if commits_ahead > 0:
+                                print(f"[DEBUG] Final sync - Pushing {commits_ahead} local commits")
+                                self._update_status("📤 Pushing local changes to remote repository...")
+                                
+                                push_result = run_command_safe(['git', 'push', 'origin', current_branch], 
+                                                           cwd=vault_path, capture_output=True, text=True, timeout=120)
+                                
+                                if push_result.returncode == 0:
+                                    print("[DEBUG] Final sync - Successfully pushed local commits")
+                                    self._update_status("✅ Local changes pushed successfully!")
+                                    return True, f"Synchronization complete - {commits_ahead} local commit(s) pushed"
+                                else:
+                                    push_error = push_result.stderr.strip()
+                                    print(f"[DEBUG] Final sync - Push failed: {push_error}")
+                                    return False, f"Failed to push local commits.\nError: {push_error}"
+                            else:
+                                self._update_status("✅ Local content already synchronized")
+                                return True, "Synchronization complete - local content preserved"
+                                
+                        elif conflict_strategy == ConflictStrategy.SMART_MERGE:
+                            print("[DEBUG] Final sync - SMART_MERGE strategy: should push merge commits")
+                            if commits_ahead > 0:
+                                print(f"[DEBUG] Final sync - Pushing {commits_ahead} merge commits")
+                                self._update_status("📤 Pushing merged changes to remote repository...")
+                                
+                                push_result = run_command_safe(['git', 'push', 'origin', current_branch], 
+                                                           cwd=vault_path, capture_output=True, text=True, timeout=120)
+                                
+                                if push_result.returncode == 0:
+                                    print("[DEBUG] Final sync - Successfully pushed merge commits")
+                                    self._update_status("✅ Merged changes pushed successfully!")
+                                    return True, f"Synchronization complete - {commits_ahead} merge commit(s) pushed"
+                                else:
+                                    push_error = push_result.stderr.strip()
+                                    print(f"[DEBUG] Final sync - Push failed: {push_error}")
+                                    return False, f"Failed to push merge commits.\nError: {push_error}"
+                            else:
+                                self._update_status("✅ Merge already synchronized")
+                                return True, "Synchronization complete - smart merge applied"
+                        else:
+                            print(f"[DEBUG] Final sync - Unknown strategy: {conflict_strategy}")
+                            
+                    except ImportError:
+                        print("[DEBUG] Final sync - Could not import ConflictStrategy, using default behavior")
+                
+                # Default behavior: if we have commits ahead, try to push them
+                if commits_ahead > 0:
+                    print(f"[DEBUG] Final sync - Default behavior: pushing {commits_ahead} commits")
+                    self._update_status("📤 Pushing local commits to remote repository...")
+                    
+                    push_result = run_command_safe(['git', 'push', 'origin', current_branch], 
+                                               cwd=vault_path, capture_output=True, text=True, timeout=120)
+                    
+                    if push_result.returncode == 0:
+                        print("[DEBUG] Final sync - Successfully pushed commits")
+                        self._update_status("✅ Successfully synchronized with remote repository!")
+                        return True, f"Synchronization complete - {commits_ahead} commit(s) pushed"
+                    else:
+                        push_error = push_result.stderr.strip()
+                        print(f"[DEBUG] Final sync - Push failed: {push_error}")
+                        # Don't fail the setup completely - commits are preserved locally
+                        self._update_status("⚠️ Local commits preserved (push will be retried in sync mode)")
+                        return True, f"Setup complete - {commits_ahead} local commit(s) will be synced later"
                 else:
-                    print("[DEBUG] Final sync - Could not check sync status")
-                    self._update_status("✅ Repository synchronization completed")
-                    return True, "Synchronization complete"
+                    print("[DEBUG] Final sync - No commits ahead, repositories are in sync")
+                    self._update_status("✅ Repository already synchronized")
+                    return True, "Synchronization complete - repositories are in sync"
                     
         except Exception as e:
             print(f"[DEBUG] Final sync error: {e}")
