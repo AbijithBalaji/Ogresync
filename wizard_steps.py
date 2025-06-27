@@ -55,19 +55,30 @@ def run_command(command, cwd=None, timeout=None):
     if _run_command_func:
         return _run_command_func(command, cwd, timeout)
     else:
-        # Fallback implementation
+        # Fallback implementation with Windows console hiding
         try:
+            # Determine if we're running as a packaged executable
+            is_packaged = getattr(sys, 'frozen', False)
+            
+            # On Windows, hide console windows when packaged
+            startupinfo = None
+            if platform.system() == "Windows" and is_packaged:
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+            
             result = subprocess.run(
                 command,
-                cwd=cwd,
                 shell=True,
+                cwd=cwd,
+                timeout=timeout,
                 capture_output=True,
                 text=True,
-                timeout=timeout
+                startupinfo=startupinfo
             )
-            return result.stdout.strip(), result.stderr.strip(), result.returncode
-        except subprocess.TimeoutExpired as e:
-            return "", str(e), 1
+            return result.stdout, result.stderr, result.returncode
+        except subprocess.TimeoutExpired:
+            return "", "Command timed out", 1
         except Exception as e:
             return "", str(e), 1
 

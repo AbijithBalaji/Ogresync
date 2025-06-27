@@ -14,6 +14,8 @@ These functions handle:
 """
 
 import os
+import sys
+import platform
 import subprocess
 import threading
 import time
@@ -72,13 +74,24 @@ def _run_git_command_safe(command_parts: list, cwd: Optional[str] = None) -> Tup
         Tuple of (stdout, stderr, return_code)
     """
     try:
+        # Determine if we're running as a packaged executable
+        is_packaged = getattr(sys, 'frozen', False)
+        
+        # On Windows, hide console windows when packaged
+        startupinfo = None
+        if platform.system() == "Windows" and is_packaged:
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+        
         result = subprocess.run(
             command_parts,
             cwd=cwd,
             capture_output=True,
             text=True,
             shell=False,  # Important: do not use shell=True
-            timeout=30
+            timeout=30,
+            startupinfo=startupinfo
         )
         return result.stdout, result.stderr, result.returncode
     except subprocess.TimeoutExpired:
@@ -115,13 +128,24 @@ def run_command(command, cwd=None, timeout=None):
     Safe to call in a background thread.
     """
     try:
+        # Determine if we're running as a packaged executable
+        is_packaged = getattr(sys, 'frozen', False)
+        
+        # On Windows, hide console windows when packaged
+        startupinfo = None
+        if platform.system() == "Windows" and is_packaged:
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+        
         result = subprocess.run(
             command,
             cwd=cwd,
             shell=True,
             capture_output=True,
             text=True,
-            timeout=timeout
+            timeout=timeout,
+            startupinfo=startupinfo
         )
         return result.stdout.strip(), result.stderr.strip(), result.returncode
     except subprocess.TimeoutExpired as e:

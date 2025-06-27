@@ -15,6 +15,15 @@ from typing import Optional
 import webbrowser
 import pyperclip
 import requests
+
+# Import packaging utilities first
+try:
+    import packaging_utils
+    packaging_utils.init_packaging_compatibility()
+    PACKAGING_UTILS_AVAILABLE = True
+except ImportError:
+    PACKAGING_UTILS_AVAILABLE = False
+
 import ui_elements # Import the new UI module
 try:
     import Stage1_conflict_resolution as conflict_resolution # Import the enhanced conflict resolution module
@@ -43,6 +52,10 @@ except ImportError:
 
 def get_config_directory():
     """Get the appropriate config directory for the current OS"""
+    if PACKAGING_UTILS_AVAILABLE:
+        return packaging_utils.get_config_directory()
+    
+    # Fallback implementation if packaging_utils not available
     import sys
     from pathlib import Path
     
@@ -225,13 +238,24 @@ def run_command(command, cwd=None, timeout=None):
                         # On Unix-like systems, use standard splitting
                         command_parts = shlex.split(command)
                     
+                    # Determine if we're running as a packaged executable
+                    is_packaged = getattr(sys, 'frozen', False)
+                    
+                    # On Windows, hide console windows when packaged
+                    startupinfo = None
+                    if platform.system() == "Windows" and is_packaged:
+                        startupinfo = subprocess.STARTUPINFO()
+                        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                        startupinfo.wShowWindow = subprocess.SW_HIDE
+                    
                     result = subprocess.run(
                         command_parts,
                         cwd=cwd,
                         capture_output=True,
                         text=True,
                         timeout=timeout,
-                        check=False
+                        check=False,
+                        startupinfo=startupinfo
                     )
                     return result.stdout.strip(), result.stderr.strip(), result.returncode
                 except (ValueError, OSError):
@@ -243,6 +267,17 @@ def run_command(command, cwd=None, timeout=None):
         # - Git commit commands with messages (to preserve quotes)
         # - When argument splitting fails
         # - Non-string commands (already arrays)
+        
+        # Determine if we're running as a packaged executable
+        is_packaged = getattr(sys, 'frozen', False)
+        
+        # On Windows, hide console windows when packaged
+        startupinfo = None
+        if platform.system() == "Windows" and is_packaged:
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+        
         result = subprocess.run(
             command,
             cwd=cwd,
@@ -250,7 +285,8 @@ def run_command(command, cwd=None, timeout=None):
             capture_output=True,
             text=True,
             timeout=timeout,
-            check=False
+            check=False,
+            startupinfo=startupinfo
         )
         return result.stdout.strip(), result.stderr.strip(), result.returncode
     except subprocess.TimeoutExpired as e:
