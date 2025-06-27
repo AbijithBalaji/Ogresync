@@ -1602,7 +1602,41 @@ class ConflictResolutionDialog:
         # Configure dialog
         self.dialog.configure(bg="#FAFBFC")
         self.dialog.resizable(True, True)
-        print("[DEBUG] Configured dialog")        # Set size and position - increased height for better visibility of bottom section
+        print("[DEBUG] Configured dialog")
+        
+        # Set window icon to match main application
+        try:
+            # Check if we're running from PyInstaller bundle
+            if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+                # Try different icon files in order of preference
+                icon_files = ["new_logo_1.ico", "ogrelix_logo.ico", "new_logo_1.png"]
+                icon_path = None
+                for icon_file in icon_files:
+                    test_path = os.path.join(sys._MEIPASS, "assets", icon_file)  # type: ignore
+                    if os.path.exists(test_path):
+                        icon_path = test_path
+                        break
+            else:
+                # Try different icon files in order of preference
+                icon_files = ["new_logo_1.ico", "ogrelix_logo.ico", "new_logo_1.png"]
+                icon_path = None
+                for icon_file in icon_files:
+                    test_path = os.path.join("assets", icon_file)
+                    if os.path.exists(test_path):
+                        icon_path = test_path
+                        break
+            
+            if icon_path:
+                if icon_path.endswith('.ico'):
+                    # Use iconbitmap for .ico files (works better on Windows)
+                    self.dialog.iconbitmap(icon_path)
+                else:
+                    # Use iconphoto for .png files
+                    img = tk.PhotoImage(file=icon_path)
+                    self.dialog.iconphoto(True, img)
+        except Exception as e:
+            print(f"[DEBUG] Could not set Stage 1 dialog icon: {e}")
+            pass        # Set size and position - increased height for better visibility of bottom section
         width, height = 1200, 850  # Increased height from 750 to 850 for better bottom section visibility
         
         # Get screen dimensions safely

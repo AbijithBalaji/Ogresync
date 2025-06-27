@@ -365,6 +365,40 @@ class Stage2ConflictResolutionDialog:
         self.dialog.configure(bg="#FAFBFC")
         self.dialog.resizable(True, True)
         
+        # Set window icon to match main application
+        try:
+            # Check if we're running from PyInstaller bundle
+            if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+                # Try different icon files in order of preference
+                icon_files = ["new_logo_1.ico", "ogrelix_logo.ico", "new_logo_1.png"]
+                icon_path = None
+                for icon_file in icon_files:
+                    test_path = os.path.join(sys._MEIPASS, "assets", icon_file)  # type: ignore
+                    if os.path.exists(test_path):
+                        icon_path = test_path
+                        break
+            else:
+                # Try different icon files in order of preference
+                icon_files = ["new_logo_1.ico", "ogrelix_logo.ico", "new_logo_1.png"]
+                icon_path = None
+                for icon_file in icon_files:
+                    test_path = os.path.join("assets", icon_file)
+                    if os.path.exists(test_path):
+                        icon_path = test_path
+                        break
+            
+            if icon_path:
+                if icon_path.endswith('.ico'):
+                    # Use iconbitmap for .ico files (works better on Windows)
+                    self.dialog.iconbitmap(icon_path)
+                else:
+                    # Use iconphoto for .png files
+                    img = tk.PhotoImage(file=icon_path)
+                    self.dialog.iconphoto(True, img)
+        except Exception as e:
+            print(f"[DEBUG] Could not set Stage 2 dialog icon: {e}")
+            pass
+        
         # Initialize Tkinter variables after dialog window is created
         self.file_list_var = tk.StringVar()
         
@@ -416,9 +450,16 @@ class Stage2ConflictResolutionDialog:
                         pass  # Callback might already be executed or cancelled
                 self.scheduled_callbacks.clear()
             
-            # Destroy the dialog
+            # Exit the mainloop first before destroying
             if self.dialog:
                 try:
+                    # Quit the mainloop to return control to Stage 1
+                    self.dialog.quit()
+                except tk.TclError:
+                    pass  # Mainloop might not be running
+                
+                try:
+                    # Now destroy the dialog
                     self.dialog.destroy()
                 except tk.TclError:
                     pass  # Dialog might already be destroyed
