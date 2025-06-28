@@ -36,12 +36,18 @@ Thumbs.db
 *.swp
 *.swo
 
-# Build artifacts
+# Build artifacts and releases (handled by GitHub Releases)
 build/
 dist/
+releases/
 *.egg-info/
 
 # Virtual environment
 venv/
 env/
 .env
+
+# Development-specific files (for main branch)
+# Uncomment these lines if you want to exclude tests and build from main branch
+# tests/
+# build/

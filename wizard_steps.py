@@ -263,6 +263,15 @@ def detect_git_path():
                         "Please install Git and restart Ogresync to continue setup.\n"
                         "Tip: Use the default installation options for best compatibility."
                     )
+                else:
+                    # User chose not to download either - show final fallback message
+                    _ui_elements.show_info_message(
+                        "Git Required",
+                        "Git is required for Ogresync to function properly.\n\n"
+                        "The setup wizard cannot continue without Git installed.\n\n"
+                        "Please install Git from https://git-scm.com/download/win\n"
+                        "and restart Ogresync to continue."
+                    )
         return None
         
     elif platform.system() == "Darwin":  # macOS
@@ -310,6 +319,14 @@ def detect_git_path():
                         "4. Restart Ogresync after installation\n\n"
                         "Alternative: Visit git-scm.com/download/mac for other options."
                     )
+                else:
+                    # User chose not to install - show final fallback message
+                    _ui_elements.show_info_message(
+                        "Git Required",
+                        "Git is required for Ogresync to function properly.\n\n"
+                        "The setup wizard cannot continue without Git installed.\n\n"
+                        "Please install Git and restart Ogresync to continue."
+                    )
         return None
         
     else:  # Linux and others
@@ -355,6 +372,15 @@ def detect_git_path():
                         "• Arch Linux: sudo pacman -S git\n"
                         "• openSUSE: sudo zypper install git\n\n"
                         "After installation, restart Ogresync to continue setup."
+                    )
+                else:
+                    # User chose not to view instructions - show final fallback message
+                    _ui_elements.show_info_message(
+                        "Git Required",
+                        "Git is required for Ogresync to function properly.\n\n"
+                        "The setup wizard cannot continue without Git installed.\n\n"
+                        "Please install Git using your system's package manager\n"
+                        "and restart Ogresync to continue."
                     )
         return None
 

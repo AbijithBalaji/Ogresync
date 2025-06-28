@@ -552,6 +552,13 @@ class PremiumDialog:
         y = (dialog.winfo_screenheight() // 2) - (height // 2)
         dialog.geometry(f"{width}x{height}+{x}+{y}")
         
+        # Ensure dialog appears on top and gets focus (Windows Z-order fix)
+        dialog.update()
+        dialog.lift()
+        dialog.focus_force()
+        dialog.attributes('-topmost', True)  # Temporarily make topmost
+        dialog.after(100, lambda: dialog.attributes('-topmost', False))  # Remove topmost after showing
+        
         # Main container with padding
         main_frame = tk.Frame(dialog, bg=Colors.BG_PRIMARY)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=Spacing.XL, pady=Spacing.XL)
@@ -746,19 +753,38 @@ def create_premium_main_window():
     root.configure(bg=Colors.BG_PRIMARY)
     root.minsize(600, 400)
     
-    # Set window icon
+    # Set window icon with enhanced fallback support
     try:
         # Check if we're running from PyInstaller bundle
         if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-            icon_path = os.path.join(sys._MEIPASS, "assets", "logo.png")  # type: ignore
+            # Try different icon files in order of preference
+            icon_files = ["new_logo_1.ico", "ogrelix_logo.ico", "new_logo_1.png", "logo.png"]
+            icon_path = None
+            for icon_file in icon_files:
+                test_path = os.path.join(sys._MEIPASS, "assets", icon_file)  # type: ignore
+                if os.path.exists(test_path):
+                    icon_path = test_path
+                    break
         else:
-            icon_path = os.path.join("assets", "logo.png")
+            # Development mode - check local assets folder
+            icon_files = ["new_logo_1.ico", "ogrelix_logo.ico", "new_logo_1.png", "logo.png"]
+            icon_path = None
+            for icon_file in icon_files:
+                test_path = os.path.join("assets", icon_file)
+                if os.path.exists(test_path):
+                    icon_path = test_path
+                    break
         
-        if os.path.exists(icon_path):
-            img = tk.PhotoImage(file=icon_path)
-            root.iconphoto(True, img)
+        if icon_path:
+            if icon_path.endswith('.ico'):
+                # Use iconbitmap for .ico files (works better on Windows)
+                root.iconbitmap(icon_path)
+            else:
+                # Use iconphoto for .png files
+                img = tk.PhotoImage(file=icon_path)
+                root.iconphoto(True, img)
     except Exception:
-        pass
+        pass  # Fallback to default icon if loading fails
     
     # Initialize fonts and styles
     init_font_config()
@@ -960,19 +986,38 @@ def create_premium_minimal_ui(auto_run=False):
     root.configure(bg=Colors.BG_PRIMARY)
     root.resizable(False, False)
     
-    # Set icon
+    # Set window icon with enhanced fallback support
     try:
         # Check if we're running from PyInstaller bundle
         if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-            icon_path = os.path.join(sys._MEIPASS, "assets", "logo.png")  # type: ignore
+            # Try different icon files in order of preference
+            icon_files = ["new_logo_1.ico", "ogrelix_logo.ico", "new_logo_1.png", "logo.png"]
+            icon_path = None
+            for icon_file in icon_files:
+                test_path = os.path.join(sys._MEIPASS, "assets", icon_file)  # type: ignore
+                if os.path.exists(test_path):
+                    icon_path = test_path
+                    break
         else:
-            icon_path = os.path.join("assets", "logo.png")
+            # Development mode - check local assets folder
+            icon_files = ["new_logo_1.ico", "ogrelix_logo.ico", "new_logo_1.png", "logo.png"]
+            icon_path = None
+            for icon_file in icon_files:
+                test_path = os.path.join("assets", icon_file)
+                if os.path.exists(test_path):
+                    icon_path = test_path
+                    break
         
-        if os.path.exists(icon_path):
-            img = tk.PhotoImage(file=icon_path)
-            root.iconphoto(True, img)
+        if icon_path:
+            if icon_path.endswith('.ico'):
+                # Use iconbitmap for .ico files (works better on Windows)
+                root.iconbitmap(icon_path)
+            else:
+                # Use iconphoto for .png files
+                img = tk.PhotoImage(file=icon_path)
+                root.iconphoto(True, img)
     except Exception:
-        pass  # Icon loading failed, continue without icon
+        pass  # Fallback to default icon if loading fails
     
     # Main content area
     main_frame = tk.Frame(root, bg=Colors.BG_PRIMARY)
@@ -1081,19 +1126,38 @@ def create_premium_wizard_ui():
     root.resizable(True, False)
     root.minsize(600, 500)
     
-    # Set icon
+    # Set window icon with enhanced fallback support
     try:
         # Check if we're running from PyInstaller bundle
         if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-            icon_path = os.path.join(sys._MEIPASS, "assets", "logo.png")  # type: ignore
+            # Try different icon files in order of preference
+            icon_files = ["new_logo_1.ico", "ogrelix_logo.ico", "new_logo_1.png", "logo.png"]
+            icon_path = None
+            for icon_file in icon_files:
+                test_path = os.path.join(sys._MEIPASS, "assets", icon_file)  # type: ignore
+                if os.path.exists(test_path):
+                    icon_path = test_path
+                    break
         else:
-            icon_path = os.path.join("assets", "logo.png")
+            # Development mode - check local assets folder
+            icon_files = ["new_logo_1.ico", "ogrelix_logo.ico", "new_logo_1.png", "logo.png"]
+            icon_path = None
+            for icon_file in icon_files:
+                test_path = os.path.join("assets", icon_file)
+                if os.path.exists(test_path):
+                    icon_path = test_path
+                    break
         
-        if os.path.exists(icon_path):
-            img = tk.PhotoImage(file=icon_path)
-            root.iconphoto(True, img)
+        if icon_path:
+            if icon_path.endswith('.ico'):
+                # Use iconbitmap for .ico files (works better on Windows)
+                root.iconbitmap(icon_path)
+            else:
+                # Use iconphoto for .png files
+                img = tk.PhotoImage(file=icon_path)
+                root.iconphoto(True, img)
     except Exception:
-        pass  # Icon loading failed, continue without icon
+        pass  # Fallback to default icon if loading fails
     
     # Main content area with premium styling
     main_frame = tk.Frame(root, bg=Colors.BG_PRIMARY)
