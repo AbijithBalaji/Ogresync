@@ -35,17 +35,18 @@ Ogresync is a professional Git synchronization tool designed for cross-platform 
 
 ### Key Directories
 
-**Main Branch (Current):**
+**Main Branch (Current - User-Ready):**
 - `/` - Core application modules and configuration
 - `/assets/` - Application icons and branding
-- `/build/` - Build artifacts (excluded from repository)
+- **Clean, production-ready code only**
 
-**Development Branch:**
+**Development Branch (Full Development Environment):**
 - Contains all main branch content PLUS
 - `/tests/` - Comprehensive test suite (30+ test files)
 - `DEVELOPMENT.md` - Advanced technical documentation
+- Development utilities and testing infrastructure
 
-*Note: Switch to Development branch for full contributor environment with tests and development tools.*
+*Note: Contributors should work on the Development branch which contains the full test suite and development tools.*
 
 ## Getting Started
 
@@ -56,11 +57,11 @@ Ogresync is a professional Git synchronization tool designed for cross-platform 
 
 ### Development Setup
 1. **Fork the repository** on GitHub
-2. **Clone your fork and switch to development**:
+2. **Clone your fork and switch to Development branch**:
    ```bash
    git clone git@github.com:YOUR_USERNAME/ogresync.git
    cd ogresync
-   git checkout Development  # Switch to branch with tests and dev tools
+   git checkout Development  # IMPORTANT: Development branch has tests and dev tools
    ```
 3. **Set up the development environment**:
    ```bash
@@ -96,10 +97,10 @@ You should see the application help menu.
 ## Development Process
 
 ### Creating a Feature Branch
-Always branch from the latest `development`:
+Always branch from the latest `Development` branch (not main):
 ```bash
-git checkout development
-git pull upstream development
+git checkout Development
+git pull upstream Development
 git checkout -b feature/descriptive-name
 ```
 
@@ -229,10 +230,10 @@ def resolve_merge_conflicts(repository_path: str, strategy: str = "smart") -> Co
 ### Before Submitting
 1. **Sync with upstream**:
    ```bash
-   git checkout development
-   git pull upstream development
+   git checkout Development
+   git pull upstream Development
    git checkout your-feature-branch
-   git rebase development
+   git rebase Development
    ```
 2. **Run the full test suite**:
    ```bash
@@ -244,7 +245,7 @@ def resolve_merge_conflicts(repository_path: str, strategy: str = "smart") -> Co
    ```
 
 ### PR Requirements
-- **Target branch**: Always target `development`
+- **Target branch**: Always target `Development` (not main)
 - **Clear title**: Descriptive summary of changes
 - **Detailed description**: What, why, and how
 - **Link related issues**: Use "Fixes #123" or "Relates to #456"

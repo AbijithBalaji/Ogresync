@@ -8,6 +8,17 @@ when PowerShell fails to delete the file due to path issues.
 
 This addresses the common Windows/PowerShell issue where certain paths
 cannot be properly accessed or deleted through the shell.
+
+WINDOWS USERS: If you encounter issues where the Ogresync application fails
+to create a config folder in the specified AppData path when run directly,
+use this Python script to remove any existing config file and reset the
+application to setup mode. This allows you to run the app fresh and bypass
+Windows-specific path/permission issues that can prevent proper initialization.
+
+IMPORTANT: On Windows, when the Ogresync script is run directly (not as an executable),
+sometimes no config folder is created in the specified AppData path due to permission
+or path resolution errors. If this happens, run this Python script to remove any
+existing config file and force the application to run in setup mode again.
 """
 
 import os

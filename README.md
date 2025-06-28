@@ -274,36 +274,6 @@ git clone -b Development https://github.com/AbijithBalaji/ogresync.git
 - Development documentation ([DEVELOPMENT.md](DEVELOPMENT.md))
 - Advanced debugging and build tools
 
-## Linux Packaging
-
-Ogresync includes comprehensive Linux packaging support for creating distributable AppImage files:
-
-### Building Linux AppImage
-
-```bash
-cd linux-packaging
-python build_appimage.py --clean --test
-```
-
-**Features:**
-- **Cross-distribution compatibility**: Works on Ubuntu, Fedora, openSUSE, Arch, and more
-- **Self-contained**: No dependencies needed on target system
-- **Professional packaging**: Follows Linux packaging standards
-
-**Build options:**
-- `--clean`: Clean previous build artifacts
-- `--test`: Run verification tests
-- `--verbose`: Show detailed build output
-- `--arch x86_64`: Specify target architecture
-
-### Build Requirements
-
-| Tool | Purpose | Installation |
-|------|---------|-------------|
-| **PyInstaller** | Python packaging | `pip install pyinstaller` |
-| **appimagetool** | AppImage creation | Auto-downloaded |
-| **FUSE** | AppImage execution | `sudo dnf install fuse` |
-
 ## System Requirements
 
 | Component | Requirement |
