@@ -5,106 +5,259 @@
   
   **Professional Obsidian-GitHub Sync Tool**
   
-  [![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/yourusername/ogresync)
-  [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](https://github.com/yourusername/ogresync)
-  [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+  [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/AbijithBalaji/ogresync)
+  [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey.svg)](https://github.com/AbijithBalaji/ogresync)
+  [![License](https://img.shields.io/badge/license-GPL-green.svg)](LICENSE)
 </div>
 
-Ogresync is a professional-grade desktop application that seamlessly synchronizes your Obsidian notes with GitHub repositories. Built with enterprise-level reliability, cross-platform compatibility, and intelligent conflict resolution.
+Ogresync is a professional-grade open source desktop application that seamlessly synchronizes your Obsidian notes across devices. Mimics the Obsidian Sync feature for free by using GitHub. Built with enterprise-level reliability, cross-platform compatibility, and intelligent conflict resolution systems.
 
-## 🚀 Quick Start
+## Prerequisites
 
-### Download & Install
+Before using Ogresync, please ensure you have the following installed:
 
-Choose your platform:
+### Required Software
 
-| Platform | Download | Requirements |
-|----------|----------|--------------|
-| **Windows** | [`ogresync.exe`](releases/latest) | Windows 10/11 |
-| **Linux** | [`ogresync.AppImage`](releases/latest) | Any modern Linux distribution |
-| **macOS** | [`Ogresync.app`](releases/latest) | macOS 10.14+ |
+**1. Obsidian**
+- Download from: [https://obsidian.md/download](https://obsidian.md/download)
+- Install and run Obsidian
+- Create a vault folder where you want to store your notes
 
-### First Launch
+**2. Git**
+- Download from: [https://git-scm.com/downloads](https://git-scm.com/downloads)
+- For new users: Run the setup file and click "Next" until you reach "Setup Completed" for standard Git installation
+- Git is required for repository synchronization
 
-1. **Download** the appropriate executable for your platform
-2. **Run** Ogresync - the setup wizard will guide you through:
-   - 📁 Obsidian vault location
-   - 🔗 GitHub repository connection
-   - 🔐 Authentication setup
-   - ⚙️ Sync preferences
-3. **Start syncing** your notes automatically!
+## Download & Installation
 
-## ✨ Key Features
+### Available Platforms
 
-### 🔄 **Intelligent Synchronization**
-- Real-time vault monitoring
+| Platform | Download | Status |
+|----------|----------|---------|
+| **Windows** | [Download from Releases](../../releases/latest) | Available |
+| **Linux** | [Download from Releases](../../releases/latest) | Available |
+| **macOS** | `Ogresync.app` | Coming in future updates |
+
+### Installation Steps
+
+**Windows:**
+1. Download `ogresync.exe`
+2. You may need to allow the file if your antivirus flags it as a threat
+3. Run the executable
+
+**Linux:**
+1. Download `ogresync.AppImage`
+2. Make it executable: `chmod +x ogresync.AppImage`
+3. Run: `./ogresync.AppImage`
+
+**Important ⚠️:** Create a **private** GitHub repository if you don't want your notes to be publicly visible.
+
+## How Ogresync Works
+
+Ogresync fundamentally changes how you interact with Obsidian by becoming the central orchestrator for all your note-taking activities. Instead of opening Obsidian directly, you launch Ogresync, which then handles the entire synchronization workflow seamlessly.
+
+### Core Workflow Overview
+
+**This is the heart of Ogresync - understanding this workflow is crucial:**
+
+1. **Launch Ogresync** (not Obsidian) - This is your new workflow
+2. **Ogresync performs intelligent pre-sync** - Checks for remote changes, handles conflicts
+3. **Ogresync launches Obsidian automatically** - With your vault already synchronized
+4. **Edit your notes freely** - Work normally in Obsidian without sync worries
+5. **Close Obsidian when finished** - Ogresync detects closure immediately
+6. **Ogresync handles post-sync** - Commits your changes, pushes to GitHub, handles any new conflicts
+
+This workflow ensures your vault is always in perfect sync before and after editing, with intelligent conflict resolution at every step.
+
+### Why This Workflow Matters
+
+**Traditional Approach Problems:**
+- Opening Obsidian directly can lead to sync conflicts
+- Manual git operations are error-prone
+- No visibility into sync status during editing
+- Conflicts discovered only after making changes
+
+**Ogresync's Solution:**
+- **Pre-sync verification** ensures clean starting state
+- **Active monitoring** tracks changes during editing
+- **Automatic conflict detection** before they become problems
+- **Intelligent post-processing** handles any edge cases
+
+**The result:** A worry-free editing experience where synchronization happens invisibly and reliably.
+
+### First-Time Setup
+
+On first launch, Ogresync runs in **Setup Mode** with an 11-step wizard that guides you through:
+
+1. **Obsidian Checkup** - Verify Obsidian installation
+2. **Git Check** - Verify Git installation  
+3. **Choose Vault** - Select your Obsidian vault folder
+4. **Initialize Git** - Setup Git repository in your vault
+5. **SSH Key Setup** - Generate or verify SSH key for GitHub
+6. **Known Hosts** - Add GitHub to trusted hosts
+7. **Test SSH** - Test SSH connection to GitHub
+8. **GitHub Repository** - Link your GitHub repository
+9. **Repository Sync** - Enhanced two-stage conflict resolution
+10. **Final Sync** - Intelligent synchronization with safeguards
+11. **Complete Setup** - Finalize configuration
+
+Once setup is complete, a configuration file is stored in OS-specific locations:
+- **Windows:** `%APPDATA%\Ogresync\`
+- **Linux:** `~/.config/ogresync/`
+
+To run setup again, delete the configuration file and restart the application.
+
+**After Setup - Sync Mode:**
+Once setup is complete, Ogresync switches to **Sync Mode** which follows the core workflow described above. Every time you want to use Obsidian, simply launch Ogresync instead.
+
+## Key Features
+
+### Intelligent Synchronization
+- Real-time vault monitoring during Obsidian sessions
 - Bidirectional sync with GitHub
 - Automatic conflict detection and resolution
-- Smart merge algorithms
+- Smart merge algorithms with git history preservation
 
-### 🛡️ **Enterprise-Grade Safety**
-- Automatic backup creation before any changes
-- Complete version history preservation
-- Rollback capabilities
+### Two-Stage Conflict Resolution System
+- **Stage 1:** High-level strategy selection (Smart Merge, Keep Local, Keep Remote)
+- **Stage 2:** File-by-file resolution for complex conflicts
+- Automatic local backups created before any changes
+- Complete version history preservation through Git
+- Rollback capabilities to any previous state
+- Graceful handling of concurrent editing scenarios
+
+### Intelligent Offline Support
+- **No constant internet required**
+- Smart offline state management and session tracking
+- Automatic sync when internet becomes available
+- Seamless transition between online and offline modes
+- Conflict resolution triggered only when transitioning offline-to-online
+
+### Enterprise-Grade Safety
+- Comprehensive backup system with descriptive naming
 - Data integrity verification
+- Extensive edge case handling
+- Thoroughly tested for reliability
+- Non-destructive operations that preserve git history
 
-### 🌍 **Cross-Platform Excellence**
-- Native Windows, Linux, and macOS support
-- Consistent user experience across platforms
-- Platform-optimized file handling
+## Advanced Technical Features
 
-### 🧠 **Smart Conflict Resolution**
-- AI-powered merge suggestions
-- Interactive conflict resolution interface
-- Manual override capabilities
-- Conflict history tracking
+### Intelligent Workflow Management
+- **Pre-sync Phase:** Automatically checks for remote changes before opening Obsidian
+- **Session Monitoring:** Tracks remote changes that occur during your editing session
+- **Post-sync Phase:** Intelligently handles conflicts that emerge during your session
+- **Recovery Operations:** Automatic detection and handling of interrupted sync operations
 
-## 🔧 Advanced Usage
+### Robust Git Integration
+- Complex git operations simplified for users without git knowledge
+- Intelligent handling of merge conflicts, rebases, and unpushed commits
+- Automatic upstream tracking configuration
+- Smart detection of recovery scenarios and conflict resolution needs
+- Force-push protection with user consent for critical operations
 
-### Command Line Interface
-```bash
-# Run from source (developers)
-python Ogresync.py
+### Cross-Platform Excellence
+- Native support for Windows and Linux (macOS coming soon)
+- Handles various Obsidian installation methods (native, Snap, Flatpak, AppImage)
+- Platform-optimized file operations and process management
+- OS-specific configuration storage
 
-# Run with enhanced offline support
-python enhanced_auto_sync.py
+## Use Cases
 
-# Debug mode (development branch)
-python Ogresync.py --debug
-```
+Ogresync is perfect for:
 
-### Configuration
-Ogresync stores configuration in platform-appropriate locations:
-- **Windows**: `%APPDATA%\Ogresync\`
-- **Linux**: `~/.config/ogresync/`
-- **macOS**: `~/Library/Application Support/Ogresync/`
+**Individual Users:**
+- **Dual-boot systems:** Access your vault from different OS installations
+- **Cloud backup:** Secure your notes with Git's powerful version control
+- **Version history:** Rollback to any previous version of your notes
 
-## 🏢 Professional Use
+**Teams and Collaboration:**
+- **Concurrent editing:** Multiple users working on the same vault simultaneously
+- **Team documentation:** Collaborative knowledge bases
+- **Research groups:** Shared research notes and findings
 
-Ogresync is designed for:
-- **Teams** collaborating on documentation
-- **Researchers** sharing knowledge bases
-- **Companies** managing internal wikis
-- **Students** synchronizing study notes
-- **Writers** backing up manuscripts
+**Professional Applications:**
+- **Company wikis:** Internal documentation management
+- **Student collaboration:** Shared study materials
+- **Writing projects:** Manuscript backup and version control
 
-## 🛠️ For Developers
+## Setup Wizard Guide
 
-### Core Architecture
-Ogresync is built with a modular architecture:
+The 11-step setup wizard is designed to be user-friendly even without Git knowledge:
+
+### Phase 1: Environment Verification (Steps 1-2)
+- **Obsidian Detection:** Automatically finds your Obsidian installation
+- **Git Verification:** Ensures Git is properly installed and configured
+
+### Phase 2: Repository Initialization (Steps 3-4)
+- **Vault Selection:** Choose your existing vault or create a new one
+- **Git Setup:** Initialize repository in your vault and create initial commit
+
+### Phase 3: GitHub Integration (Steps 5-7)
+- **SSH Key Generation:** Creates secure SSH keys for GitHub authentication
+- **GitHub Setup:** Configures secure connection to GitHub servers
+- **Connection Testing:** Verifies everything works properly before proceeding
+
+### Phase 4: Repository Synchronization (Steps 8-11)
+- **Repository Linking:** Connects your local vault to GitHub repository
+- **Enhanced Conflict Resolution:** Uses two-stage system if both local and remote have content
+- **Final Sync:** Completes setup with intelligent synchronization
+- **Configuration:** Saves all settings for future sync sessions
+
+**What happens during Repository Sync (Step 9):**
+
+The wizard analyzes your repository state and handles four scenarios:
+
+1. **Both Empty:** Creates initial README and prepares for first sync
+2. **Local Empty, Remote Has Files:** Simple pull operation to get remote content
+3. **Local Has Files, Remote Empty:** Prepares local files for push to GitHub
+4. **Both Have Files:** **Triggers enhanced two-stage conflict resolution**
+
+When both repositories contain files, Ogresync automatically detects conflicts and launches the two-stage resolution system, ensuring safe merging of your content with complete history preservation.
+
+Each step provides clear guidance and error recovery options.
+
+## Core Architecture
+
+Ogresync is built with a modular, dependency-injection architecture:
 
 | Module | Purpose |
 |--------|---------|
-| `Ogresync.py` | Main application entry point |
-| `enhanced_auto_sync.py` | **Offline/online sync orchestration** |
-| `offline_sync_manager.py` | **Offline state management** |
-| `conflict_resolution_integration.py` | Smart conflict resolution |
-| `setup_wizard.py` | Initial configuration wizard |
-| `backup_manager.py` | Automatic backup system |
+| `Ogresync.py` | Main application entry point and module orchestration |
+| `setup_wizard.py` | Comprehensive 11-step setup wizard with conflict resolution |
+| `enhanced_auto_sync.py` | Offline/online sync orchestration |
+| `offline_sync_manager.py` | Offline state management and session tracking |
+| `Stage1_conflict_resolution.py` | High-level conflict strategy selection |
+| `stage2_conflict_resolution.py` | File-by-file conflict resolution |
+| `conflict_resolution_integration.py` | Conflict resolution integration layer |
+| `backup_manager.py` | File-based backup system with auto-cleanup |
+| `ui_elements.py` | Professional UI components library |
+| `wizard_steps.py` | Setup step functions (extracted via dependency injection) |
+| `github_setup.py` | Git/GitHub functions (extracted via dependency injection) |
+
+## Technical Features
+
+### Advanced Git Logic
+- Complex git operations simplified for users
+- Intelligent handling of merge conflicts, rebases, and force pushes
+- Automatic upstream tracking configuration
+- Smart detection of unpushed commits and offline changes
+
+### Robust Error Handling
+- Comprehensive edge case detection and handling
+- Graceful recovery from network interruptions
+- Automatic fallback mechanisms for failed operations
+- Detailed logging for troubleshooting
+
+### Cross-Platform Compatibility
+- Native support for Windows and Linux
+- Handles various Obsidian installation methods (native, Snap, Flatpak, AppImage)
+- Platform-optimized file operations and process management
+
+## For Developers
 
 ### Running from Source
 ```bash
-git clone https://github.com/yourusername/ogresync.git
+git clone https://github.com/AbijithBalaji/ogresync.git
 cd ogresync
 pip install -r requirements.txt
 python Ogresync.py
@@ -113,43 +266,62 @@ python Ogresync.py
 ### Development Branch
 For full source code, tests, and development documentation:
 ```bash
-git clone -b development https://github.com/yourusername/ogresync.git
+git clone -b Development https://github.com/AbijithBalaji/ogresync.git
 ```
 
-## 📋 System Requirements
+**Note**: You are currently viewing the Development branch which includes:
+- Complete test suite (30+ test files)
+- Development documentation ([DEVELOPMENT.md](DEVELOPMENT.md))
+- Advanced debugging and build tools
+
+## System Requirements
 
 | Component | Requirement |
 |-----------|-------------|
-| **OS** | Windows 10+, Linux (kernel 3.2+), macOS 10.14+ |
+| **OS** | Windows 10+, Linux (kernel 3.2+) |
 | **Memory** | 512 MB RAM minimum |
 | **Storage** | 100 MB free space |
-| **Network** | Internet connection for GitHub sync |
-| **Dependencies** | Git (auto-installed if needed) |
+| **Dependencies** | Git, Obsidian |
 
-## 🔒 Security & Privacy
+## Security & Privacy
 
-- **Local-first**: Your notes remain on your device
-- **Encrypted transit**: All GitHub communication uses HTTPS/SSH
-- **No telemetry**: No usage data collected
-- **Open source**: Full transparency
+- **Local-first approach:** Your notes remain on your device
+- **Encrypted transit:** All GitHub communication uses HTTPS/SSH
+- **No telemetry:** No usage data is collected or transmitted
+- **Open source:** Complete transparency and auditability
+- **Private repositories:** Keep your data secure with private GitHub repos
 
-## 📞 Support
+## Contributing
 
-- 📚 **Documentation**: [Wiki](wiki)
-- 🐛 **Bug Reports**: [Issues](issues)
-- 💡 **Feature Requests**: [Discussions](discussions)
-- 📧 **Contact**: support@ogrelix.com
+We welcome contributions from the community! If you'd like to contribute to Ogresync, please check our [Contributing Guide](CONTRIBUTING.md) for detailed information on:
+- Development setup
+- Code standards
+- Pull request process
+- Issue reporting guidelines
 
-## 🤝 Contributing
+## Support
 
-We welcome contributions from the community! See our [Contributing Guide](CONTRIBUTING.md) for details.
+- **Documentation:** [Wiki](wiki)
+- **Bug Reports:** [Issues](issues)
+- **Feature Requests:** [Discussions](discussions)
+- **Contact:** abijith.balaji@gmail.com
 
-## 📄 License
+## Purpose
 
-Licensed under the [MIT License](LICENSE) - free for personal and commercial use.
+This project was born out of necessity and passion for both Obsidian and open-source solutions. As a developer who couldn't afford the $9 monthly subscription for Obsidian Sync, I started by creating a simple git-based synchronization script for my personal use case.
+
+What began as a mini-scale solution for syncing my notes between devices quickly evolved into something much larger. As I encountered various edge cases, network interruptions, and collaboration scenarios, I found myself building increasingly sophisticated git logic to handle these challenges.
+
+Today, Ogresync represents months of development, testing, and refinement. It handles complex git operations, provides intelligent conflict resolution, supports offline workflows, and offers the kind of reliability you'd expect from commercial software - all while remaining free and open source.
+
+The goal was simple: make Obsidian synchronization accessible to everyone, regardless of their budget or technical expertise, while providing even more advanced features than traditional sync solutions.
+
+## License
+
+Licensed under the [GPL License](LICENSE) - free for personal and commercial use.
 
 ---
 
 <div align="center">
-  <strong>Made with ❤️ by <a href="https://ogrelix.com">Ogrelix Solutions</a></strong>
+  <strong>Made with dedication by <a href="https://ogrelix.com">Ogrelix Solutions</a></strong>
 </div>
