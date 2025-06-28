@@ -98,6 +98,145 @@ class SafeUnicodeChars:
     UPLOAD = safe_unicode_char("⬆️", "[UP]")
     DOWNLOAD = safe_unicode_char("⬇️", "[DOWN]")
     CONNECTED = safe_unicode_char("🔗", "[CONN]")
+
+
+def setup_windows_taskbar_icon():
+    """
+    Configure Windows taskbar icon for packaged applications.
+    
+    This function addresses the common issue where the window icon displays correctly
+    but the taskbar still shows the default feather icon in packaged applications.
+    
+    Returns:
+        bool: True if taskbar icon was configured successfully, False otherwise
+    """
+    if platform.system() != "Windows" or not is_packaged_app():
+        return False
+    
+    try:
+        import ctypes
+        from ctypes import wintypes
+        
+        # Set App User Model ID to make Windows treat this as a unique application
+        app_id = "AbijithBalaji.Ogresync.GitSync.1.0"
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
+        
+        # Additional taskbar icon configuration
+        # Get the main window handle (will be set later by tkinter)
+        return True
+        
+    except Exception as e:
+        print(f"[DEBUG] Could not configure Windows taskbar icon: {e}")
+        return False
+
+
+def get_app_icon_path() -> Optional[str]:
+    """
+    Get the path to the application icon, handling both development and packaged modes.
+    
+    Returns:
+        Path to the best available icon file, or None if not found
+    """
+    # Icon files in order of preference
+    icon_files = [
+        "new_logo_1.ico",      # Primary Windows icon
+        "ogrelix_logo.ico",    # Fallback icon
+        "new_logo_1.png"       # PNG fallback
+    ]
+    
+    for icon_file in icon_files:
+        icon_path = get_resource_path(os.path.join("assets", icon_file))
+        if os.path.exists(icon_path):
+            return icon_path
+    
+    return None
+
+
+def configure_window_icon(window) -> bool:
+    """
+    Configure window icon for both window and taskbar display.
+    
+    Args:
+        window: Tkinter window object
+        
+    Returns:
+        bool: True if icon was set successfully, False otherwise
+    """
+    try:
+        icon_path = get_app_icon_path()
+        if not icon_path:
+            print("[DEBUG] No icon file found")
+            return False
+        
+        # Set window icon
+        if icon_path.endswith('.ico'):
+            # Use iconbitmap for .ico files (works better on Windows)
+            window.iconbitmap(icon_path)
+        else:
+            # Use iconphoto for .png files
+            import tkinter as tk
+            img = tk.PhotoImage(file=icon_path)
+            window.iconphoto(True, img)
+        
+        # Additional Windows-specific taskbar icon configuration
+        if platform.system() == "Windows" and is_packaged_app():
+            try:
+                # Force Windows to refresh the taskbar icon
+                window.after(100, lambda: _refresh_windows_taskbar_icon(window))
+            except Exception as e:
+                print(f"[DEBUG] Could not refresh Windows taskbar icon: {e}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"[DEBUG] Could not set window icon: {e}")
+        return False
+
+
+def _refresh_windows_taskbar_icon(window):
+    """
+    Internal function to refresh Windows taskbar icon after window is created.
+    
+    Args:
+        window: Tkinter window object
+    """
+    if platform.system() != "Windows":
+        return
+    
+    try:
+        import ctypes
+        from ctypes import wintypes
+        
+        # Get window handle
+        hwnd = window.winfo_id()
+        
+        # Force icon refresh by sending Windows messages
+        WM_SETICON = 0x0080
+        ICON_SMALL = 0
+        ICON_BIG = 1
+        
+        # Load icon from file
+        icon_path = get_app_icon_path()
+        if icon_path and icon_path.endswith('.ico'):
+            # Load icon handle
+            hicon = ctypes.windll.user32.LoadImageW(
+                None,
+                icon_path,
+                1,  # IMAGE_ICON
+                0, 0,  # Use default size
+                0x00000010 | 0x00008000  # LR_LOADFROMFILE | LR_SHARED
+            )
+            
+            if hicon:
+                # Set both small and large icons
+                ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon)
+                ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon)
+                
+                # Force taskbar to update
+                ctypes.windll.user32.UpdateWindow(hwnd)
+    
+    except Exception as e:
+        print(f"[DEBUG] Error refreshing Windows taskbar icon: {e}")
     DISCONNECTED = safe_unicode_char("❗", "[DISC]")
 
 

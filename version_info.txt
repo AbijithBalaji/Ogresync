@@ -29,14 +29,16 @@ StringFileInfo(
   [
   StringTable(
     u'040904B0',
-    [StringStruct(u'CompanyName', u'Ogresync Development Team'),
-    StringStruct(u'FileDescription', u'Ogresync - Obsidian Vault Synchronization Tool'),
+    [StringStruct(u'CompanyName', u'AbijithBalaji'),
+    StringStruct(u'FileDescription', u'Ogresync - Professional Git Synchronization Tool with Advanced Conflict Resolution'),
     StringStruct(u'FileVersion', u'1.0.0.0'),
     StringStruct(u'InternalName', u'Ogresync'),
-    StringStruct(u'LegalCopyright', u'Copyright (C) 2025 Ogresync Development Team'),
+    StringStruct(u'LegalCopyright', u'Copyright (C) 2025 AbijithBalaji'),
     StringStruct(u'OriginalFilename', u'Ogresync.exe'),
     StringStruct(u'ProductName', u'Ogresync'),
-    StringStruct(u'ProductVersion', u'1.0.0.0')]) 
+    StringStruct(u'ProductVersion', u'1.0.0.0'),
+    StringStruct(u'Comments', u'Professional Git synchronization tool with two-stage conflict resolution system'),
+    StringStruct(u'LegalTrademarks', u'Ogresync')]) 
   ]), 
 VarFileInfo([VarStruct(u'Translation', [1033, 1200])])
   ]

@@ -11,19 +11,56 @@ The Ogresync Windows packaging system addresses several critical issues:
 3. **Asset Bundling**: Properly includes icons and resources in the executable
 4. **Dependency Management**: Ensures all required modules are included
 5. **Path Resolution**: Handles file paths correctly in both development and packaged modes
+6. **Windows Taskbar Icon**: Fixes the common issue where taskbar shows generic feather icon instead of application icon
 
 ## Files Created for Packaging
 
 ### Core Packaging Files
 
-- `packaging_utils.py` - Utilities for handling packaging issues
+- `packaging_utils.py` - Enhanced utilities for handling packaging issues including Windows taskbar icon fix
 - `Ogresync.spec` - PyInstaller specification file  
 - `build_exe_enhanced.py` - Enhanced build script with verification
 - `build.bat` - Simple batch file for Windows users
+- `version_info.txt` - Windows version information for proper application identification
 
 ### Key Changes Made
 
-#### 1. Subprocess Window Hiding
+#### 1. Windows Taskbar Icon Fix (NEW)
+
+**Problem**: The window displays the correct icon, but the Windows taskbar still shows the generic feather icon.
+
+**Solution**: Enhanced `packaging_utils.py` with comprehensive Windows taskbar icon handling:
+
+```python
+def setup_windows_taskbar_icon():
+    """Configure Windows taskbar icon for packaged applications."""
+    # Set App User Model ID to make Windows treat this as a unique application
+    app_id = "AbijithBalaji.Ogresync.GitSync.1.0"
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
+
+def configure_window_icon(window):
+    """Configure window icon for both window and taskbar display."""
+    # Enhanced icon setting with Windows-specific taskbar refresh
+    
+def _refresh_windows_taskbar_icon(window):
+    """Force Windows taskbar to use the correct icon."""
+    # Direct Windows API calls to set taskbar icon
+```
+
+**Integration**: All UI creation functions now use `packaging_utils.configure_window_icon()`:
+- `create_premium_main_window()`
+- `create_premium_minimal_ui()`
+- `create_premium_wizard_ui()`
+
+#### 2. Enhanced Version Information
+
+Updated `version_info.txt` with comprehensive application metadata:
+- Company name: `AbijithBalaji`
+- Product description: Professional Git synchronization tool
+- Legal information and trademarks
+- Comments describing the application purpose
+
+#### 3. Subprocess Window Hiding
 
 Modified all subprocess calls in:
 - `Ogresync.py` (main run_command function)

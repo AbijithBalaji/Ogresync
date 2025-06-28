@@ -753,39 +753,85 @@ def create_premium_main_window():
     root.configure(bg=Colors.BG_PRIMARY)
     root.minsize(600, 400)
     
-    # Set window icon
+    # Set window icon using enhanced packaging utilities
     try:
-        # Check if we're running from PyInstaller bundle
-        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-            # Try different icon files in order of preference
-            icon_files = ["new_logo_1.ico", "ogrelix_logo.ico", "new_logo_1.png"]
-            icon_path = None
-            for icon_file in icon_files:
-                test_path = os.path.join(sys._MEIPASS, "assets", icon_file)  # type: ignore
-                if os.path.exists(test_path):
-                    icon_path = test_path
-                    break
-        else:
-            # Try different icon files in order of preference
-            icon_files = ["new_logo_1.ico", "ogrelix_logo.ico", "new_logo_1.png"]
-            icon_path = None
-            for icon_file in icon_files:
-                test_path = os.path.join("assets", icon_file)
-                if os.path.exists(test_path):
-                    icon_path = test_path
-                    break
+        import packaging_utils
         
-        if icon_path:
-            if icon_path.endswith('.ico'):
-                # Use iconbitmap for .ico files (works better on Windows)
-                root.iconbitmap(icon_path)
+        # Setup Windows taskbar icon if on Windows
+        if packaging_utils.platform.system() == "Windows":
+            packaging_utils.setup_windows_taskbar_icon()
+        
+        # Configure window icon for both window and taskbar
+        icon_success = packaging_utils.configure_window_icon(root)
+        if not icon_success:
+            print("[DEBUG] Using fallback icon configuration")
+            # Fallback to original method
+            try:
+                # Check if we're running from PyInstaller bundle
+                if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+                    # Try different icon files in order of preference
+                    icon_files = ["new_logo_1.ico", "ogrelix_logo.ico", "new_logo_1.png"]
+                    icon_path = None
+                    for icon_file in icon_files:
+                        test_path = os.path.join(sys._MEIPASS, "assets", icon_file)  # type: ignore
+                        if os.path.exists(test_path):
+                            icon_path = test_path
+                            break
+                else:
+                    # Try different icon files in order of preference
+                    icon_files = ["new_logo_1.ico", "ogrelix_logo.ico", "new_logo_1.png"]
+                    icon_path = None
+                    for icon_file in icon_files:
+                        test_path = os.path.join("assets", icon_file)
+                        if os.path.exists(test_path):
+                            icon_path = test_path
+                            break
+                
+                if icon_path:
+                    if icon_path.endswith('.ico'):
+                        # Use iconbitmap for .ico files (works better on Windows)
+                        root.iconbitmap(icon_path)
+                    else:
+                        # Use iconphoto for .png files
+                        img = tk.PhotoImage(file=icon_path)
+                        root.iconphoto(True, img)
+            except Exception as fallback_e:
+                print(f"[DEBUG] Fallback icon configuration also failed: {fallback_e}")
+    except ImportError:
+        print("[DEBUG] packaging_utils not available, using basic icon setup")
+        # Original icon setup code as fallback
+        try:
+            # Check if we're running from PyInstaller bundle
+            if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+                # Try different icon files in order of preference
+                icon_files = ["new_logo_1.ico", "ogrelix_logo.ico", "new_logo_1.png"]
+                icon_path = None
+                for icon_file in icon_files:
+                    test_path = os.path.join(sys._MEIPASS, "assets", icon_file)  # type: ignore
+                    if os.path.exists(test_path):
+                        icon_path = test_path
+                        break
             else:
-                # Use iconphoto for .png files
-                img = tk.PhotoImage(file=icon_path)
-                root.iconphoto(True, img)
-    except Exception as e:
-        print(f"[DEBUG] Could not set window icon: {e}")
-        pass
+                # Try different icon files in order of preference
+                icon_files = ["new_logo_1.ico", "ogrelix_logo.ico", "new_logo_1.png"]
+                icon_path = None
+                for icon_file in icon_files:
+                    test_path = os.path.join("assets", icon_file)
+                    if os.path.exists(test_path):
+                        icon_path = test_path
+                        break
+            
+            if icon_path:
+                if icon_path.endswith('.ico'):
+                    # Use iconbitmap for .ico files (works better on Windows)
+                    root.iconbitmap(icon_path)
+                else:
+                    # Use iconphoto for .png files
+                    img = tk.PhotoImage(file=icon_path)
+                    root.iconphoto(True, img)
+        except Exception as e:
+            print(f"[DEBUG] Could not set window icon: {e}")
+            pass
     
     # Initialize fonts and styles
     init_font_config()
@@ -987,39 +1033,85 @@ def create_premium_minimal_ui(auto_run=False):
     root.configure(bg=Colors.BG_PRIMARY)
     root.resizable(False, False)
     
-    # Set icon
+    # Set window icon using enhanced packaging utilities
     try:
-        # Check if we're running from PyInstaller bundle
-        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-            # Try different icon files in order of preference
-            icon_files = ["new_logo_1.ico", "ogrelix_logo.ico", "new_logo_1.png"]
-            icon_path = None
-            for icon_file in icon_files:
-                test_path = os.path.join(sys._MEIPASS, "assets", icon_file)  # type: ignore
-                if os.path.exists(test_path):
-                    icon_path = test_path
-                    break
-        else:
-            # Try different icon files in order of preference
-            icon_files = ["new_logo_1.ico", "ogrelix_logo.ico", "new_logo_1.png"]
-            icon_path = None
-            for icon_file in icon_files:
-                test_path = os.path.join("assets", icon_file)
-                if os.path.exists(test_path):
-                    icon_path = test_path
-                    break
+        import packaging_utils
         
-        if icon_path:
-            if icon_path.endswith('.ico'):
-                # Use iconbitmap for .ico files (works better on Windows)
-                root.iconbitmap(icon_path)
+        # Setup Windows taskbar icon if on Windows
+        if packaging_utils.platform.system() == "Windows":
+            packaging_utils.setup_windows_taskbar_icon()
+        
+        # Configure window icon for both window and taskbar
+        icon_success = packaging_utils.configure_window_icon(root)
+        if not icon_success:
+            print("[DEBUG] Using fallback icon configuration for minimal UI")
+            # Fallback to original method
+            try:
+                # Check if we're running from PyInstaller bundle
+                if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+                    # Try different icon files in order of preference
+                    icon_files = ["new_logo_1.ico", "ogrelix_logo.ico", "new_logo_1.png"]
+                    icon_path = None
+                    for icon_file in icon_files:
+                        test_path = os.path.join(sys._MEIPASS, "assets", icon_file)  # type: ignore
+                        if os.path.exists(test_path):
+                            icon_path = test_path
+                            break
+                else:
+                    # Try different icon files in order of preference
+                    icon_files = ["new_logo_1.ico", "ogrelix_logo.ico", "new_logo_1.png"]
+                    icon_path = None
+                    for icon_file in icon_files:
+                        test_path = os.path.join("assets", icon_file)
+                        if os.path.exists(test_path):
+                            icon_path = test_path
+                            break
+                
+                if icon_path:
+                    if icon_path.endswith('.ico'):
+                        # Use iconbitmap for .ico files (works better on Windows)
+                        root.iconbitmap(icon_path)
+                    else:
+                        # Use iconphoto for .png files
+                        img = tk.PhotoImage(file=icon_path)
+                        root.iconphoto(True, img)
+            except Exception as fallback_e:
+                print(f"[DEBUG] Fallback icon configuration also failed: {fallback_e}")
+    except ImportError:
+        print("[DEBUG] packaging_utils not available, using basic icon setup for minimal UI")
+        # Original icon setup code as fallback
+        try:
+            # Check if we're running from PyInstaller bundle
+            if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+                # Try different icon files in order of preference
+                icon_files = ["new_logo_1.ico", "ogrelix_logo.ico", "new_logo_1.png"]
+                icon_path = None
+                for icon_file in icon_files:
+                    test_path = os.path.join(sys._MEIPASS, "assets", icon_file)  # type: ignore
+                    if os.path.exists(test_path):
+                        icon_path = test_path
+                        break
             else:
-                # Use iconphoto for .png files
-                img = tk.PhotoImage(file=icon_path)
-                root.iconphoto(True, img)
-    except Exception as e:
-        print(f"[DEBUG] Could not set minimal UI icon: {e}")
-        pass  # Icon loading failed, continue without icon
+                # Try different icon files in order of preference
+                icon_files = ["new_logo_1.ico", "ogrelix_logo.ico", "new_logo_1.png"]
+                icon_path = None
+                for icon_file in icon_files:
+                    test_path = os.path.join("assets", icon_file)
+                    if os.path.exists(test_path):
+                        icon_path = test_path
+                        break
+            
+            if icon_path:
+                if icon_path.endswith('.ico'):
+                    # Use iconbitmap for .ico files (works better on Windows)
+                    root.iconbitmap(icon_path)
+                else:
+                    # Use iconphoto for .png files
+                    img = tk.PhotoImage(file=icon_path)
+                    root.iconphoto(True, img)
+        except Exception as e:
+            print(f"[DEBUG] Could not set minimal UI icon: {e}")
+            pass  # Icon loading failed, continue without icon
     
     # Main content area
     main_frame = tk.Frame(root, bg=Colors.BG_PRIMARY)
@@ -1128,19 +1220,46 @@ def create_premium_wizard_ui():
     root.resizable(True, False)
     root.minsize(600, 500)
     
-    # Set icon
+    # Set window icon using enhanced packaging utilities
     try:
-        # Check if we're running from PyInstaller bundle
-        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-            icon_path = os.path.join(sys._MEIPASS, "assets", "logo.png")  # type: ignore
-        else:
-            icon_path = os.path.join("assets", "logo.png")
+        import packaging_utils
         
-        if os.path.exists(icon_path):
-            img = tk.PhotoImage(file=icon_path)
-            root.iconphoto(True, img)
-    except Exception:
-        pass  # Icon loading failed, continue without icon
+        # Setup Windows taskbar icon if on Windows
+        if packaging_utils.platform.system() == "Windows":
+            packaging_utils.setup_windows_taskbar_icon()
+        
+        # Configure window icon for both window and taskbar
+        icon_success = packaging_utils.configure_window_icon(root)
+        if not icon_success:
+            print("[DEBUG] Using fallback icon configuration for wizard UI")
+            # Fallback to original method
+            try:
+                # Check if we're running from PyInstaller bundle
+                if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+                    icon_path = os.path.join(sys._MEIPASS, "assets", "logo.png")  # type: ignore
+                else:
+                    icon_path = os.path.join("assets", "logo.png")
+                
+                if os.path.exists(icon_path):
+                    img = tk.PhotoImage(file=icon_path)
+                    root.iconphoto(True, img)
+            except Exception as fallback_e:
+                print(f"[DEBUG] Fallback icon configuration also failed: {fallback_e}")
+    except ImportError:
+        print("[DEBUG] packaging_utils not available, using basic icon setup for wizard UI")
+        # Original icon setup code as fallback
+        try:
+            # Check if we're running from PyInstaller bundle
+            if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+                icon_path = os.path.join(sys._MEIPASS, "assets", "logo.png")  # type: ignore
+            else:
+                icon_path = os.path.join("assets", "logo.png")
+            
+            if os.path.exists(icon_path):
+                img = tk.PhotoImage(file=icon_path)
+                root.iconphoto(True, img)
+        except Exception:
+            pass  # Icon loading failed, continue without icon
     
     # Main content area with premium styling
     main_frame = tk.Frame(root, bg=Colors.BG_PRIMARY)
