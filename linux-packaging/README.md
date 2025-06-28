@@ -10,6 +10,7 @@ The Linux packaging system provides:
 - **Self-contained executables** with all dependencies included
 - **Automated build process** with dependency checking
 - **Quality assurance** through verification testing
+- **Clean separation** from Windows packaging infrastructure
 
 ## Quick Start
 
@@ -28,8 +29,11 @@ sudo apt install fuse
 
 ### Building
 
+From the repository root:
+
 ```bash
 # Clean build (recommended)
+cd linux-packaging
 python build_appimage.py --clean --test
 
 # Quick rebuild
@@ -47,6 +51,10 @@ chmod +x linux-packaging/Ogresync-x86_64.AppImage
 
 # Run the application
 ./linux-packaging/Ogresync-x86_64.AppImage
+
+# Or run directly from the linux-packaging directory
+cd linux-packaging
+./Ogresync-x86_64.AppImage
 ```
 
 ## Distribution
@@ -81,10 +89,13 @@ AppDir/
 | Feature | Windows | Linux |
 |---------|---------|--------|
 | Package Format | Standalone EXE | AppImage |
-| Console Hiding | Required | Not needed |
-| Dependencies | Bundled | Bundled |
-| Icon Handling | ICO in EXE | PNG + Desktop file |
-| Distribution | Single EXE | Single AppImage |
+| Branch | `windows-packaging` | `linux-packaging` |
+| Build Tool | PyInstaller + custom scripts | PyInstaller + AppImage tools |
+| Console Hiding | Required (`packaging_utils.py`) | Not needed |
+| Dependencies | Bundled in EXE | Bundled in AppImage |
+| Icon Handling | ICO embedded in EXE | PNG + Desktop file |
+| Distribution | Single EXE file | Single AppImage file |
+| Platform Utils | `packaging_utils.py` | `linux_packaging_utils.py` |
 
 ## Future Enhancements
 
@@ -106,7 +117,12 @@ AppDir/
 ### Debug Mode
 
 ```bash
-python3 linux-packaging/build_appimage.py --verbose
+# From repository root
+cd linux-packaging
+python build_appimage.py --verbose
+
+# Or using the shell wrapper
+./build.sh --verbose
 ```
 
 ### Manual Testing
@@ -119,20 +135,39 @@ ls squashfs-root/
 
 ## Related Files
 
-- `build_appimage.py` - Main build script
-- `build.sh` - Simple shell wrapper
-- `Ogresync-linux.spec` - PyInstaller spec file (auto-generated)
+- `build_appimage.py` - Main build script with full automation
+- `linux_packaging_utils.py` - Linux-specific packaging utilities
+- `build.sh` - Simple shell wrapper for build script
+- `test_linux_packaging.py` - Linux packaging verification tests
 - `README.md` - This documentation
+- `.gitignore` - Linux packaging build artifacts exclusions
+
+**Note**: PyInstaller spec files are auto-generated during build process.
 
 ## Contributing
 
 When making changes to the Linux packaging:
 
-1. Test on multiple distributions
-2. Verify AppImage portability
-3. Update documentation
-4. Consider impact on Windows packaging
+1. **Test on multiple distributions** (Ubuntu, Fedora, openSUSE, etc.)
+2. **Verify AppImage portability** across different Linux versions
+3. **Update documentation** to reflect any changes
+4. **Test build process** with clean environment
+5. **Consider cross-platform compatibility** with Windows packaging
+
+### Development Workflow
+
+1. Work on the `Development` branch for testing new features
+2. Packaging changes should be made in the `linux-packaging` branch
+3. Ensure changes don't conflict with `windows-packaging` branch
+4. Test thoroughly before merging
+
+### Branch Structure
+
+- **`main`**: Clean, user-ready code (no development files)
+- **`Development`**: Full development environment with tests
+- **`linux-packaging`**: Linux-specific packaging (this branch)
+- **`windows-packaging`**: Windows-specific packaging
 
 ---
 
-*This packaging system is designed to complement the existing Windows packaging while providing Linux users with a native, portable installation option.*
+*This packaging system is designed to complement the existing Windows packaging while providing Linux users with a native, portable installation option. The clean branch structure ensures platform-specific code remains separated and maintainable.*
