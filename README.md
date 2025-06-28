@@ -1,7 +1,7 @@
 # Ogresync
 
 <div align="center">
-  <img src="assets/new_logo_1.png" alt="Ogresync Logo" width="1200">
+  <img src="assets/new_logo_1.png" alt="Ogresync Logo" width="700">
   
   **Professional Obsidian-GitHub Sync Tool**
   
