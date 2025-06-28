@@ -110,8 +110,8 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='assets/new_logo_1.ico' if os.path.exists('assets/new_logo_1.ico') else None,
-    version_file=None,  # You can create a version file if needed
+    icon=os.path.join(SPEC_DIR, 'assets', 'new_logo_1.ico') if os.path.exists(os.path.join(SPEC_DIR, 'assets', 'new_logo_1.ico')) else None,
+    version_file=os.path.join(SPEC_DIR, 'version_info.txt') if os.path.exists(os.path.join(SPEC_DIR, 'version_info.txt')) else None,
 )
 
 # Create additional files for distribution
