@@ -287,7 +287,6 @@ python build_appimage.py --clean --test
 
 **Features:**
 - **Cross-distribution compatibility**: Works on Ubuntu, Fedora, openSUSE, Arch, and more
-- **GNOME integration**: Proper desktop file and icon handling
 - **Self-contained**: No dependencies needed on target system
 - **Professional packaging**: Follows Linux packaging standards
 
@@ -296,20 +295,6 @@ python build_appimage.py --clean --test
 - `--test`: Run verification tests
 - `--verbose`: Show detailed build output
 - `--arch x86_64`: Specify target architecture
-
-### GNOME Desktop Integration
-
-For better integration with GNOME desktop environment:
-
-```bash
-./install-gnome-integration.sh
-```
-
-This script:
-- Installs desktop file and icons system-wide
-- Updates icon cache and desktop database
-- Enables launching from Activities overview
-- Adds proper taskbar integration
 
 ### Build Requirements
 

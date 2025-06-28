@@ -7,7 +7,7 @@ This directory contains the Linux packaging infrastructure for building distribu
 The Linux packaging system provides:
 - **Cross-distribution compatibility** through AppImage format
 - **Professional packaging** following Linux desktop standards
-- **GNOME integration** with proper icon and desktop file handling
+- **Self-contained executables** with all dependencies included
 - **Automated build process** with dependency checking
 - **Quality assurance** through verification testing
 
@@ -39,13 +39,9 @@ python build_appimage.py
 python build_appimage.py --clean --verbose
 ```
 
-### GNOME Integration
-
-For better desktop integration:
+## Usage
 
 ```bash
-./install-gnome-integration.sh
-```
 # Make executable (if not already)
 chmod +x linux-packaging/Ogresync-x86_64.AppImage
 
