@@ -36,10 +36,10 @@ Thumbs.db
 *.swp
 *.swo
 
-# Build artifacts and releases (handled by GitHub Releases)
+# Build artifacts (development branch keeps releases/ for testing)
 build/
 dist/
-releases/
+# releases/ - kept in development for testing purposes
 *.egg-info/
 
 # Virtual environment

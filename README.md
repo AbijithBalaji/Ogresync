@@ -218,21 +218,21 @@ Each step provides clear guidance and error recovery options.
 
 ## Core Architecture
 
-Ogresync is built with a modular architecture:
+Ogresync is built with a modular, dependency-injection architecture:
 
 | Module | Purpose |
 |--------|---------|
-| `Ogresync.py` | Main application entry point and sync orchestration |
+| `Ogresync.py` | Main application entry point and module orchestration |
+| `setup_wizard.py` | Comprehensive 11-step setup wizard with conflict resolution |
 | `enhanced_auto_sync.py` | Offline/online sync orchestration |
 | `offline_sync_manager.py` | Offline state management and session tracking |
-| `conflict_resolution_integration.py` | Smart conflict resolution integration |
-| `Stage1_conflict_resolution.py` | First-stage conflict detection and strategy selection |
-| `stage2_conflict_resolution.py` | Advanced file-by-file conflict resolution |
-| `setup_wizard.py` | Comprehensive 11-step setup wizard |
-| `backup_manager.py` | Automatic backup system with descriptive naming |
-| `ui_elements.py` | Professional UI components and dialogs |
-| `wizard_steps.py` | Individual setup step implementations |
-| `github_setup.py` | GitHub integration and repository management |
+| `Stage1_conflict_resolution.py` | High-level conflict strategy selection |
+| `stage2_conflict_resolution.py` | File-by-file conflict resolution |
+| `conflict_resolution_integration.py` | Conflict resolution integration layer |
+| `backup_manager.py` | File-based backup system with auto-cleanup |
+| `ui_elements.py` | Professional UI components library |
+| `wizard_steps.py` | Setup step functions (extracted via dependency injection) |
+| `github_setup.py` | Git/GitHub functions (extracted via dependency injection) |
 
 ## Technical Features
 
@@ -266,8 +266,13 @@ python Ogresync.py
 ### Development Branch
 For full source code, tests, and development documentation:
 ```bash
-git clone -b development https://github.com/AbijithBalaji/ogresync.git
+git clone -b Development https://github.com/AbijithBalaji/ogresync.git
 ```
+
+**Note**: You are currently viewing the Development branch which includes:
+- Complete test suite (30+ test files)
+- Development documentation ([DEVELOPMENT.md](DEVELOPMENT.md))
+- Advanced debugging and build tools
 
 ## System Requirements
 
