@@ -37,7 +37,8 @@ def run_command_safe(command, cwd=None, **kwargs):
     if PACKAGING_UTILS_AVAILABLE:
         return packaging_utils.run_subprocess_safe(command, cwd=cwd, **kwargs)
     else:
-        return run_command_safe(command, cwd=cwd, **kwargs)
+        import subprocess
+        return subprocess.run(command, cwd=cwd, **kwargs)
 
 # Optional imports
 try:
