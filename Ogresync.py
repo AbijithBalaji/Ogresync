@@ -1288,6 +1288,7 @@ def auto_sync(use_threading=True):
             safe_update_log("Internet connection detected. Proceeding with remote synchronization.", 10)
                   # OFFLINE SYNC: Check if we have pending offline changes that need immediate sync
         conflict_resolution_completed = False  # Track if we just completed conflict resolution
+        conflict_resolution_needs_retry_push = False  # Track if we need to retry push without overriding resolved content
         if OFFLINE_SYNC_AVAILABLE and offline_sync_manager is not None and hasattr(offline_sync_manager, 'OfflineSyncManager'):
             try:
                 sync_manager = offline_sync_manager.OfflineSyncManager(vault_path, config_data)
@@ -1328,7 +1329,9 @@ def auto_sync(use_threading=True):
                                                     safe_update_log("✅ Conflict resolution results pushed to GitHub successfully", 19)
                                                 else:
                                                     safe_update_log(f"⚠️ Failed to push conflict resolution results: {push_err}", 19)
-                                                    safe_update_log("Will retry push in normal sync flow...", 19)
+                                                    safe_update_log("Will retry push with conflict-aware sync flow...", 19)
+                                                    # Set flag to preserve conflict resolution results
+                                                    conflict_resolution_needs_retry_push = True
                                             
                                             # Mark sessions as resolved and end them
                                             # TODO: Re-enable when offline sync module is implemented
@@ -1544,25 +1547,64 @@ def auto_sync(use_threading=True):
                     safe_update_log("❌ Unable to pull updates due to a network error. Local changes remain safely stashed.", 30)
                 elif has_conflicts or rebase_in_progress or "CONFLICT" in (out + err):  # Detect merge conflicts
                     safe_update_log("❌ A merge conflict was detected during the pull operation.", 30)
-                    safe_update_log("🔧 Applying automatic 'remote wins' conflict resolution for sync operations...", 32)
                     
-                    # Abort the current rebase to get to a clean state                    run_command("git rebase --abort", cwd=vault_path)
-                    
-                    # Automatic "remote wins" resolution - much simpler and more reliable
-                    # No backup needed since this is routine sync behavior (local expects to be overwritten)
-                    safe_update_log("📥 Automatically choosing remote content (remote wins policy)...", 34)
-                      # Use reset --hard to make remote content win completely
-                    reset_out, reset_err, reset_rc = run_command("git reset --hard origin/main", cwd=vault_path)
-                    if reset_rc == 0:
-                        safe_update_log("✅ Conflicts resolved automatically using 'remote wins' policy", 35)
-                        # No backup needed - this is expected routine sync behavior
+                    # CRITICAL FIX: Check if we just completed conflict resolution
+                    if conflict_resolution_needs_retry_push:
+                        safe_update_log("🛡️ Preserving conflict resolution results - attempting force push instead of 'remote wins'", 32)
                         
-                        # Mark as successful to continue normal flow
-                        rc = 0  # Override to indicate successful resolution
+                        # Abort any ongoing merge/rebase to get to clean state
+                        run_command("git merge --abort", cwd=vault_path)
+                        run_command("git rebase --abort", cwd=vault_path)
+                        
+                        # Try force push with lease to preserve our conflict resolution
+                        force_push_out, force_push_err, force_push_rc = run_command("git push --force-with-lease origin main", cwd=vault_path)
+                        if force_push_rc == 0:
+                            safe_update_log("✅ Conflict resolution results successfully pushed with force-with-lease", 33)
+                            rc = 0  # Mark as successful
+                            conflict_resolution_needs_retry_push = False
+                        else:
+                            safe_update_log(f"⚠️ Force push failed: {force_push_err}", 33)
+                            safe_update_log("🔧 Attempting merge strategy to preserve conflict resolution...", 33)
+                            
+                            # Try to merge remote changes into our resolved state
+                            merge_out, merge_err, merge_rc = run_command("git pull --no-rebase --strategy=ours origin main", cwd=vault_path)
+                            if merge_rc == 0:
+                                safe_update_log("✅ Successfully merged remote changes while preserving conflict resolution", 34)
+                                # Try push again
+                                retry_push_out, retry_push_err, retry_push_rc = run_command("git push origin main", cwd=vault_path)
+                                if retry_push_rc == 0:
+                                    safe_update_log("✅ Conflict resolution results finally pushed successfully", 35)
+                                    rc = 0
+                                    conflict_resolution_needs_retry_push = False
+                                else:
+                                    safe_update_log(f"❌ Even retry push failed: {retry_push_err}", 35)
+                                    safe_update_log("� Manual intervention required. Your conflict resolution is preserved locally.", 35)
+                                    return
+                            else:
+                                safe_update_log(f"❌ Could not preserve conflict resolution: {merge_err}", 34)
+                                safe_update_log("📝 Manual intervention required. Your conflict resolution is preserved locally.", 34)
+                                return
                     else:
-                        safe_update_log(f"❌ Automatic conflict resolution failed: {reset_err}", 35)
-                        safe_update_log("📝 Manual intervention required. Please resolve conflicts and try again.", 35)
-                        return
+                        # Standard "remote wins" logic for normal sync conflicts
+                        safe_update_log("�🔧 Applying automatic 'remote wins' conflict resolution for sync operations...", 32)
+                        
+                        # Abort the current rebase to get to a clean state                        run_command("git rebase --abort", cwd=vault_path)
+                        
+                        # Automatic "remote wins" resolution - much simpler and more reliable
+                        # No backup needed since this is routine sync behavior (local expects to be overwritten)
+                        safe_update_log("📥 Automatically choosing remote content (remote wins policy)...", 34)
+                          # Use reset --hard to make remote content win completely
+                        reset_out, reset_err, reset_rc = run_command("git reset --hard origin/main", cwd=vault_path)
+                        if reset_rc == 0:
+                            safe_update_log("✅ Conflicts resolved automatically using 'remote wins' policy", 35)
+                            # No backup needed - this is expected routine sync behavior
+                            
+                            # Mark as successful to continue normal flow
+                            rc = 0  # Override to indicate successful resolution
+                        else:
+                            safe_update_log(f"❌ Automatic conflict resolution failed: {reset_err}", 35)
+                            safe_update_log("📝 Manual intervention required. Please resolve conflicts and try again.", 35)
+                            return
                 else:
                     safe_update_log("Pull operation completed successfully. Your vault is updated with the latest changes from GitHub.", 30)
                     # Log pulled files
@@ -1932,7 +1974,9 @@ def auto_sync(use_threading=True):
                             safe_update_log("✅ Post-Obsidian conflict resolution results pushed to GitHub successfully", 67)
                         else:
                             safe_update_log(f"⚠️ Failed to push post-Obsidian conflict resolution results: {push_err}", 67)
-                            safe_update_log("Will retry push in normal sync flow...", 67)
+                            safe_update_log("Will retry push with conflict-aware sync flow...", 67)
+                            # CRITICAL FIX: Set flag to preserve conflict resolution results
+                            conflict_resolution_needs_retry_push = True
                         
                         if backup_id:
                             safe_update_log(f"📝 Note: Safety backup available if needed: {backup_id}", 65)
@@ -2005,7 +2049,9 @@ def auto_sync(use_threading=True):
                                 safe_update_log("✅ Fallback conflict resolution results pushed to GitHub successfully", 57)
                             else:
                                 safe_update_log(f"⚠️ Failed to push fallback conflict resolution results: {push_err}", 57)
-                                safe_update_log("Will retry push in normal sync flow...", 57)
+                                safe_update_log("Will retry push with conflict-aware sync flow...", 57)
+                                # CRITICAL FIX: Set flag to preserve conflict resolution results
+                                conflict_resolution_needs_retry_push = True
                             
                             if backup_id:
                                 safe_update_log(f"📝 Note: Safety backup available if needed: {backup_id}", 55)
@@ -2095,18 +2141,24 @@ def auto_sync(use_threading=True):
                             force_push_out, force_push_err, force_push_rc = run_command("git push --force-with-lease origin main", cwd=vault_path)
                             if force_push_rc == 0:
                                 safe_update_log("✅ Successfully pushed conflict resolution to remote", 80)
+                                # Continue to final success messages - don't return early
+                                rc = 0  # Mark as successful for final flow
                             else:
                                 safe_update_log(f"❌ Force push failed: {force_push_err}", 80)
                                 safe_update_log("📝 Your conflict resolution is committed locally and can be pushed manually", 80)
+                                return
                         elif remote_ahead == 0 and local_ahead > 0:
                             # Local is ahead, remote hasn't changed - safe to force push
                             safe_update_log("✅ Local repository is ahead of remote. Force pushing resolved conflicts...", 77)
                             force_push_out, force_push_err, force_push_rc = run_command("git push --force-with-lease origin main", cwd=vault_path)
                             if force_push_rc == 0:
-                                safe_update_log("✅ All changes have been successfully pushed to GitHub using force-with-lease.", 100)
+                                safe_update_log("✅ All changes have been successfully pushed to GitHub using force-with-lease.", 80)
+                                # Continue to final success messages - don't return early
+                                rc = 0  # Mark as successful for final flow
                             else:
                                 safe_update_log(f"❌ Force push failed: {force_push_err}", 100)
                                 safe_update_log("📝 Your resolved conflicts are committed locally. Manual intervention may be required.", 100)
+                                return
                         else:
                             # Both local and remote have changes - need to merge
                             safe_update_log("🔄 Both local and remote have changes. Attempting to integrate remote changes...", 76)
@@ -2169,18 +2221,24 @@ def auto_sync(use_threading=True):
                                     safe_update_log("📝 Your local changes are safely committed. Manual resolution required.", 80)
                     else:
                         safe_update_log(f"❌ Push operation failed: {err}", 100)
-                    return
-                safe_update_log("✅ All changes have been successfully pushed to GitHub.", 100)
+                        return  # Only return for true push failures, not after successful conflict resolution
                 
-                # Mark offline sessions as completed after successful push
-                if OFFLINE_SYNC_AVAILABLE and offline_sync_manager is not None and hasattr(offline_sync_manager, 'OfflineSyncManager'):
-                    try:
-                        sync_manager = offline_sync_manager.OfflineSyncManager(vault_path, config_data)
-                        sync_manager.complete_successful_sync()
-                        # Immediately clean up completed sessions since sync was successful
-                        sync_manager.cleanup_resolved_sessions(aggressive=True)
-                    except Exception as e:
-                        print(f"[DEBUG] Error completing offline sync: {e}")
+                # Check if we should continue to final success (either normal push worked or conflict resolution worked)
+                if rc == 0:  # Success case
+                    safe_update_log("✅ All changes have been successfully pushed to GitHub.", 100)
+                
+                    # Mark offline sessions as completed after successful push
+                    if OFFLINE_SYNC_AVAILABLE and offline_sync_manager is not None and hasattr(offline_sync_manager, 'OfflineSyncManager'):
+                        try:
+                            sync_manager = offline_sync_manager.OfflineSyncManager(vault_path, config_data)
+                            sync_manager.complete_successful_sync()
+                            # Immediately clean up completed sessions since sync was successful
+                            sync_manager.cleanup_resolved_sessions(aggressive=True)
+                        except Exception as e:
+                            print(f"[DEBUG] Error completing offline sync: {e}")
+                else:
+                    # Push failed case - already handled above with return statements
+                    pass
             else:
                 safe_update_log("No new commits to push.", 100)
                 
