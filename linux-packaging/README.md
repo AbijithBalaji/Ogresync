@@ -1,53 +1,51 @@
 # Ogresync Linux Packaging
 
-This directory contains the Linux packaging system for Ogresync, specifically for creating AppImage packages.
+This directory contains the Linux packaging infrastructure for building distributable AppImage files of Ogresync.
+
+## Overview
+
+The Linux packaging system provides:
+- **Cross-distribution compatibility** through AppImage format
+- **Professional packaging** following Linux desktop standards
+- **GNOME integration** with proper icon and desktop file handling
+- **Automated build process** with dependency checking
+- **Quality assurance** through verification testing
 
 ## Quick Start
 
 ### Prerequisites
 
-- Python 3.8+
-- PyInstaller (`pip install pyinstaller`)
-- FUSE (for running AppImages)
-  - Ubuntu/Debian: `sudo apt install fuse`
-  - Fedora: `sudo dnf install fuse`
-  - Arch: `sudo pacman -S fuse`
+```bash
+# Install PyInstaller (if not already installed)
+pip install pyinstaller
 
-### Building the AppImage
+# On Fedora (for FUSE support)
+sudo dnf install fuse
 
-1. **Simple build:**
-   ```bash
-   ./linux-packaging/build.sh
-   ```
+# On Ubuntu/Debian
+sudo apt install fuse
+```
 
-2. **Advanced build with options:**
-   ```bash
-   python3 linux-packaging/build_appimage.py --clean --test --verbose
-   ```
-
-3. **Clean build:**
-   ```bash
-   python3 linux-packaging/build_appimage.py --clean
-   ```
-
-## Build Options
-
-- `--clean`: Remove previous build artifacts
-- `--test`: Run verification tests after building
-- `--verbose`: Enable detailed output during build
-- `--arch`: Specify target architecture (default: x86_64)
-
-## Output
-
-The build process creates:
-
-- `linux-packaging/Ogresync-x86_64.AppImage` - The final AppImage
-- `linux-packaging/AppDir/` - Temporary build directory
-- `dist/` - PyInstaller output directory
-
-## Testing the AppImage
+### Building
 
 ```bash
+# Clean build (recommended)
+python build_appimage.py --clean --test
+
+# Quick rebuild
+python build_appimage.py
+
+# Verbose output for debugging
+python build_appimage.py --clean --verbose
+```
+
+### GNOME Integration
+
+For better desktop integration:
+
+```bash
+./install-gnome-integration.sh
+```
 # Make executable (if not already)
 chmod +x linux-packaging/Ogresync-x86_64.AppImage
 

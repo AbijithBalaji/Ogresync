@@ -4,6 +4,14 @@ __pycache__/
 *.pyo
 *.pyd
 
+# Linux packaging artifacts
+linux-packaging/build/
+linux-packaging/dist/
+linux-packaging/AppDir/
+linux-packaging/*.AppImage
+linux-packaging/*.spec
+linux-packaging/appimagetool-*
+
 # Test results and analysis files
 tests/ogresync_*_test_results.json
 tests/TEST_RESULTS_SUMMARY.md

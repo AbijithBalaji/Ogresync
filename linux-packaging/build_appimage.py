@@ -131,14 +131,20 @@ def check_dependencies():
     
     # Check PyInstaller
     try:
-        result = run_command("pyinstaller --version", capture_output=True)
-        if result:
+        # Try using python -m PyInstaller first (works with local pip installs)
+        result = run_command("python -m PyInstaller --version", capture_output=True)
+        if result and result.returncode == 0:
             print_success(f"PyInstaller available")
         else:
-            print_error("PyInstaller not found. Install with: pip install pyinstaller")
-            return False
-    except:
-        print_error("PyInstaller not found")
+            # Fallback to direct pyinstaller command
+            result = run_command("pyinstaller --version", capture_output=True)
+            if result and result.returncode == 0:
+                print_success(f"PyInstaller available")
+            else:
+                print_error("PyInstaller not found. Install with: pip install pyinstaller")
+                return False
+    except Exception as e:
+        print_error(f"PyInstaller not found: {e}")
         return False
     
     # Check for fuse (required for AppImage execution)
@@ -163,7 +169,7 @@ def download_appimagetool(arch="x86_64"):
         return "appimagetool"
     
     # Download appimagetool
-    appimagetool_path = Path.cwd() / "linux-packaging" / f"appimagetool-{arch}.AppImage"
+    appimagetool_path = Path.cwd() / f"appimagetool-{arch}.AppImage"
     
     if appimagetool_path.exists():
         print_success(f"Using existing appimagetool: {appimagetool_path}")
@@ -187,7 +193,7 @@ def clean_build_directories():
     """Clean previous build artifacts"""
     print_step("Cleaning build directories")
     
-    dirs_to_clean = ["build", "dist", "linux-packaging/AppDir"]
+    dirs_to_clean = ["build", "dist", "AppDir"]
     files_to_clean = ["linux-packaging/Ogresync-x86_64.AppImage"]
     
     for dir_name in dirs_to_clean:
@@ -413,23 +419,28 @@ exe = EXE(
 )
 '''
     
-    spec_path = Path("linux-packaging") / "Ogresync-working.spec"
+    spec_path = Path("Ogresync-working.spec")
     with open(spec_path, "w") as f:
         f.write(spec_content)
     
     print_success(f"Created working spec file: {spec_path}")
     
-    # Change to linux-packaging directory to run PyInstaller
-    original_cwd = os.getcwd()
-    linux_packaging_dir = os.path.join(os.getcwd(), "linux-packaging")
-    os.chdir(linux_packaging_dir)
-    
+    # We're already in the linux-packaging directory, no need to change directories
     try:
-        cmd = f"pyinstaller --clean {'--debug all' if verbose else ''} Ogresync-working.spec"
+        # Try using python -m PyInstaller first (works with local pip installs)
+        # Note: --debug option is not allowed with existing .spec files
+        cmd = f"python -m PyInstaller --clean Ogresync-working.spec"
         
         result = run_command(cmd, capture_output=not verbose)
         
-        if not result:
+        if not result or result.returncode != 0:
+            # Try with full path to PyInstaller
+            print_warning("python -m PyInstaller failed, trying with full path")
+            cmd = f"python -m PyInstaller --clean --onefile Ogresync-working.spec"
+            result = run_command(cmd, capture_output=not verbose)
+        
+        if not result or result.returncode != 0:
+            print_error("PyInstaller command failed")
             return False
         
         # Check if executable was created
@@ -440,20 +451,20 @@ exe = EXE(
         
         print_success(f"Executable created: {exe_path}")
         return True
-    finally:
-        # Always return to original directory
-        os.chdir(original_cwd)
+    except Exception as e:
+        print_error(f"Build failed with error: {e}")
+        return False
 
 
 def create_appdir_structure():
     """Create AppDir structure for AppImage"""
     print_step("Creating AppDir structure")
     
-    appdir = Path("linux-packaging") / "AppDir"
+    appdir = Path("AppDir")
     appdir.mkdir(exist_ok=True)
     
-    # Copy the built executable from linux-packaging/dist/
-    exe_src = Path("linux-packaging") / "dist" / "Ogresync"
+    # Copy the built executable from dist/
+    exe_src = Path("dist") / "Ogresync"
     exe_dst = appdir / "usr" / "bin"
     exe_dst.mkdir(parents=True, exist_ok=True)
     
@@ -463,14 +474,19 @@ def create_appdir_structure():
     
     # Create desktop file
     desktop_content = """[Desktop Entry]
+Version=1.0
 Type=Application
 Name=Ogresync
-Comment=Obsidian Sync Alternative - Git-based vault synchronization
+GenericName=Obsidian Sync Alternative
+Comment=Git-based vault synchronization for Obsidian
 Exec=ogresync
 Icon=ogresync
 Categories=Office;Utility;
+Keywords=obsidian;sync;git;vault;notes;markdown;
 Terminal=false
 StartupWMClass=Ogresync
+StartupNotify=true
+NoDisplay=false
 """
     
     desktop_path = appdir / "ogresync.desktop"
@@ -479,17 +495,97 @@ StartupWMClass=Ogresync
     os.chmod(desktop_path, 0o755)
     print_success("Created desktop file")
     
-    # Copy icon
-    icon_src = Path("assets") / "new_logo_1.png"
-    if icon_src.exists():
-        icon_dst = appdir / "ogresync.png"
-        shutil.copy2(icon_src, icon_dst)
-        print_success("Copied application icon")
+    # Copy icon with GNOME-specific handling
+    icon_src_png = Path("../assets") / "new_logo_1.png"
+    icon_src_transparent = Path("../assets") / "new_logo_1_Transparent.png"
+    
+    # Create GNOME-compatible icon directories with multiple sizes
+    icon_dirs = [
+        appdir / "usr" / "share" / "icons" / "hicolor" / "16x16" / "apps",
+        appdir / "usr" / "share" / "icons" / "hicolor" / "32x32" / "apps",
+        appdir / "usr" / "share" / "icons" / "hicolor" / "48x48" / "apps",
+        appdir / "usr" / "share" / "icons" / "hicolor" / "64x64" / "apps",
+        appdir / "usr" / "share" / "icons" / "hicolor" / "128x128" / "apps",
+        appdir / "usr" / "share" / "icons" / "hicolor" / "256x256" / "apps",
+        appdir / "usr" / "share" / "icons" / "hicolor" / "512x512" / "apps",
+        appdir / "usr" / "share" / "pixmaps"
+    ]
+    
+    for icon_dir in icon_dirs:
+        icon_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Copy icons to multiple locations for better compatibility
+    if icon_src_transparent.exists():
+        # Use transparent version as primary
+        primary_icon = icon_src_transparent
+    elif icon_src_png.exists():
+        primary_icon = icon_src_png
+    else:
+        primary_icon = None
+    
+    if primary_icon:
+        # Copy to AppDir root (required for AppImage)
+        shutil.copy2(primary_icon, appdir / "ogresync.png")
+        
+        # Copy to all standard icon sizes for GNOME compatibility
+        for icon_dir in icon_dirs:
+            shutil.copy2(primary_icon, icon_dir / "ogresync.png")
+        
+        # Create .DirIcon for AppImage (helps with file manager display)
+        shutil.copy2(primary_icon, appdir / ".DirIcon")
+        
+        # Create index.theme file for GNOME icon theme compatibility
+        index_theme_dir = appdir / "usr" / "share" / "icons" / "hicolor"
+        index_theme_path = index_theme_dir / "index.theme"
+        
+        index_theme_content = """[Icon Theme]
+Name=Hicolor
+Comment=Fallback icon theme
+Hidden=true
+Directories=16x16/apps,32x32/apps,48x48/apps,64x64/apps,128x128/apps,256x256/apps,512x512/apps
+
+[16x16/apps]
+Size=16
+Context=Applications
+Type=Fixed
+
+[32x32/apps]
+Size=32
+Context=Applications
+Type=Fixed
+
+[48x48/apps]
+Size=48
+Context=Applications
+Type=Fixed
+
+[64x64/apps]
+Size=64
+Context=Applications
+Type=Fixed
+
+[128x128/apps]
+Size=128
+Context=Applications
+Type=Fixed
+
+[256x256/apps]
+Size=256
+Context=Applications
+Type=Fixed
+
+[512x512/apps]
+Size=512
+Context=Applications
+Type=Fixed
+"""
+        
+        with open(index_theme_path, "w") as f:
+            f.write(index_theme_content)
+        
+        print_success("Copied application icon to multiple locations with GNOME compatibility")
     else:
         print_warning("Application icon not found, using default")
-        # Create a simple placeholder icon
-        icon_dst = appdir / "ogresync.png"
-        # This would need a proper PNG creation, for now we'll skip
         
     # Create AppRun script
     apprun_content = """#!/bin/bash
@@ -512,6 +608,9 @@ exec "$HERE/usr/bin/ogresync" "$@"
     os.chmod(apprun_path, 0o755)
     print_success("Created AppRun script")
     
+    # Update GNOME icon cache and desktop database
+    update_gnome_icon_cache(appdir)
+    
     return appdir
 
 
@@ -520,7 +619,7 @@ def build_appimage(appimagetool_path, appdir):
     print_step("Building AppImage")
     
     appimage_name = "Ogresync-x86_64.AppImage"
-    appimage_path = Path("linux-packaging") / appimage_name
+    appimage_path = Path(appimage_name)
     
     # Remove existing AppImage
     if appimage_path.exists():
@@ -558,7 +657,14 @@ def verify_appimage(appimage_path):
     """Verify the AppImage works correctly"""
     print_step("Verifying AppImage")
     
-    # Test if AppImage is executable
+    # Convert to absolute path to avoid path resolution issues
+    appimage_path = Path(appimage_path).resolve()
+    
+    # Test if AppImage exists and is executable
+    if not appimage_path.exists():
+        print_error(f"AppImage not found at: {appimage_path}")
+        return False
+        
     if not os.access(appimage_path, os.X_OK):
         print_error("AppImage is not executable")
         return False
@@ -593,6 +699,46 @@ def verify_appimage(appimage_path):
         return False
 
 
+def update_gnome_icon_cache(appdir):
+    """Update GNOME icon cache for better icon display"""
+    print_step("Updating GNOME icon cache")
+    
+    try:
+        # Create icon cache for the hicolor theme
+        hicolor_dir = appdir / "usr" / "share" / "icons" / "hicolor"
+        
+        # Try to run gtk-update-icon-cache if available
+        cache_cmd = f"gtk-update-icon-cache -f -t {hicolor_dir}"
+        result = run_command(cache_cmd, capture_output=True, check=False)
+        
+        if result and result.returncode == 0:
+            print_success("GNOME icon cache updated")
+        else:
+            print_warning("Could not update icon cache (gtk-update-icon-cache not found)")
+            
+        # Also create desktop database entry
+        applications_dir = appdir / "usr" / "share" / "applications"
+        applications_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Copy desktop file to applications directory as well
+        desktop_src = appdir / "ogresync.desktop"
+        desktop_dst = applications_dir / "ogresync.desktop"
+        if desktop_src.exists():
+            shutil.copy2(desktop_src, desktop_dst)
+            print_success("Desktop file added to applications directory")
+            
+        # Update desktop database
+        update_cmd = f"update-desktop-database {applications_dir}"
+        result = run_command(update_cmd, capture_output=True, check=False)
+        
+        if result and result.returncode == 0:
+            print_success("Desktop database updated")
+        else:
+            print_warning("Could not update desktop database")
+            
+    except Exception as e:
+        print_warning(f"Icon cache update failed: {e}")
+        
 def main():
     """Main build function"""
     parser = argparse.ArgumentParser(description='Build Ogresync Linux AppImage')
