@@ -319,7 +319,7 @@ The goal was simple: make Obsidian synchronization accessible to everyone, regar
 ## About Ogrelix
 <img src="assets/ogrelix_logo.png" alt="Ogrelix Logo" width="100">
 
-**Ogrelix** is an MSME-registered startup based in India, focused on building innovative, simple, and impactful digital tools. While we're not a formal private limited company, our team is passionate about solving real-world problems through open-source and community-driven development. Ogresync is one of our flagship products under active development.
+**Ogrelix** is an MSME-registered startup based in India, focused on building innovative, simple, and impactful digital tools. While we're not a formal private limited company, our team is passionate about solving real-world problems through open-source and community-driven development.
 
 ## License
 
