@@ -316,6 +316,11 @@ Today, Ogresync represents months of development, testing, and refinement. It ha
 
 The goal was simple: make Obsidian synchronization accessible to everyone, regardless of their budget or technical expertise, while providing even more advanced features than traditional sync solutions.
 
+## About Ogrelix
+<img src="assets/ogrelix_logo.png" alt="Ogrelix Logo" width="100">
+
+**Ogrelix** is an MSME-registered startup based in India, focused on building innovative, simple, and impactful digital tools. While we're not a formal private limited company, our team is passionate about solving real-world problems through open-source and community-driven development. Ogresync is one of our flagship products under active development.
+
 ## License
 
 Licensed under the [GPL License](LICENSE) - free for personal and commercial use.
@@ -323,5 +328,5 @@ Licensed under the [GPL License](LICENSE) - free for personal and commercial use
 ---
 
 <div align="center">
-  <strong>Made with dedication by <a href="https://ogrelix.com">Ogrelix Solutions</a></strong>
+  <strong>Made with dedication by <a href="https://ogrelix.org">Ogrelix Solutions</a></strong>
 </div>
