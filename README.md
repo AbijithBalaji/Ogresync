@@ -267,6 +267,7 @@ python Ogresync.py
 For full source code, tests, and development documentation:
 ```bash
 git clone -b Development https://github.com/AbijithBalaji/ogresync.git
+git clone -b Development https://github.com/laxminarashimaa/Ogresync.git
 ```
 
 **Note**: You are currently viewing the Development branch which includes:
